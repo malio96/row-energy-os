@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --navy: #1B3A6B;
+  --teal: #0F6E56;
+  --navy-light: #D6E4F7;
+  --teal-light: #E1F5EE;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #F8FAFC;
+  color: #1C2128;
+}
+
+#root {
+  min-height: 100vh;
+}
