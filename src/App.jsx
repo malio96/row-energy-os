@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './supabase'
+import Proyectos from './Proyectos'
 
 function Login({ onLogin }) {
   const [email, setEmail] = useState('')
@@ -51,10 +52,23 @@ function Login({ onLogin }) {
 }
 
 function Dashboard({ user, onLogout }) {
+  const [seccion, setSeccion] = useState('dashboard')
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     onLogout()
   }
+
+  const navItems = [
+    { key:'dashboard', icon:'📊', label:'Dashboard' },
+    { key:'proyectos', icon:'📁', label:'Proyectos' },
+    { key:'cotizaciones', icon:'💼', label:'Cotizaciones' },
+    { key:'leads', icon:'👥', label:'Leads / CRM' },
+    { key:'cobranza', icon:'💰', label:'Cobranza' },
+    { key:'facturacion', icon:'🧾', label:'Facturación' },
+    { key:'compras', icon:'🛒', label:'Compras' },
+    { key:'financiero', icon:'📈', label:'Control Financiero' },
+  ]
 
   return (
     <div style={{ minHeight:'100vh', background:'#F8FAFC', fontFamily:'system-ui,sans-serif' }}>
@@ -70,21 +84,12 @@ function Dashboard({ user, onLogout }) {
         </div>
 
         <nav style={{ padding:'16px 12px', flex:1 }}>
-          {[
-            { icon:'📊', label:'Dashboard', active:true },
-            { icon:'📁', label:'Proyectos' },
-            { icon:'💼', label:'Cotizaciones' },
-            { icon:'👥', label:'Leads / CRM' },
-            { icon:'💰', label:'Cobranza' },
-            { icon:'🧾', label:'Facturación' },
-            { icon:'🛒', label:'Compras' },
-            { icon:'📈', label:'Control Financiero' },
-          ].map((item, i) => (
-            <div key={i} style={{
+          {navItems.map(item => (
+            <div key={item.key} onClick={() => setSeccion(item.key)} style={{
               display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:8, marginBottom:4, cursor:'pointer',
-              background: item.active ? 'rgba(255,255,255,0.15)' : 'transparent',
-              color: item.active ? 'white' : 'rgba(255,255,255,0.65)',
-              fontSize:14, fontWeight: item.active ? 600 : 400
+              background: seccion===item.key ? 'rgba(255,255,255,0.15)' : 'transparent',
+              color: seccion===item.key ? 'white' : 'rgba(255,255,255,0.65)',
+              fontSize:14, fontWeight: seccion===item.key ? 600 : 400
             }}>
               <span style={{ fontSize:16 }}>{item.icon}</span>
               {item.label}
@@ -92,7 +97,7 @@ function Dashboard({ user, onLogout }) {
           ))}
         </nav>
 
-        <div style={{ padding:'16px 12px', borderTop:'1px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ padding:'16px 12px', borderBottom:'1px solid rgba(255,255,255,0.1)', marginBottom:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
             <div style={{ width:32, height:32, borderRadius:'50%', background:'#0F6E56', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white' }}>
               MM
@@ -108,68 +113,54 @@ function Dashboard({ user, onLogout }) {
         </div>
       </div>
 
-      {/* Contenido principal */}
+      {/* Contenido */}
       <div style={{ marginLeft:240, padding:32 }}>
-        <div style={{ marginBottom:32 }}>
-          <h1 style={{ fontSize:24, fontWeight:700, color:'#1B3A6B', margin:0 }}>Dashboard</h1>
-          <p style={{ color:'#64748B', fontSize:14, marginTop:4 }}>Bienvenido, Malio — {new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</p>
-        </div>
-
-        {/* KPI Cards */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:32 }}>
-          {[
-            { label:'Proyectos activos', value:'4', color:'#1B3A6B', bg:'#D6E4F7' },
-            { label:'Pendiente de cobrar', value:'$1,430,000', color:'#D97706', bg:'#FEF3C7' },
-            { label:'Cotizaciones este mes', value:'7', color:'#0F6E56', bg:'#E1F5EE' },
-            { label:'Proyectos retrasados', value:'1', color:'#DC2626', bg:'#FEF2F2' },
-          ].map((k,i) => (
-            <div key={i} style={{ background:'white', borderRadius:12, padding:20, border:'1px solid #E2E8F0' }}>
-              <div style={{ fontSize:12, fontWeight:500, color:'#64748B', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>{k.label}</div>
-              <div style={{ fontSize:28, fontWeight:700, color:k.color }}>{k.value}</div>
+        {seccion === 'dashboard' && (
+          <div>
+            <div style={{ marginBottom:32 }}>
+              <h1 style={{ fontSize:24, fontWeight:700, color:'#1B3A6B', margin:0 }}>Dashboard</h1>
+              <p style={{ color:'#64748B', fontSize:14, marginTop:4 }}>Bienvenido, Malio — {new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</p>
             </div>
-          ))}
-        </div>
-
-        {/* Proyectos recientes */}
-        <div style={{ background:'white', borderRadius:12, border:'1px solid #E2E8F0', overflow:'hidden' }}>
-          <div style={{ padding:'16px 20px', borderBottom:'1px solid #E2E8F0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <h2 style={{ fontSize:16, fontWeight:600, color:'#1B3A6B', margin:0 }}>Proyectos en curso</h2>
-            <button style={{ padding:'6px 14px', background:'#1B3A6B', color:'white', border:'none', borderRadius:8, fontSize:13, cursor:'pointer' }}>+ Nuevo proyecto</button>
-          </div>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#F8FAFC' }}>
-                {['Proyecto','Cliente','Responsable','Avance','Estado'].map(h => (
-                  <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:32 }}>
               {[
-                { nombre:'Instalación Solar — Planta Bajio', cliente:'Grupo Industrial del Bajio', resp:'Carlos Mendez', avance:45, estado:'En curso', color:'#0F6E56' },
-                { nombre:'Auditoría Energética — Bodega Norte', cliente:'Vitro Glass', resp:'Sofia Ruiz', avance:100, estado:'Terminado', color:'#1B3A6B' },
-                { nombre:'Sistema Fotovoltaico — CEMEX', cliente:'CEMEX Jalisco', resp:'Carlos Mendez', avance:20, estado:'Por iniciar', color:'#D97706' },
-              ].map((p,i) => (
-                <tr key={i} style={{ borderBottom:'1px solid #F1F5F9' }}>
-                  <td style={{ padding:'12px 16px', fontSize:14, fontWeight:500, color:'#1C2128' }}>{p.nombre}</td>
-                  <td style={{ padding:'12px 16px', fontSize:13, color:'#64748B' }}>{p.cliente}</td>
-                  <td style={{ padding:'12px 16px', fontSize:13, color:'#64748B' }}>{p.resp}</td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <div style={{ flex:1, height:6, background:'#E2E8F0', borderRadius:3 }}>
-                        <div style={{ width:`${p.avance}%`, height:'100%', background:p.color, borderRadius:3 }}/>
-                      </div>
-                      <span style={{ fontSize:12, fontWeight:600, color:p.color, minWidth:32 }}>{p.avance}%</span>
-                    </div>
-                  </td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <span style={{ fontSize:12, fontWeight:600, padding:'3px 10px', borderRadius:20, background:p.color+'22', color:p.color }}>{p.estado}</span>
-                  </td>
-                </tr>
+                { label:'Proyectos activos', value:'4', color:'#1B3A6B' },
+                { label:'Pendiente de cobrar', value:'$1,430,000', color:'#D97706' },
+                { label:'Cotizaciones este mes', value:'7', color:'#0F6E56' },
+                { label:'Proyectos retrasados', value:'1', color:'#DC2626' },
+              ].map((k,i) => (
+                <div key={i} style={{ background:'white', borderRadius:12, padding:20, border:'1px solid #E2E8F0' }}>
+                  <div style={{ fontSize:12, fontWeight:500, color:'#64748B', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>{k.label}</div>
+                  <div style={{ fontSize:28, fontWeight:700, color:k.color }}>{k.value}</div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+            <div style={{ background:'white', borderRadius:12, border:'1px solid #E2E8F0', padding:20 }}>
+              <h2 style={{ fontSize:16, fontWeight:600, color:'#1B3A6B', margin:'0 0 16px' }}>Acceso rápido</h2>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+                {[
+                  { label:'Ver proyectos', key:'proyectos', color:'#1B3A6B' },
+                  { label:'Cotizaciones', key:'cotizaciones', color:'#0F6E56' },
+                  { label:'Cobranza', key:'cobranza', color:'#D97706' },
+                  { label:'Financiero', key:'financiero', color:'#DC2626' },
+                ].map((b,i) => (
+                  <button key={i} onClick={() => setSeccion(b.key)} style={{ padding:'12px', background:b.color+'11', color:b.color, border:`1px solid ${b.color}33`, borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {seccion === 'proyectos' && <Proyectos />}
+
+        {!['dashboard','proyectos'].includes(seccion) && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh', flexDirection:'column', gap:12 }}>
+            <div style={{ fontSize:48 }}>🚧</div>
+            <h2 style={{ color:'#1B3A6B', margin:0 }}>Módulo en construcción</h2>
+            <p style={{ color:'#64748B' }}>Este módulo estará disponible pronto.</p>
+          </div>
+        )}
       </div>
     </div>
   )
