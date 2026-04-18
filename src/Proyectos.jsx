@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { gantt } from 'dhtmlx-gantt'
+import 'dhtmlx-gantt/codebase/dhtmlxgantt.css'
 
 const proyectosDemo = [
   {
@@ -62,11 +64,7 @@ const COLORES_PROYECTO = {
 
 function Badge({ texto, mapa }) {
   const c = mapa[texto] || { bg:'#F1F5F9', color:'#64748B' }
-  return (
-    <span style={{ fontSize:12, fontWeight:600, padding:'3px 10px', borderRadius:20, background:c.bg, color:c.color }}>
-      {texto}
-    </span>
-  )
+  return <span style={{ fontSize:12, fontWeight:600, padding:'3px 10px', borderRadius:20, background:c.bg, color:c.color }}>{texto}</span>
 }
 
 function BarraAvance({ avance, color='#1B3A6B' }) {
@@ -117,74 +115,111 @@ function TabActividades({ actividades }) {
 }
 
 function TabGantt({ actividades }) {
-  const hoy = new Date()
-  const fechaMin = new Date(Math.min(...actividades.map(a => new Date(a.inicio))))
-  const fechaMax = new Date(Math.max(...actividades.map(a => new Date(a.fin))))
-  const totalDias = Math.ceil((fechaMax - fechaMin) / 86400000) + 1
-  const diasHoy = Math.ceil((hoy - fechaMin) / 86400000)
+  const containerRef = useRef(null)
 
-  const getPct = (fecha) => Math.max(0, Math.min(100, (Math.ceil((new Date(fecha) - fechaMin) / 86400000) / totalDias) * 100))
-  const getAncho = (inicio, fin) => Math.max(1, ((new Date(fin) - new Date(inicio)) / 86400000 / totalDias) * 100)
+  useEffect(() => {
+    // Configuracion de columnas
+    gantt.config.columns = [
+      { name:'text', label:'Actividad', width:200, tree:true },
+      { name:'owner', label:'Responsable', width:120, align:'center' },
+      { name:'start_date', label:'Inicio', width:90, align:'center' },
+      { name:'duration', label:'Días', width:50, align:'center' },
+      { name:'progress', label:'%', width:50, align:'center',
+        template: t => Math.round((t.progress||0)*100) + '%' },
+    ]
 
-  const colorBarra = (a) => {
-    if (a.estado === 'Completada') return '#0F6E56'
-    if (new Date(a.fin) < hoy && a.avance < 100) return '#DC2626'
-    if (a.estado === 'Bloqueada') return '#D97706'
-    return '#1B3A6B'
-  }
+    // Escala de tiempo
+    gantt.config.scales = [
+      { unit:'month', step:1, format:'%M %Y' },
+      { unit:'week', step:1, format:'Sem %W' },
+    ]
+
+    gantt.config.date_format = '%Y-%m-%d'
+    gantt.config.drag_links = true
+    gantt.config.drag_progress = true
+    gantt.config.drag_resize = true
+    gantt.config.drag_move = true
+    gantt.config.show_progress = true
+    gantt.config.auto_scheduling = true
+    gantt.config.auto_scheduling_strict = true
+    gantt.config.highlight_critical_path = true
+    gantt.config.fit_tasks = true
+
+    // Colores por estado
+    gantt.templates.task_class = (start, end, task) => {
+      if (task.estado === 'Completada') return 'gantt-completada'
+      if (task.estado === 'En progreso') return 'gantt-progreso'
+      if (task.estado === 'Bloqueada') return 'gantt-bloqueada'
+      if (end < new Date() && (task.progress||0) < 1) return 'gantt-retrasada'
+      return 'gantt-default'
+    }
+
+    gantt.templates.tooltip_text = (start, end, task) =>
+      `<b>${task.text}</b><br/>Responsable: ${task.owner}<br/>Avance: ${Math.round((task.progress||0)*100)}%`
+
+    // Linea de hoy
+    gantt.plugins({ marker: true })
+    gantt.addMarker({
+      start_date: new Date(),
+      css: 'gantt-today',
+      text: 'Hoy',
+      title: 'Hoy'
+    })
+
+    gantt.init(containerRef.current)
+
+    // Convertir actividades a formato dhtmlx
+    const idMap = {}
+    actividades.forEach((a, i) => { idMap[a.id] = i + 1 })
+
+    const tasks = {
+      data: actividades.map((a, i) => ({
+        id: i + 1,
+        text: a.nombre,
+        start_date: a.inicio,
+        end_date: a.fin,
+        progress: a.avance / 100,
+        owner: a.responsable,
+        estado: a.estado,
+        open: true,
+      })),
+      links: actividades.flatMap((a, i) =>
+        a.deps.map(dep => ({
+          id: `${dep}-${a.id}`,
+          source: idMap[dep],
+          target: i + 1,
+          type: '0', // Fin-Inicio
+        }))
+      ).filter(l => l.source && l.target)
+    }
+
+    gantt.parse(tasks)
+
+    return () => gantt.clearAll()
+  }, [actividades])
 
   return (
-    <div style={{ overflowX:'auto' }}>
-      <div style={{ minWidth:800, position:'relative' }}>
-        {/* Header meses */}
-        <div style={{ display:'flex', marginLeft:240, marginBottom:4 }}>
-          {['Mar','Abr','May','Jun'].map((m,i) => (
-            <div key={i} style={{ flex:1, textAlign:'center', fontSize:12, fontWeight:600, color:'#64748B', padding:'4px 0', borderLeft:'1px solid #E2E8F0' }}>{m} 2026</div>
-          ))}
-        </div>
-
-        {/* Linea de hoy */}
-        <div style={{ position:'absolute', left:`calc(240px + ${diasHoy/totalDias*100}%)`, top:24, bottom:0, width:2, background:'#DC2626', zIndex:10, opacity:0.7 }}>
-          <div style={{ position:'absolute', top:-16, left:-16, fontSize:10, fontWeight:700, color:'#DC2626', whiteSpace:'nowrap' }}>HOY</div>
-        </div>
-
-        {/* Filas */}
-        {actividades.map(a => (
-          <div key={a.id} style={{ display:'flex', alignItems:'center', borderBottom:'1px solid #F1F5F9', height:36 }}>
-            {/* Nombre */}
-            <div style={{ width:240, flexShrink:0, padding:'0 12px', fontSize:12, color:'#1C2128', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              <span style={{ fontFamily:'monospace', fontSize:10, color:'#94A3B8', marginRight:6 }}>{a.id}</span>
-              {a.nombre}
-            </div>
-            {/* Barra */}
-            <div style={{ flex:1, position:'relative', height:'100%', background:'#F8FAFC' }}>
-              <div style={{
-                position:'absolute',
-                left:`${getPct(a.inicio)}%`,
-                width:`${getAncho(a.inicio, a.fin)}%`,
-                top:'20%', height:'60%',
-                background:colorBarra(a),
-                borderRadius:4,
-                opacity: a.estado === 'Sin iniciar' ? 0.4 : 1,
-                display:'flex', alignItems:'center', paddingLeft:4, overflow:'hidden'
-              }}>
-                {/* Progreso dentro de la barra */}
-                <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${a.avance}%`, background:'rgba(255,255,255,0.3)', borderRadius:4 }}/>
-                <span style={{ fontSize:10, color:'white', fontWeight:600, position:'relative', zIndex:1, whiteSpace:'nowrap' }}>
-                  {a.avance > 0 ? `${a.avance}%` : ''}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <>
+      <style>{`
+  .gantt-completada .gantt_task_line { background: #0F6E56 !important; border-color: #0F6E56 !important; }
+  .gantt-progreso .gantt_task_line { background: #1B3A6B !important; border-color: #1B3A6B !important; }
+  .gantt-retrasada .gantt_task_line { background: #DC2626 !important; border-color: #DC2626 !important; }
+  .gantt-bloqueada .gantt_task_line { background: #D97706 !important; border-color: #D97706 !important; }
+  .gantt-default .gantt_task_line { background: #94A3B8 !important; border-color: #94A3B8 !important; opacity: 0.6; }
+  .gantt_task_progress { background: rgba(255,255,255,0.3) !important; }
+  .gantt_task_line { border-radius: 4px !important; border: none !important; }
+  .gantt_marker.gantt-today { background: #DC2626 !important; width: 2px !important; }
+  .gantt_marker_title { background: #DC2626 !important; color: white !important; font-size: 10px !important; font-weight: 700 !important; padding: 2px 6px !important; border-radius: 3px !important; }
+  .gantt_critical_task .gantt_task_line { box-shadow: 0 0 0 2px #DC2626 !important; }
+  .gantt_critical_link .gantt_line_wrapper div { background: #DC2626 !important; }
+`}</style>
+      <div ref={containerRef} style={{ width:'100%', height:500 }} />
+    </>
   )
 }
 
 function TabKanban({ actividades }) {
-  const hoy = new Date()
-  hoy.setHours(0,0,0,0)
+  const hoy = new Date(); hoy.setHours(0,0,0,0)
   const manana = new Date(hoy); manana.setDate(manana.getDate()+1)
   const semana = new Date(hoy); semana.setDate(semana.getDate()+7)
 
@@ -268,7 +303,6 @@ function DetalleProyecto({ proyecto, onVolver }) {
 
   return (
     <div>
-      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
         <button onClick={onVolver} style={{ padding:'6px 12px', background:'transparent', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, cursor:'pointer', color:'#64748B' }}>
           ← Volver
@@ -283,7 +317,6 @@ function DetalleProyecto({ proyecto, onVolver }) {
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={{ display:'flex', borderBottom:'2px solid #E2E8F0', marginBottom:24 }}>
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -298,7 +331,6 @@ function DetalleProyecto({ proyecto, onVolver }) {
         ))}
       </div>
 
-      {/* Contenido tab */}
       <div>
         {tab==='resumen' && <TabResumen proyecto={proyecto} />}
         {tab==='actividades' && <TabActividades actividades={proyecto.actividades} />}
