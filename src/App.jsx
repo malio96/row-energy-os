@@ -22,11 +22,8 @@ function Login({ onLogin }) {
     <div style={{ minHeight:'100vh', background:'#F8FAFC', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'system-ui,sans-serif' }}>
       <div style={{ background:'white', borderRadius:16, padding:48, width:400, boxShadow:'0 4px 24px rgba(0,0,0,0.08)', border:'1px solid #E2E8F0' }}>
         <div style={{ textAlign:'center', marginBottom:32 }}>
-          <div style={{ width:48, height:48, background:'#1B3A6B', borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-          <h1 style={{ fontSize:24, fontWeight:700, color:'#1B3A6B', margin:0 }}>Row Energy</h1>
-          <p style={{ color:'#64748B', fontSize:14, marginTop:4 }}>Sistema Operativo Interno</p>
+          <img src="/logo-negro.png" alt="Row Energy" style={{ height:72, width:'auto', margin:'0 auto 16px', display:'block' }}/>
+          <p style={{ color:'#64748B', fontSize:13, marginTop:0, letterSpacing:'0.05em' }}>SISTEMA OPERATIVO INTERNO</p>
         </div>
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom:16 }}>
@@ -74,13 +71,8 @@ function Dashboard({ user, onLogout }) {
     <div style={{ minHeight:'100vh', background:'#F8FAFC', fontFamily:'system-ui,sans-serif' }}>
       {/* Sidebar */}
       <div style={{ position:'fixed', left:0, top:0, bottom:0, width:240, background:'#1B3A6B', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'24px 20px', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:32, height:32, background:'#0F6E56', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            </div>
-            <span style={{ color:'white', fontWeight:700, fontSize:15 }}>Row Energy</span>
-          </div>
+        <div style={{ padding:'20px 16px', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+          <img src="/logo-blanco.png" alt="Row Energy" style={{ height:36, width:'auto', display:'block' }}/>
         </div>
 
         <nav style={{ padding:'16px 12px', flex:1 }}>
