@@ -185,6 +185,119 @@ export async function desglosarActividadConPlantilla(actividadPadreId, plantilla
 }
 
 // ============================================================
+// DEPENDENCIAS DE ACTIVIDADES
+// ============================================================
+export async function agregarDependencia(actividadId, predecesorId, tipo = 'FS') {
+  const { data: act, error: e1 } = await supabase
+    .from('actividades')
+    .select('deps')
+    .eq('id', actividadId)
+    .single()
+  if (e1) throw e1
+
+  const deps = act.deps || []
+  if (deps.some(d => d.id === predecesorId)) return
+  deps.push({ id: predecesorId, tipo })
+
+  const { error: e2 } = await supabase
+    .from('actividades')
+    .update({ deps })
+    .eq('id', actividadId)
+  if (e2) throw e2
+
+  await recalcularFechasDesde(actividadId)
+}
+
+export async function quitarDependencia(actividadId, predecesorId) {
+  const { data: act, error: e1 } = await supabase
+    .from('actividades')
+    .select('deps')
+    .eq('id', actividadId)
+    .single()
+  if (e1) throw e1
+
+  const deps = (act.deps || []).filter(d => d.id !== predecesorId)
+  const { error: e2 } = await supabase
+    .from('actividades')
+    .update({ deps })
+    .eq('id', actividadId)
+  if (e2) throw e2
+
+  await recalcularFechasDesde(actividadId)
+}
+
+export async function recalcularFechasDesde(actividadId) {
+  const { data: actividad } = await supabase
+    .from('actividades')
+    .select('proyecto_id')
+    .eq('id', actividadId)
+    .single()
+  if (!actividad) return
+
+  const { data: todas } = await supabase
+    .from('actividades')
+    .select('id, inicio, fin, deps')
+    .eq('proyecto_id', actividad.proyecto_id)
+
+  const mapa = {}
+  todas.forEach(a => { mapa[a.id] = { ...a } })
+
+  const cambios = []
+  const visitados = new Set()
+  const cola = [actividadId]
+
+  while (cola.length > 0) {
+    const id = cola.shift()
+    if (visitados.has(id)) continue
+    visitados.add(id)
+
+    const act = mapa[id]
+    if (!act || !act.deps || act.deps.length === 0) {
+      const sucesoras = todas.filter(a => (a.deps || []).some(d => d.id === id))
+      sucesoras.forEach(s => cola.push(s.id))
+      continue
+    }
+
+    let maxFin = null
+    act.deps.forEach(dep => {
+      const pred = mapa[dep.id]
+      if (!pred) return
+      const finPred = new Date(pred.fin + 'T00:00:00')
+      if (!maxFin || finPred > maxFin) maxFin = finPred
+    })
+
+    if (maxFin) {
+      const nuevoInicio = new Date(maxFin)
+      nuevoInicio.setDate(nuevoInicio.getDate() + 1)
+      const duracionDias = Math.round((new Date(act.fin + 'T00:00:00') - new Date(act.inicio + 'T00:00:00')) / 86400000)
+      const nuevoFin = new Date(nuevoInicio)
+      nuevoFin.setDate(nuevoFin.getDate() + duracionDias)
+
+      const nuevoInicioStr = nuevoInicio.toISOString().split('T')[0]
+      const nuevoFinStr = nuevoFin.toISOString().split('T')[0]
+
+      if (act.inicio !== nuevoInicioStr || act.fin !== nuevoFinStr) {
+        cambios.push({ id: act.id, inicio: nuevoInicioStr, fin: nuevoFinStr })
+        mapa[act.id].inicio = nuevoInicioStr
+        mapa[act.id].fin = nuevoFinStr
+      }
+    }
+
+    const sucesoras = todas.filter(a => (a.deps || []).some(d => d.id === id))
+    sucesoras.forEach(s => { if (!visitados.has(s.id)) cola.push(s.id) })
+  }
+
+  for (const c of cambios) {
+    await supabase
+      .from('actividades')
+      .update({ inicio: c.inicio, fin: c.fin })
+      .eq('id', c.id)
+  }
+
+  return cambios
+}
+
+// ============================================================
 // NOTIFICACIONES
 // ============================================================
 export async function getNotificaciones(usuarioId) {
@@ -399,4 +512,134 @@ export async function actualizarTicket(id, cambios) {
   const { data, error } = await supabase.from('postventa_tickets').update(cambios).eq('id', id).select().single()
   if (error) throw error
   return data
+}
+
+// ============================================================
+// AGREGAR ESTAS FUNCIONES A tu src/supabase.js
+// Al final del archivo, antes del último export si lo hay.
+// ============================================================
+
+// ----- HITOS DE COBRO (lectura para panel Proyecto) -----
+
+export async function getHitosProyecto(proyectoId) {
+  const { data, error } = await supabase
+    .from('hitos_cobranza')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+  if (error) throw error
+  return data || []
+}
+
+// ----- NOTAS DEL PROYECTO -----
+
+export async function getNotasProyecto(proyectoId) {
+  // Trae las notas con el autor (join a usuarios)
+  const { data, error } = await supabase
+    .from('proyecto_notas')
+    .select(`
+      id, proyecto_id, autor_id, contenido, menciones, parent_nota_id,
+      created_at, updated_at,
+      autor:usuarios!proyecto_notas_autor_id_fkey(id, nombre, email, rol)
+    `)
+    .eq('proyecto_id', proyectoId)
+    .order('created_at', { ascending: true })
+  if (error) {
+    // Si el FK no tiene alias, fallback sin join
+    const { data: d2, error: e2 } = await supabase
+      .from('proyecto_notas')
+      .select('*')
+      .eq('proyecto_id', proyectoId)
+      .order('created_at', { ascending: true })
+    if (e2) throw e2
+    return d2 || []
+  }
+  return data || []
+}
+
+export async function crearNotaProyecto({ proyectoId, contenido, menciones = [], parentId = null }) {
+  // Obtener autor_id desde tabla usuarios (matching auth_id)
+  const { data: userData } = await supabase.auth.getUser()
+  const authId = userData?.user?.id
+  const { data: usuario } = await supabase
+    .from('usuarios').select('id').eq('auth_id', authId).single()
+
+  const { data, error } = await supabase
+    .from('proyecto_notas')
+    .insert({
+      proyecto_id: proyectoId,
+      autor_id: usuario?.id,
+      contenido,
+      menciones,
+      parent_nota_id: parentId,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function actualizarNota(id, contenido, menciones = []) {
+  const { data, error } = await supabase
+    .from('proyecto_notas')
+    .update({ contenido, menciones })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function eliminarNota(id) {
+  const { error } = await supabase.from('proyecto_notas').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Extrae @nombres del contenido y los mapea a user_ids
+// usage: extraerMenciones("Hola @Malio Martinez y @Ana Torres", usuarios)
+export function extraerMenciones(contenido, usuarios) {
+  const mentions = new Set()
+  // Match @nombre seguido opcional de apellido (palabras capitalizadas)
+  const regex = /@([A-ZÁ-ÚÑ][a-zá-úñ]+(?:\s+[A-ZÁ-ÚÑ][a-zá-úñ]+)?)/g
+  let match
+  while ((match = regex.exec(contenido)) !== null) {
+    const nombre = match[1].trim()
+    const user = usuarios.find(u =>
+      u.nombre?.toLowerCase().startsWith(nombre.toLowerCase()) ||
+      nombre.toLowerCase().startsWith(u.nombre?.toLowerCase())
+    )
+    if (user) mentions.add(user.id)
+  }
+  return Array.from(mentions)
+}
+// ============================================================
+// v8: AGREGAR AL FINAL DE tu src/supabase.js
+// ============================================================
+
+// Duplicar actividad (mantiene props, nombre + " (copia)")
+export async function duplicarActividad(actividadId) {
+  const { data, error } = await supabase.rpc('duplicar_actividad', {
+    p_actividad_id: actividadId
+  })
+  if (error) throw error
+  return data  // nuevo UUID
+}
+
+// Toggle milestone / quitar milestone
+export async function toggleMilestone(actividadId, esMilestone) {
+  const { error } = await supabase
+    .from('actividades')
+    .update({ es_milestone: esMilestone })
+    .eq('id', actividadId)
+  if (error) throw error
+}
+
+// Cambiar importancia
+export async function cambiarImportancia(actividadId, importancia) {
+  // importancia: 'alta' | 'media' | 'baja' | null
+  const { error } = await supabase
+    .from('actividades')
+    .update({ importancia })
+    .eq('id', actividadId)
+  if (error) throw error
 }
