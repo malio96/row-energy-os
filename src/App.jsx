@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { supabase } from './supabase'
 import Sidebar from './Sidebar'
 import Proyectos from './Proyectos'
@@ -12,8 +12,20 @@ import Contratos from './Contratos'
 import Cierre from './Cierre'
 import Postventa from './Postventa'
 import Configuracion from './Configuracion'
+import Dashboard from './Dashboard'
+import CommandPalette from './CommandPalette'
 
-const COLORS = { navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56', slate50:'#F8FAFC', slate100:'#F1F5F9', slate400:'#94A3B8', slate500:'#64748B', ink:'#1C2128', red:'#DC2626' }
+const COLORS = {
+  navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56',
+  slate50:'#F8FAFC', slate100:'#F1F5F9', slate400:'#94A3B8',
+  slate500:'#64748B', ink:'#1C2128', red:'#DC2626'
+}
+
+const inputStyle = {
+  width:'100%', padding:'10px 12px',
+  border:`1px solid ${COLORS.slate100}`, borderRadius:8,
+  fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box'
+}
 
 // ============================================================
 // LOGIN
@@ -34,10 +46,8 @@ function Login({ onLogin }) {
       setLoading(false)
       return
     }
-    // Buscar usuario en tabla usuarios
     const { data: usuario } = await supabase.from('usuarios').select('*').eq('email', email).single()
     if (usuario) {
-      // Enlazar auth_id si no está
       if (!usuario.auth_id && data.user) {
         await supabase.from('usuarios').update({ auth_id: data.user.id }).eq('id', usuario.id)
       }
@@ -75,73 +85,72 @@ function Login({ onLogin }) {
   )
 }
 
-const inputStyle = { width:'100%', padding:'10px 12px', border:`1px solid ${COLORS.slate100}`, borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }
-
 // ============================================================
-// DASHBOARD
+// DASHBOARD WRAPPER — conecta onNavigate con react-router
 // ============================================================
-function Dashboard({ usuario }) {
-  const [stats, setStats] = useState({ proyectos:0, proyectosCurso:0, cotizaciones:0, facturacionPendiente:0, leadsActivos:0 })
-
-  useEffect(() => {
-    const cargar = async () => {
-      const [p, pc, c, f, l] = await Promise.all([
-        supabase.from('proyectos').select('*', { count:'exact', head:true }),
-        supabase.from('proyectos').select('*', { count:'exact', head:true }).eq('estado', 'En curso'),
-        supabase.from('cotizaciones').select('*', { count:'exact', head:true }),
-        supabase.from('facturas').select('total').in('estado', ['Emitida', 'Vencida']),
-        supabase.from('leads').select('*', { count:'exact', head:true }).not('etapa', 'in', '(Ganado,Perdido)'),
-      ])
-      setStats({
-        proyectos: p.count || 0,
-        proyectosCurso: pc.count || 0,
-        cotizaciones: c.count || 0,
-        facturacionPendiente: (f.data || []).reduce((s,x) => s + Number(x.total), 0),
-        leadsActivos: l.count || 0,
-      })
+function DashboardWrapper({ usuario }) {
+  const navigate = useNavigate()
+  const goTo = (seccion) => {
+    const rutas = {
+      dashboard: '/',
+      proyectos: '/proyectos',
+      cotizaciones: '/cotizaciones',
+      leads: '/leads',
+      cobranza: '/cobranza',
+      facturacion: '/facturacion',
+      compras: '/compras',
+      contratos: '/contratos',
+      cierre: '/cierre',
+      postventa: '/postventa',
+      config: '/config',
     }
-    cargar()
-  }, [])
-
-  const kpis = [
-    { label:'Proyectos totales', valor:stats.proyectos, sub:`${stats.proyectosCurso} en curso`, color:COLORS.navy },
-    { label:'Cotizaciones', valor:stats.cotizaciones, sub:'emitidas', color:COLORS.teal },
-    { label:'Facturación pendiente', valor:`$${stats.facturacionPendiente.toLocaleString('es-MX', { maximumFractionDigits:0 })}`, sub:'MXN', color:COLORS.red },
-    { label:'Leads activos', valor:stats.leadsActivos, sub:'en pipeline', color:'#C89B3C' },
-  ]
-
-  return (
-    <div>
-      <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Dashboard</h1>
-        <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>Bienvenido, {usuario.nombre}</p>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:14, marginBottom:24 }}>
-        {kpis.map(k => (
-          <div key={k.label} style={{ background:'white', borderRadius:12, padding:20, border:`1px solid ${COLORS.slate100}` }}>
-            <div style={{ fontSize:11, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>{k.label}</div>
-            <div style={{ fontSize:28, fontWeight:500, color:k.color, fontFamily:'var(--font-serif)', letterSpacing:'-0.02em' }}>{k.valor}</div>
-            <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>{k.sub}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ padding:18, background:'linear-gradient(135deg, #F8FAFC 0%, #E1F5EE 100%)', borderRadius:12, border:`1px solid ${COLORS.slate100}` }}>
-        <div style={{ fontSize:11, fontWeight:600, color:COLORS.teal, letterSpacing:'0.08em', marginBottom:6 }}>CONSTRUCCIÓN EN CURSO</div>
-        <div style={{ fontSize:15, fontWeight:500, color:COLORS.ink, marginBottom:4 }}>Plan de entrega — Semana 1 de 8</div>
-        <div style={{ fontSize:12, color:COLORS.slate500, lineHeight:1.5 }}>✅ Base de datos Supabase · ✅ 8 plantillas LSE 2025 · ✅ Proyectos conectado a DB real · ✅ Los 9 módulos visibles en sidebar · 🔜 Semana 2: Cotizaciones con generador PDF</div>
-      </div>
-    </div>
-  )
+    if (rutas[seccion]) navigate(rutas[seccion])
+  }
+  return <Dashboard usuario={usuario} onNavigate={goTo}/>
 }
 
 // ============================================================
-// LAYOUT
+// COMMAND PALETTE WRAPPER — conecta onNavigate con react-router
+// ============================================================
+function CommandPaletteWrapper({ open, onClose }) {
+  const navigate = useNavigate()
+  const goTo = (seccion) => {
+    const rutas = {
+      dashboard: '/',
+      proyectos: '/proyectos',
+      cotizaciones: '/cotizaciones',
+      leads: '/leads',
+      cobranza: '/cobranza',
+      facturacion: '/facturacion',
+      compras: '/compras',
+      contratos: '/contratos',
+      cierre: '/cierre',
+      postventa: '/postventa',
+      config: '/config',
+      clientes: '/config',
+    }
+    if (rutas[seccion]) navigate(rutas[seccion])
+  }
+  return <CommandPalette open={open} onClose={onClose} onNavigate={goTo}/>
+}
+
+// ============================================================
+// LAYOUT (con listener Cmd+K)
 // ============================================================
 function Layout({ usuario, children }) {
+  const [cmdOpen, setCmdOpen] = useState(false)
+
+  useEffect(() => {
+    const handler = () => setCmdOpen(true)
+    document.addEventListener('open-command-palette', handler)
+    return () => document.removeEventListener('open-command-palette', handler)
+  }, [])
+
   return (
     <div style={{ display:'flex', height:'100vh', background:COLORS.slate50 }}>
       <Sidebar usuario={usuario}/>
       <main style={{ flex:1, overflow:'auto', padding:'28px 32px' }}>{children}</main>
+      <CommandPaletteWrapper open={cmdOpen} onClose={() => setCmdOpen(false)}/>
     </div>
   )
 }
@@ -172,7 +181,7 @@ export default function App() {
     <BrowserRouter>
       <Layout usuario={usuario}>
         <Routes>
-          <Route path="/" element={<Dashboard usuario={usuario}/>}/>
+          <Route path="/" element={<DashboardWrapper usuario={usuario}/>}/>
           <Route path="/proyectos" element={<Proyectos usuario={usuario}/>}/>
           <Route path="/cotizaciones" element={<Cotizaciones usuario={usuario}/>}/>
           <Route path="/leads" element={<Leads usuario={usuario}/>}/>

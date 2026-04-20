@@ -1,78 +1,75 @@
 import { useState, useEffect } from 'react'
-import { getProyectos, getCierreChecklist, crearCierreItem, actualizarCierreItem } from './supabase'
-import { COLORS, Badge, Icon } from './helpers'
+import { getProyectos, getCierreChecklist, actualizarCierreItem, crearCierreItem } from './supabase'
+import { COLORS, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile } from './helpers'
 
-export default function Cierre() {
-  const [proyectos, setProyectos] = useState([])
-  const [selId, setSelId] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => { getProyectos().then(p => { setProyectos(p); setLoading(false) }) }, [])
-
-  if (selId) return <CierreProyecto proyectoId={selId} onVolver={() => setSelId(null)}/>
-
-  return (
-    <div>
-      <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Cierre Administrativo</h1>
-        <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>Checklist de cierre por proyecto</p>
-      </div>
-
-      {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
-
-      {!loading && proyectos.length === 0 && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, background:'white', borderRadius:12 }}>Sin proyectos</div>}
-
-      {!loading && proyectos.length > 0 && (
-        <div style={{ display:'grid', gap:10 }}>
-          {proyectos.map(p => (
-            <div key={p.id} onClick={() => setSelId(p.id)} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:'16px 22px', cursor:'pointer', transition:'all 0.15s' }}
-              onMouseEnter={e => e.currentTarget.style.boxShadow='0 4px 16px rgba(10,37,64,0.06)'}
-              onMouseLeave={e => e.currentTarget.style.boxShadow='none'}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <div>
-                  <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate400, marginBottom:4 }}>{p.codigo}</div>
-                  <div style={{ fontSize:14, fontWeight:500, color:COLORS.ink }}>{p.nombre}</div>
-                  <div style={{ fontSize:12, color:COLORS.slate500, marginTop:2 }}>{p.cliente?.razon_social}</div>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                  <Badge texto={p.estado} mapa={{'Terminado':{bg:'#E1F5EE',color:'#0F6E56'},'En curso':{bg:'#E0EDFF',color:'#1B3A6B'},'Por iniciar':{bg:'#FEF3C7',color:'#D97706'},'Cancelado':{bg:'#FEF2F2',color:'#DC2626'},'En pausa':{bg:'#FEF2F2',color:'#DC2626'}}}/>
-                  <span style={{ fontSize:11, color:COLORS.slate400, fontFamily:'var(--font-mono)' }}>{p.cierre}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const CHECKLIST_DEFAULT = [
-  'Todas las actividades del proyecto completadas',
+const CHECKLIST_TEMPLATE = [
+  'Todas las actividades completadas',
   'Documentos entregables subidos al expediente',
   'Facturación al 100% emitida',
   'Cobros al 100% recibidos',
   'Acta de cierre firmada con el cliente',
   'Encuesta de satisfacción enviada',
   'Lecciones aprendidas documentadas',
-  'Archivo digital consolidado y respaldado',
-  'Handoff a equipo de Postventa completado',
+  'Archivo digital consolidado',
+  'Handoff a Postventa completado',
 ]
 
-function CierreProyecto({ proyectoId, onVolver }) {
+export default function Cierre({ usuario }) {
+  const [proyectos, setProyectos] = useState([])
+  const [selId, setSelId] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const isMobile = useIsMobile()
+
+  useEffect(() => {
+    getProyectos().then(ps => {
+      setProyectos(ps.filter(p => p.estado === 'Terminado' || p.estado === 'En cierre'))
+      setLoading(false)
+    })
+  }, [])
+
+  if (selId) return <CierreDetalle proyectoId={selId} onVolver={() => setSelId(null)} usuario={usuario}/>
+
+  return (
+    <div>
+      <div style={{ marginBottom:16 }}>
+        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Cierre Administrativo</h1>
+        <p style={{ color:COLORS.slate500, fontSize:12, marginTop:4 }}>Proyectos terminados o en proceso de cierre</p>
+      </div>
+
+      {loading && <LoadingState/>}
+      {!loading && proyectos.length === 0 && <EmptyState titulo="Sin proyectos por cerrar" descripcion="Los proyectos aparecen aquí cuando están en estado 'En cierre' o 'Terminado'"/>}
+
+      {!loading && proyectos.length > 0 && (
+        <div style={{ display:'grid', gap:10 }}>
+          {proyectos.map(p => <ProyectoCard key={p.id} p={p} onClick={() => setSelId(p.id)}/>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProyectoCard({ p, onClick }) {
+  return (
+    <div onClick={onClick} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${p.estado === 'Terminado' ? COLORS.teal : COLORS.amber}`, borderRadius:10, padding:14, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+      <div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+          <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{p.codigo}</span>
+          <Badge texto={p.estado} mapa={{ 'Terminado':{bg:'#E1F5EE', color:'#0F6E56'}, 'En cierre':{bg:'#FEF3C7', color:'#D97706'} }}/>
+        </div>
+        <div style={{ fontSize:14, fontWeight:500, color:COLORS.ink }}>{p.nombre}</div>
+        <div style={{ fontSize:11, color:COLORS.slate500 }}>{p.cliente?.razon_social} · {fmtMoney(p.monto_contrato, true)}</div>
+      </div>
+      <div style={{ color:COLORS.slate400 }}>{Icon('Back')}</div>
+    </div>
+  )
+}
+
+function CierreDetalle({ proyectoId, onVolver, usuario }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [nuevoItem, setNuevoItem] = useState('')
+  const isMobile = useIsMobile()
 
-  const cargar = async () => {
-    setLoading(true)
-    let lista = await getCierreChecklist(proyectoId)
-    if (lista.length === 0) {
-      for (const texto of CHECKLIST_DEFAULT) await crearCierreItem(proyectoId, { item: texto })
-      lista = await getCierreChecklist(proyectoId)
-    }
-    setItems(lista); setLoading(false)
-  }
+  const cargar = async () => { setLoading(true); setItems(await getCierreChecklist(proyectoId)); setLoading(false) }
   useEffect(() => { cargar() }, [proyectoId])
 
   const toggle = async (item) => {
@@ -80,48 +77,50 @@ function CierreProyecto({ proyectoId, onVolver }) {
     cargar()
   }
 
-  const agregar = async () => {
-    if (!nuevoItem.trim()) return
-    await crearCierreItem(proyectoId, { item: nuevoItem })
-    setNuevoItem(''); cargar()
+  const inicializar = async () => {
+    if (items.length > 0) return
+    for (let i = 0; i < CHECKLIST_TEMPLATE.length; i++) {
+      await crearCierreItem({ proyecto_id: proyectoId, orden: i+1, item: CHECKLIST_TEMPLATE[i], hecho: false })
+    }
+    cargar()
   }
 
   const hechos = items.filter(i => i.hecho).length
-  const progreso = items.length > 0 ? Math.round((hechos / items.length) * 100) : 0
+  const pct = items.length > 0 ? Math.round(hechos / items.length * 100) : 0
 
   return (
     <div>
-      <button onClick={onVolver} style={{ padding:'8px 12px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:8, fontSize:13, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:6, marginBottom:20 }}>{Icon('Back')} Volver a cierres</button>
+      <button onClick={onVolver} style={{ ...btnSecondary, marginBottom:16 }}>{Icon('Back')} Proyectos en cierre</button>
 
-      <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:28, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-serif)' }}>Checklist de Cierre</h1>
-        <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:16 }}>
-          <div style={{ flex:1, height:10, background:COLORS.slate100, borderRadius:5, overflow:'hidden' }}>
-            <div style={{ width:`${progreso}%`, height:'100%', background: progreso === 100 ? COLORS.teal : COLORS.navy2, transition:'width 0.3s' }}/>
-          </div>
-          <span style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{hechos}/{items.length}</span>
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:20, marginBottom:14 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:10 }}>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Checklist de cierre</h2>
+          <div style={{ fontSize:14, fontWeight:600, color: pct === 100 ? COLORS.teal : COLORS.navy, fontFamily:'var(--font-mono)' }}>{hechos}/{items.length} ({pct}%)</div>
+        </div>
+        <div style={{ height:8, background:COLORS.slate100, borderRadius:4, overflow:'hidden' }}>
+          <div style={{ width:`${pct}%`, height:'100%', background: pct === 100 ? COLORS.teal : COLORS.navy2, transition:'width 0.3s' }}/>
         </div>
       </div>
 
-      {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
+      {loading && <LoadingState/>}
+      {!loading && items.length === 0 && (
+        <EmptyState titulo="Sin checklist" descripcion="Inicializa el checklist estándar de cierre" accion={<button onClick={inicializar} style={btnPrimary}>+ Inicializar checklist</button>}/>
+      )}
 
-      {!loading && (
-        <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:20 }}>
+      {!loading && items.length > 0 && (
+        <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
           {items.map(item => (
-            <div key={item.id} onClick={() => toggle(item)} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', borderBottom:`1px solid ${COLORS.slate100}`, cursor:'pointer' }}>
-              <div style={{ width:22, height:22, borderRadius:6, border:`2px solid ${item.hecho?COLORS.teal:'#CBD5E1'}`, background:item.hecho?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', color:'white', flexShrink:0 }}>
+            <div key={item.id} onClick={() => toggle(item)} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 18px', borderBottom:`1px solid ${COLORS.slate100}`, cursor:'pointer', background: item.hecho ? COLORS.slate50 : 'white' }}>
+              <div style={{ width:22, height:22, borderRadius:6, border:`2px solid ${item.hecho ? COLORS.teal : COLORS.slate300}`, background: item.hecho ? COLORS.teal : 'white', display:'flex', alignItems:'center', justifyContent:'center', color:'white', flexShrink:0 }}>
                 {item.hecho && Icon('Check')}
               </div>
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:13, color: item.hecho ? COLORS.slate400 : COLORS.ink, textDecoration: item.hecho ? 'line-through' : 'none' }}>{item.item}</div>
-                {item.fecha_completado && <div style={{ fontSize:10, color:COLORS.slate400, fontFamily:'var(--font-mono)', marginTop:2 }}>✓ {item.fecha_completado}</div>}
+                <div style={{ fontSize:13, fontWeight:500, color: item.hecho ? COLORS.slate500 : COLORS.ink, textDecoration: item.hecho ? 'line-through' : 'none' }}>{item.item}</div>
+                {item.notas && <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2 }}>{item.notas}</div>}
+                {item.fecha_completado && <div style={{ fontSize:10, color:COLORS.slate400, marginTop:2, fontFamily:'var(--font-mono)' }}>Completado {item.fecha_completado}</div>}
               </div>
             </div>
           ))}
-          <div style={{ display:'flex', gap:8, marginTop:16, paddingTop:16, borderTop:`1px solid ${COLORS.slate100}` }}>
-            <input value={nuevoItem} onChange={e=>setNuevoItem(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') agregar() }} placeholder="Agregar item al checklist..." style={{ flex:1, padding:'10px 12px', border:`1px solid ${COLORS.slate200}`, borderRadius:8, fontSize:13, outline:'none', fontFamily:'var(--font-sans)' }}/>
-            <button onClick={agregar} style={{ padding:'10px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>{Icon('Plus')}</button>
-          </div>
         </div>
       )}
     </div>
