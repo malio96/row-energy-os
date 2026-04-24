@@ -4,11 +4,24 @@ import {
   getPlantillas, getPlantillaActividades, crearProyectoDesdePlantilla,
   actualizarActividad, crearActividad, desglosarActividadConPlantilla,
   agregarDependencia, quitarDependencia, recalcularFechasDesde,
+  // v13.3: recalcular padre cuando se mueve un hijo
+  recalcularPadre,
   // v7: helpers agregados
   getHitosProyecto, getNotasProyecto, crearNotaProyecto, eliminarNota, extraerMenciones,
   // v8: helpers nuevos
   duplicarActividad, eliminarActividad, cambiarImportancia,
+  // v12: helpers nuevos
+  duplicarProyecto, calcularAvancePonderado, validarSumaPesos, marcarCobrable,
 } from './supabase'
+
+// v14.1: helpers para persistir preferencias simples en localStorage
+const loadPref = (key, fallback) => {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v) }
+  catch { return fallback }
+}
+const savePref = (key, value) => {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+}
 
 const COLORS = {
   navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56', tealLight:'#E1F5EE',
@@ -49,6 +62,31 @@ const IMPORTANCIA = {
   'baja':  { label:'Baja',  bg:'#E0EDFF', color:'#1B3A6B', dot:'#3B82F6' },
 }
 
+// v12: Clasificación A/B/C (pide Luis)
+const CLASIFICACION = {
+  'A': { label:'Clase A', bg:'#FEF2F2', color:'#991B1B', dot:'#DC2626' },
+  'B': { label:'Clase B', bg:'#FEF3C7', color:'#854F0B', dot:'#D97706' },
+  'C': { label:'Clase C', bg:'#E0EDFF', color:'#1E3A8A', dot:'#3B82F6' },
+}
+
+// v12: Prioridad Alta/Media/Baja
+const PRIORIDAD = {
+  'Alta':  { label:'Alta',  bg:'#FEF2F2', color:'#DC2626', dot:'#DC2626' },
+  'Media': { label:'Media', bg:'#FEF3C7', color:'#D97706', dot:'#F59E0B' },
+  'Baja':  { label:'Baja',  bg:'#F0FDF4', color:'#15803D', dot:'#22C55E' },
+}
+
+// v12: Tipos de proyecto
+const TIPOS_PROYECTO = ['Conexión', 'Interconexión', 'Almacenamiento', 'Estudios Eléctricos', 'Otros']
+
+// v12: Estados de cobro
+const ESTADOS_COBRO = {
+  'NA':         { label:'N/A',         bg:'#F1F5F9', color:'#64748B' },
+  'Pendiente':  { label:'Pendiente',   bg:'#FEF3C7', color:'#D97706' },
+  'En proceso': { label:'En proceso',  bg:'#E0EDFF', color:'#1B3A6B' },
+  'Cobrado':    { label:'Cobrado',     bg:'#E1F5EE', color:'#0F6E56' },
+}
+
 const toDate = s => s ? new Date(s + 'T00:00:00') : new Date()
 const toStr = d => d.toISOString().split('T')[0]
 const diffDays = (a, b) => Math.round((toDate(b) - toDate(a)) / 86400000)
@@ -80,6 +118,122 @@ function generarNumeracion(actividades) {
   }
   asignar(null, '')
   return numeros
+}
+
+// ============================================================
+// v14.1 — CRITICAL PATH METHOD (CPM)
+// Algoritmo estándar PMI/MS Project:
+// 1. Forward pass: calcula ES (Early Start) y EF (Early Finish)
+//    - ES = max(EF de predecesoras), EF = ES + duración
+// 2. Backward pass: calcula LS (Late Start) y LF (Late Finish)
+//    - LF = min(LS de sucesoras), LS = LF - duración
+// 3. Total Float (holgura) = LS - ES
+// 4. Actividad crítica ↔ float = 0 → retrasarla atrasa todo el proyecto
+//
+// Retorna un mapa: { [actId]: { es, ef, ls, lf, float, critica } }
+// con fechas en ms desde epoch para cálculos precisos.
+// ============================================================
+function calcularRutaCritica(actividades) {
+  // Solo trabajamos con actividades que NO son padres (hojas del árbol)
+  // Los padres son contenedores visuales, no nodos del grafo CPM.
+  const hijos = actividades.filter(a => !a.es_servicio_padre)
+  if (hijos.length === 0) return {}
+
+  const cpm = {}
+  const byId = {}
+  hijos.forEach(a => {
+    byId[a.id] = a
+    const iniMs = toDate(a.inicio).getTime()
+    const finMs = toDate(a.fin).getTime()
+    const durDias = Math.max(0, Math.round((finMs - iniMs) / 86400000))
+    cpm[a.id] = {
+      iniMs, finMs, durDias,
+      es: null, ef: null, ls: null, lf: null,
+      float: null, critica: false,
+    }
+  })
+
+  // Filtrar deps: solo apuntan a hijos que existen en el mapa
+  const depsDe = (actId) => {
+    const act = byId[actId]
+    if (!act || !act.deps) return []
+    return act.deps.map(d => d.id).filter(id => byId[id])
+  }
+
+  // ========== FORWARD PASS ==========
+  // Procesar en orden topológico (memoizado con DFS)
+  const calcES = (id, pila = new Set()) => {
+    if (cpm[id].es !== null) return cpm[id].ef
+    if (pila.has(id)) return cpm[id].iniMs  // ciclo: fallback a fecha actual
+    pila.add(id)
+
+    const preds = depsDe(id)
+    let es
+    if (preds.length === 0) {
+      // Sin predecesoras: ES = fecha planeada de inicio
+      es = cpm[id].iniMs
+    } else {
+      // ES = max(EF de todas las predecesoras) + 1 día (FS)
+      es = preds.reduce((max, predId) => {
+        const predEf = calcES(predId, pila)
+        const efSiguiente = predEf + 86400000  // +1 día por FS estricto
+        return efSiguiente > max ? efSiguiente : max
+      }, cpm[id].iniMs)  // o la fecha planeada original si es más tardía
+    }
+
+    cpm[id].es = es
+    cpm[id].ef = es + cpm[id].durDias * 86400000
+    pila.delete(id)
+    return cpm[id].ef
+  }
+
+  hijos.forEach(a => calcES(a.id))
+
+  // Fecha final del proyecto = max EF
+  const projectEnd = Object.values(cpm).reduce((max, c) => c.ef > max ? c.ef : max, 0)
+
+  // ========== BACKWARD PASS ==========
+  // Sucesoras: actividades que tienen a `id` en sus deps
+  const sucesorasDe = (id) => hijos.filter(h => (h.deps || []).some(d => d.id === id)).map(h => h.id)
+
+  const calcLF = (id, pila = new Set()) => {
+    if (cpm[id].lf !== null) return cpm[id].ls
+    if (pila.has(id)) return cpm[id].ef
+    pila.add(id)
+
+    const sucs = sucesorasDe(id)
+    let lf
+    if (sucs.length === 0) {
+      // Sin sucesoras: LF = fin del proyecto
+      lf = projectEnd
+    } else {
+      // LF = min(LS de sucesoras) - 1 día (FS inverso)
+      lf = sucs.reduce((min, sucId) => {
+        const sucLs = calcLF(sucId, pila)
+        const lsAnterior = sucLs - 86400000  // -1 día
+        return lsAnterior < min ? lsAnterior : min
+      }, Infinity)
+    }
+
+    cpm[id].lf = lf
+    cpm[id].ls = lf - cpm[id].durDias * 86400000
+    pila.delete(id)
+    return cpm[id].ls
+  }
+
+  hijos.forEach(a => calcLF(a.id))
+
+  // ========== FLOAT + CRÍTICAS ==========
+  Object.keys(cpm).forEach(id => {
+    const c = cpm[id]
+    if (c.ls !== null && c.es !== null) {
+      c.float = Math.round((c.ls - c.es) / 86400000)
+      // Tolerancia: considerar crítica si float <= 0 (puede ser negativo si hay atraso)
+      c.critica = c.float <= 0
+    }
+  })
+
+  return cpm
 }
 
 const Icon = {
@@ -240,6 +394,23 @@ function BadgeImportancia({ importancia, tamano='mini' }) {
   )
 }
 
+// v12: Badge genérico para Clasificación, Prioridad, Tipo
+function BadgeChip({ texto, mapa, label, tamano='normal' }) {
+  if (!texto) return null
+  const cfg = mapa ? mapa[texto] : null
+  const bg = cfg?.bg || '#F1F5F9'
+  const color = cfg?.color || '#64748B'
+  const labelFinal = cfg?.label || texto
+  if (tamano === 'mini') {
+    return <span title={label ? `${label}: ${labelFinal}` : labelFinal} style={{ width:6, height:6, borderRadius:'50%', background: cfg?.dot || color, flexShrink:0 }}/>
+  }
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:4, background:bg, color, whiteSpace:'nowrap' }}>
+      {labelFinal}
+    </span>
+  )
+}
+
 // ============================================================
 // v8: MenuContextual - menú al click derecho sobre actividad
 // ============================================================
@@ -355,7 +526,7 @@ function MenuContextual({ x, y, actividad, onClose, onAbrirInfo, onDuplicar, onE
   )
 }
 
-function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose, onCambio }) {
+function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose, onCambio, onEliminar }) {
   const [loc, setLoc] = useState(actividad)
   const [guardando, setGuardando] = useState(false)
   const [predSel, setPredSel] = useState('')
@@ -522,10 +693,100 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
               <button onClick={agregarDep} disabled={!predSel || guardando} style={{ padding:'8px 12px', background:COLORS.teal, color:'white', border:'none', borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', opacity: !predSel ? 0.5 : 1 }}>+</button>
             </div>
           </div>
+
+          {/* v12: Peso ponderado (solo dirección/admin) */}
+          <div style={{ padding:'14px 12px', background:COLORS.slate50, borderRadius:8, marginBottom:10 }}>
+            <label style={{ ...miniLabel, display:'flex', alignItems:'center', gap:6 }}>
+              <Icon.Scale/> Peso ponderado (fórmula Luis)
+            </label>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6 }}>
+              <input
+                type="number" min="0" max="100" step="1"
+                value={loc.peso || 0}
+                onChange={e => {
+                  const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
+                  setLoc(prev => ({ ...prev, peso: v }))
+                }}
+                onBlur={() => guardar({ peso: loc.peso || 0 })}
+                style={{ ...inputStyle, width:80, textAlign:'right', fontFamily:'var(--font-mono)', fontWeight:700 }}
+              />
+              <span style={{ fontSize:12, color:COLORS.slate500, fontWeight:600 }}>%</span>
+              <span style={{ flex:1, fontSize:10, color:COLORS.slate500 }}>
+                Los pesos de actividades hermanas deben sumar 100%
+              </span>
+            </div>
+          </div>
+
+          {/* v12: Actividad cobrable */}
+          <div style={{ padding:'14px 12px', background: loc.es_cobrable ? '#F0FDF4' : COLORS.slate50, border: loc.es_cobrable ? `1px solid #86EFAC` : 'none', borderRadius:8, marginBottom:10 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: loc.es_cobrable ? 10 : 0 }}>
+              <input
+                type="checkbox" id="cobrable"
+                checked={!!loc.es_cobrable}
+                onChange={e => {
+                  const val = e.target.checked
+                  setLoc(prev => ({ ...prev, es_cobrable: val, estado_cobro: val ? (prev.estado_cobro || 'Pendiente') : 'NA' }))
+                  guardar({ es_cobrable: val, estado_cobro: val ? (loc.estado_cobro || 'Pendiente') : 'NA' })
+                }}
+              />
+              <label htmlFor="cobrable" style={{ fontSize:12, color:COLORS.slate600, cursor:'pointer', fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+                <Icon.Dollar/> Es cobrable
+              </label>
+            </div>
+            {loc.es_cobrable && (
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                <div>
+                  <label style={miniLabel}>Estado</label>
+                  <select
+                    value={loc.estado_cobro || 'Pendiente'}
+                    onChange={e => guardar({ estado_cobro: e.target.value })}
+                    style={selectStyle}
+                  >
+                    {Object.keys(ESTADOS_COBRO).filter(k => k !== 'NA').map(k => <option key={k} value={k}>{ESTADOS_COBRO[k].label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={miniLabel}>Monto</label>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={loc.monto_cobrable || ''}
+                    onChange={e => setLoc(prev => ({ ...prev, monto_cobrable: e.target.value }))}
+                    onBlur={e => guardar({ monto_cobrable: e.target.value ? parseFloat(e.target.value) : null })}
+                    placeholder="0.00"
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ display:'flex', gap:8, alignItems:'center', padding:'10px 12px', background:COLORS.slate50, borderRadius:8 }}>
             <input type="checkbox" id="mstone" checked={!!loc.es_milestone} onChange={e => guardar({ es_milestone: e.target.checked })}/>
             <label htmlFor="mstone" style={{ fontSize:12, color:COLORS.slate600, cursor:'pointer' }}>Es milestone (hito)</label>
           </div>
+
+          {/* v11: Zona de peligro - Eliminar actividad */}
+          {onEliminar && (
+            <div style={{ marginTop:24, padding:'14px 14px', background:'#FEF2F2', border:`1px solid #FECACA`, borderRadius:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:COLORS.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Zona de peligro</div>
+              <button
+                onClick={() => { onEliminar(actividad); onClose() }}
+                disabled={guardando}
+                style={{
+                  width:'100%', padding:'10px 14px',
+                  background:'white', color:COLORS.red,
+                  border:`1.5px solid ${COLORS.red}`, borderRadius:8,
+                  fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                  transition:'all 0.15s'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = COLORS.red; e.currentTarget.style.color = 'white' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.red }}
+              >
+                <Icon.Trash/> Eliminar esta actividad
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -595,6 +856,35 @@ function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
             <div><label style={miniLabel}>Inicio</label><input type="date" value={loc.inicio || ''} onChange={e => guardar({ inicio: e.target.value })} style={inputStyle}/></div>
             <div><label style={miniLabel}>Cierre</label><input type="date" value={loc.cierre || ''} onChange={e => guardar({ cierre: e.target.value })} style={inputStyle}/></div>
           </div>
+          {/* v12: Clasificación, Prioridad, Tipo (Luis) */}
+          <div style={{ padding:'12px 12px', background:COLORS.slate50, borderRadius:8, marginBottom:16 }}>
+            <div style={{ ...miniLabel, marginBottom:8, fontWeight:700 }}>Clasificación</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+              <div>
+                <label style={miniLabel}>Clase</label>
+                <select value={loc.clasificacion || ''} onChange={e => guardar({ clasificacion: e.target.value || null })} style={selectStyle}>
+                  <option value="">—</option>
+                  <option value="A">A — Alta</option>
+                  <option value="B">B — Media</option>
+                  <option value="C">C — Baja</option>
+                </select>
+              </div>
+              <div>
+                <label style={miniLabel}>Prioridad</label>
+                <select value={loc.prioridad || 'Media'} onChange={e => guardar({ prioridad: e.target.value })} style={selectStyle}>
+                  <option value="Alta">Alta</option>
+                  <option value="Media">Media</option>
+                  <option value="Baja">Baja</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={miniLabel}>Tipo</label>
+              <select value={loc.tipo_proyecto || 'Otros'} onChange={e => guardar({ tipo_proyecto: e.target.value })} style={selectStyle}>
+                {TIPOS_PROYECTO.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
             <div>
               <label style={miniLabel}>Capacidad MW</label>
@@ -626,7 +916,7 @@ function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
   )
 }
 
-function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual }) {
+function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep }) {
   const [zoom, setZoom] = useState('dia')
   const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 8)
   const ROW_HEIGHT = 42
@@ -645,12 +935,21 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
   useEffect(() => { setActividades(actividadesProp) }, [actividadesProp])
 
   const [hoveredId, setHoveredId] = useState(null)
+  const [depHover, setDepHover] = useState(null)  // v11: hover sobre flecha de dependencia (para borrarla)
   const [tooltip, setTooltip] = useState(null)
   const [drag, setDrag] = useState(null)
   const [dropTargetId, setDropTargetId] = useState(null)
-  const [, forceRender] = useState(0)
+  const [dragTick, setDragTick] = useState(0)  // v13.2: fuerza re-render del rubber-band
+  // v14.1: toggle para mostrar/ocultar ruta crítica
+  const [mostrarRutaCritica, setMostrarRutaCritica] = useState(() => loadPref('gantt.critical', false))
+  useEffect(() => { savePref('gantt.critical', mostrarRutaCritica) }, [mostrarRutaCritica])
 
   const numeracion = useMemo(() => generarNumeracion(actividades), [actividades])
+
+  // v14.1: calcular ruta crítica (CPM) una sola vez cuando cambian las actividades
+  const cpm = useMemo(() => calcularRutaCritica(actividades), [actividades])
+  const hayActividadesCriticas = useMemo(() =>
+    Object.values(cpm).some(c => c.critica), [cpm])
 
   const fechaInicio = useMemo(() => {
     if (actividades.length === 0) return toDate(toStr(new Date()))
@@ -751,7 +1050,7 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
       if (!dragStateRef.current) return
       dragStateRef.current.mouseX = e.clientX
       dragStateRef.current.mouseY = e.clientY
-      forceRender(v => v + 1)
+      setDragTick(t => t + 1)  // v13.2: Provoca re-render del rubber-band SVG
       if (drag.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
@@ -795,11 +1094,31 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
           if (nuevoFin <= d.originalInicio) { dragStateRef.current = null; return }
           cambios.fin = nuevoFin
         }
-        setActividades(prev => prev.map(a => a.id === d.actId ? { ...a, ...cambios } : a))
+        // v13.3: actualización optimista — aplicar cambios también al padre si existe
+        const actividadMovida = actividades.find(a => a.id === d.actId)
+        const parentId = actividadMovida?.parent_id
+
+        setActividades(prev => {
+          const nuevo = prev.map(a => a.id === d.actId ? { ...a, ...cambios } : a)
+          // Si esta actividad tiene padre, recalcular las fechas del padre
+          if (parentId) {
+            const hermanos = nuevo.filter(a => a.parent_id === parentId)
+            if (hermanos.length > 0) {
+              const minInicio = hermanos.reduce((min, h) => !min || h.inicio < min ? h.inicio : min, null)
+              const maxFin = hermanos.reduce((max, h) => !max || h.fin > max ? h.fin : max, null)
+              return nuevo.map(a => a.id === parentId ? { ...a, inicio: minInicio, fin: maxFin } : a)
+            }
+          }
+          return nuevo
+        })
         dragStateRef.current = null
         try {
+          // v13.3: solo actualizar la actividad movida.
+          // recalcularFechasDesde ahora respeta el movimiento del usuario (no jala hacia atrás).
+          // recalcularPadre actualiza el padre si aplica.
           await actualizarActividad(d.actId, cambios)
           await recalcularFechasDesde(d.actId)
+          if (parentId) await recalcularPadre(parentId)
           onRecargar()
         } catch (err) {
           setActividades(actividadesProp)
@@ -821,17 +1140,36 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
     setDrag(state)
   }
 
+  // v13.3: buildOrthPath con distancia FIJA del codo
+  // Problema anterior: midX = sx + (ex-sx)/2 → flechas largas cuando hay mucho espacio.
+  // Ahora: codo siempre a ~12px después del fin de la predecesora → estilo MS Project.
   const buildOrthPath = (x1, y1, x2, y2) => {
-    const STUB = 8, ARROW_STUB = 6
+    const STUB = 12       // distancia fija del codo después de predecesora
+    const ARROW_STUB = 8  // distancia antes del target para el marcador
+    const R = 4           // radio de esquinas
     const sx = x1 + STUB
     const ex = x2 - ARROW_STUB
-    if (ex > sx + 10) {
-      const midX = sx + Math.max(12, (ex - sx) / 2)
-      return `M ${x1} ${y1} L ${sx} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${ex} ${y2}`
-    } else {
+
+    // Caso normal: suficiente espacio horizontal para codo en "L invertida"
+    if (ex > sx + 8) {
+      const midX = sx  // codo SIEMPRE a distancia STUB del origen (consistente)
       const goDown = y2 > y1
-      const midY = y1 + (goDown ? ROW_HEIGHT/2 : -ROW_HEIGHT/2)
-      return `M ${x1} ${y1} L ${sx} ${y1} L ${sx} ${midY} L ${ex - 12} ${midY} L ${ex - 12} ${y2} L ${ex} ${y2}`
+      const dir = goDown ? 1 : -1
+
+      // Si están en la misma fila, línea recta
+      if (Math.abs(y2 - y1) < 1) {
+        return `M ${x1} ${y1} L ${ex} ${y2}`
+      }
+
+      // L normal: horizontal corto → esquina → vertical → esquina → horizontal al target
+      return `M ${x1} ${y1} L ${midX - R} ${y1} Q ${midX} ${y1} ${midX} ${y1 + R*dir} L ${midX} ${y2 - R*dir} Q ${midX} ${y2} ${midX + R} ${y2} L ${ex} ${y2}`
+    } else {
+      // Caso "loop back": predecesora termina a la derecha del target (overlap)
+      const goDown = y2 > y1
+      const dir = goDown ? 1 : -1
+      const midY = y1 + (ROW_HEIGHT/2) * dir
+      const leftX = ex - 16
+      return `M ${x1} ${y1} L ${sx - R} ${y1} Q ${sx} ${y1} ${sx} ${y1 + R*dir} L ${sx} ${midY - R*dir} Q ${sx} ${midY} ${sx - R} ${midY} L ${leftX + R} ${midY} Q ${leftX} ${midY} ${leftX} ${midY + R*dir} L ${leftX} ${y2 - R*dir} Q ${leftX} ${y2} ${leftX + R} ${y2} L ${ex} ${y2}`
     }
   }
 
@@ -845,9 +1183,25 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
         const predRow = rowByActId[pred.id]
         if (predRow === undefined) return
         const predPrev = previewActividad(pred)
-        const x1 = getX(predPrev.inicio) + getW(predPrev.inicio, predPrev.fin)
+
+        // v13.3.1: puntos de conexión especiales para milestones (rombos)
+        // Un milestone se renderiza como rombo de 20px centrado en x + DAY_WIDTH/2
+        // Por eso su punto "derecho" es centro+10 y su "izquierdo" es centro-10
+        let x1, x2
+        if (pred.es_milestone) {
+          // Salida del rombo: lado derecho
+          x1 = getX(predPrev.inicio) + DAY_WIDTH/2 + 10
+        } else {
+          x1 = getX(predPrev.inicio) + getW(predPrev.inicio, predPrev.fin)
+        }
+        if (act.es_milestone) {
+          // Entrada al rombo: lado izquierdo
+          x2 = getX(inicio) + DAY_WIDTH/2 - 10
+        } else {
+          x2 = getX(inicio)
+        }
+
         const y1 = predRow * ROW_HEIGHT + ROW_HEIGHT / 2
-        const x2 = getX(inicio)
         const y2 = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2
         lineas.push({
           id: `${pred.id}-${act.id}`,
@@ -867,12 +1221,15 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
     const prev = previewActividad(act)
     const rect = timelineRef.current.getBoundingClientRect()
     const scrollLeft = scrollRef.current?.scrollLeft || 0
-    const x1 = getX(prev.inicio) + getW(prev.inicio, prev.fin)
+    // v13.3.1: si el origen es milestone, el punto de salida es el lado derecho del rombo
+    const x1 = act.es_milestone
+      ? getX(prev.inicio) + DAY_WIDTH/2 + 10
+      : getX(prev.inicio) + getW(prev.inicio, prev.fin)
     const y1 = rowByActId[act.id] * ROW_HEIGHT + ROW_HEIGHT / 2
     const x2 = dragStateRef.current.mouseX - rect.left + scrollLeft
     const y2 = dragStateRef.current.mouseY - rect.top
     return buildOrthPath(x1, y1, x2, y2)
-  }, [drag, actividades, rowByActId, previewActividad, DAY_WIDTH])
+  }, [drag, dragTick, actividades, rowByActId, previewActividad, DAY_WIDTH])
 
   const getNivel = id => (numeracion[id] || '').split('.').length - 1
   const totalHeight = actOrdenadas.length * ROW_HEIGHT
@@ -900,6 +1257,35 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
           if (hoyIdx >= 0 && scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, hoyIdx * DAY_WIDTH - 200), behavior:'smooth' })
         }} style={{ padding:'6px 10px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}>
           <Icon.Calendar/> Ir a hoy
+        </button>
+        {/* v14.1: Toggle Ruta Crítica */}
+        <button
+          onClick={() => setMostrarRutaCritica(v => !v)}
+          title={mostrarRutaCritica ? 'Ocultar ruta crítica' : 'Mostrar ruta crítica (actividades que determinan la fecha final del proyecto)'}
+          style={{
+            padding:'6px 12px',
+            background: mostrarRutaCritica ? COLORS.red : 'white',
+            border: `1px solid ${mostrarRutaCritica ? COLORS.red : COLORS.slate200}`,
+            borderRadius:7,
+            fontSize:11, fontWeight:600, cursor:'pointer',
+            color: mostrarRutaCritica ? 'white' : COLORS.slate600,
+            display:'flex', alignItems:'center', gap:5,
+            transition:'all 0.12s',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+          Ruta crítica
+          {mostrarRutaCritica && hayActividadesCriticas && (
+            <span style={{
+              marginLeft:4, padding:'1px 6px',
+              background:'rgba(255,255,255,0.25)',
+              borderRadius:10, fontSize:10, fontWeight:700,
+            }}>
+              {Object.values(cpm).filter(c => c.critica).length}
+            </span>
+          )}
         </button>
         <div style={{ marginLeft:'auto', fontSize:10, color:COLORS.slate500, fontStyle:'italic' }}>
           Arrastra barras · doble clic para detalles · punto verde para dependencias
@@ -1000,7 +1386,7 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
                   style={{ position:'absolute', left:0, right:0, top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, background: hoveredId === act.id ? 'rgba(10, 37, 64, 0.02)' : 'transparent', zIndex: 1 }}/>
               ))}
               <div style={{ position:'absolute', left:0, right:0, top: actOrdenadas.length * ROW_HEIGHT, height: ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, background:'transparent', zIndex:1 }}/>
-              <svg style={{ position:'absolute', inset:0, width:totalWidth, height: totalHeight, pointerEvents:'none', zIndex:2, overflow:'visible' }}>
+              <svg style={{ position:'absolute', inset:0, width:totalWidth, height: totalHeight, zIndex:2, overflow:'visible' }}>
                 <defs>
                   <marker id="dep-dot" markerWidth="8" markerHeight="8" refX="4" refY="4" markerUnits="userSpaceOnUse">
                     <circle cx="4" cy="4" r="3" fill={COLORS.slate500}/>
@@ -1011,11 +1397,79 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
                   <marker id="dep-dot-ghost" markerWidth="8" markerHeight="8" refX="4" refY="4" markerUnits="userSpaceOnUse">
                     <circle cx="4" cy="4" r="3" fill={COLORS.teal}/>
                   </marker>
+                  <marker id="dep-dot-del" markerWidth="8" markerHeight="8" refX="4" refY="4" markerUnits="userSpaceOnUse">
+                    <circle cx="4" cy="4" r="3.5" fill={COLORS.red}/>
+                  </marker>
+                  {/* v13.2: marker verde para drop target válido */}
+                  <marker id="dep-dot-valid" markerWidth="12" markerHeight="12" refX="6" refY="6" markerUnits="userSpaceOnUse">
+                    <circle cx="6" cy="6" r="5" fill="#16A34A"/>
+                    <circle cx="6" cy="6" r="2.5" fill="white"/>
+                  </marker>
+                  {/* v14.1: marker rojo para ruta crítica */}
+                  <marker id="dep-dot-critical" markerWidth="10" markerHeight="10" refX="5" refY="5" markerUnits="userSpaceOnUse">
+                    <circle cx="5" cy="5" r="4" fill={COLORS.red}/>
+                  </marker>
                 </defs>
-                {lineasDeps.map(l => (
-                  <path key={l.id} d={l.path} fill="none" stroke={l.highlighted ? COLORS.teal : COLORS.slate400} strokeWidth={l.highlighted ? 2 : 1.5} opacity={l.highlighted ? 1 : 0.55} markerEnd={l.highlighted ? 'url(#dep-dot-hl)' : 'url(#dep-dot)'} style={{ transition: drag ? 'none' : 'stroke 0.15s, opacity 0.15s' }}/>
-                ))}
-                {dragDepPath && <path d={dragDepPath} fill="none" stroke={COLORS.teal} strokeWidth={2} strokeDasharray="5 4" markerEnd="url(#dep-dot-ghost)"/>}
+                {lineasDeps.map(l => {
+                  const isBeingDeleted = depHover === l.id
+                  // v14.1: si ambas actividades de la flecha son críticas Y está activo el toggle, pintar rojo
+                  const esCriticaFrom = mostrarRutaCritica && cpm[l.fromId]?.critica
+                  const esCriticaTo = mostrarRutaCritica && cpm[l.toId]?.critica
+                  const esFlechaCritica = esCriticaFrom && esCriticaTo
+                  const stroke = isBeingDeleted
+                    ? COLORS.red
+                    : esFlechaCritica
+                      ? COLORS.red
+                      : (l.highlighted ? COLORS.teal : COLORS.slate400)
+                  const markerId = isBeingDeleted
+                    ? 'dep-dot-del'
+                    : esFlechaCritica
+                      ? 'dep-dot-critical'
+                      : (l.highlighted ? 'dep-dot-hl' : 'dep-dot')
+                  return (
+                    <g key={l.id} style={{ pointerEvents:'auto' }}>
+                      {/* Hit area invisible (grueso para fácil click) */}
+                      <path d={l.path} fill="none" stroke="transparent" strokeWidth={14}
+                        style={{ cursor:'pointer' }}
+                        onMouseEnter={() => setDepHover(l.id)}
+                        onMouseLeave={() => setDepHover(null)}
+                        onClick={() => onQuitarDep?.(l.fromId, l.toId)}
+                      />
+                      {/* Flecha visible — más gruesa si es crítica */}
+                      <path d={l.path} fill="none" stroke={stroke}
+                        strokeWidth={esFlechaCritica ? 2.5 : (isBeingDeleted ? 2.2 : (l.highlighted ? 2 : 1.5))}
+                        opacity={isBeingDeleted ? 1 : (esFlechaCritica ? 0.95 : (l.highlighted ? 1 : 0.55))}
+                        markerEnd={`url(#${markerId})`}
+                        style={{ transition: drag ? 'none' : 'stroke 0.15s, opacity 0.15s, stroke-width 0.15s', pointerEvents:'none' }}
+                      />
+                    </g>
+                  )
+                })}
+                {/* v13.2: Rubber-band mejorado — cambia color según haya target válido */}
+                {dragDepPath && (
+                  <>
+                    {/* Línea gruesa base, semi-transparente */}
+                    <path
+                      d={dragDepPath}
+                      fill="none"
+                      stroke={dropTargetId ? '#16A34A' : COLORS.teal}
+                      strokeWidth={4}
+                      strokeDasharray="6 4"
+                      opacity={dropTargetId ? 0.35 : 0.2}
+                      style={{ pointerEvents:'none' }}
+                    />
+                    {/* Línea principal */}
+                    <path
+                      d={dragDepPath}
+                      fill="none"
+                      stroke={dropTargetId ? '#16A34A' : COLORS.teal}
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      markerEnd={dropTargetId ? 'url(#dep-dot-valid)' : 'url(#dep-dot-ghost)'}
+                      style={{ pointerEvents:'none' }}
+                    />
+                  </>
+                )}
               </svg>
               {actOrdenadas.map((act, rowIdx) => {
                 const estadoCfg = ESTADOS[act.estado] || ESTADOS['Sin iniciar']
@@ -1029,43 +1483,274 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
                 const isDropTarget = dropTargetId === act.id
                 const barTop = rowIdx * ROW_HEIGHT + (esPadre ? 8 : BAR_VPAD)
                 const barH = esPadre ? BAR_HEIGHT_PADRE : BAR_HEIGHT
+                // v14.1: info de ruta crítica para esta actividad
+                const cpmInfo = cpm[act.id]
+                const esCritica = mostrarRutaCritica && !esPadre && cpmInfo?.critica
+                const holguraDias = cpmInfo?.float ?? null
 
                 if (esMilestone) {
+                  // v13.3.1: Milestone (rombo) con dots de dependencia
+                  // Usa la misma lógica de hitbox extendida que las barras normales
+                  const mLeft = x + DAY_WIDTH/2 - 10  // Posición izquierda del rombo (20px de ancho)
+                  const mTop = rowIdx * ROW_HEIGHT + ROW_HEIGHT/2 - 10
+                  const dragDepActivo = drag && drag.tipo === 'dep'
+                  const esOrigen = dragDepActivo && drag.actId === act.id
+                  const visibleNormal = (isHovered || isDraggedNow) && !dragDepActivo
+                  const visibleComoOrigen = esOrigen
+                  const visibleComoTarget = dragDepActivo && !esOrigen
+                  const mostrarDots = visibleNormal || visibleComoOrigen || visibleComoTarget
+                  const esTarget = visibleComoTarget && isDropTarget
+                  const colorDot = esTarget ? '#16A34A' : COLORS.teal
+
+                  const dotStyle = {
+                    position:'absolute',
+                    top:'50%', transform:'translateY(-50%)',
+                    width:12, height:12, borderRadius:'50%',
+                    background:'white',
+                    border:`2px solid ${colorDot}`,
+                    boxShadow:`0 2px 6px rgba(15,110,86,0.4)`,
+                    cursor:'crosshair', zIndex:15,
+                    borderStyle: visibleComoTarget && !esTarget ? 'dashed' : 'solid',
+                    opacity: visibleComoTarget && !esTarget ? 0.5 : 1,
+                    transition:'transform 0.08s, border-color 0.12s',
+                  }
+
                   return (
                     <div key={act.id} data-act-id={act.id}
-                      onMouseDown={(e) => iniciarDrag(e, act, 'move')}
-                      onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
+                      style={{
+                        position:'absolute',
+                        // Hitbox extendida: 20px a cada lado para capturar hover en dots
+                        left: mLeft - 20,
+                        top: mTop,
+                        width: 20 + 40, // rombo (20) + 40px de hitbox
+                        height: 20,
+                        zIndex: isDraggedNow ? 10 : 3,
+                      }}
                       onMouseEnter={(e) => { setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
                       onMouseMove={(e) => !drag && setTooltip({ act, x: e.clientX, y: e.clientY })}
                       onMouseLeave={() => { setHoveredId(null); setTooltip(null) }}
-                      onDoubleClick={() => onAbrirInfo(act)}
-                      style={{ position:'absolute', left: x + DAY_WIDTH/2 - 10, top: rowIdx * ROW_HEIGHT + ROW_HEIGHT/2 - 10, width:20, height:20, background: estadoCfg.bar, transform:'rotate(45deg)', borderRadius:3, boxShadow: isHovered ? '0 4px 10px rgba(0,0,0,0.2)' : '0 2px 6px rgba(0,0,0,0.15)', cursor: 'grab', zIndex: 3 }}/>
+                    >
+                      {/* Contenedor relativo para posicionar rombo + dots */}
+                      <div style={{ position:'relative', width:'100%', height:'100%' }}>
+                        {/* EL ROMBO (el drag 'move' va aquí) */}
+                        <div
+                          onMouseDown={(e) => iniciarDrag(e, act, 'move')}
+                          onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
+                          onDoubleClick={() => onAbrirInfo(act)}
+                          style={{
+                            position:'absolute',
+                            left: 20,  // desplazado 20px dentro del hitbox
+                            top: 0,
+                            width: 20, height: 20,
+                            // v14.1: rombo rojo si es crítico
+                            background: esCritica ? COLORS.red : estadoCfg.bar,
+                            transform:'rotate(45deg)',
+                            borderRadius:3,
+                            boxShadow: isDropTarget
+                              ? `0 0 0 3px ${COLORS.teal}, 0 4px 12px rgba(15,110,86,0.5)`
+                              : esCritica
+                                ? `0 0 0 2px rgba(220,38,38,0.3), 0 3px 8px rgba(220,38,38,0.4)`
+                                : (isHovered ? '0 4px 10px rgba(0,0,0,0.2)' : '0 2px 6px rgba(0,0,0,0.15)'),
+                            cursor:'grab',
+                            zIndex:3,
+                            transition: drag ? 'none' : 'box-shadow 0.15s, background 0.2s',
+                          }}
+                        />
+
+                        {/* DOT IZQUIERDO — separado del rombo */}
+                        {mostrarDots && (visibleNormal || visibleComoTarget) && (
+                          <div
+                            onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
+                            title="Arrastra a otra actividad para crear dependencia"
+                            style={{
+                              ...dotStyle,
+                              left: 4,  // 4px desde el borde izq del hitbox
+                              transform: isHovered && !dragDepActivo
+                                ? 'translateY(-50%) scale(1.15)'
+                                : 'translateY(-50%)',
+                            }}
+                          />
+                        )}
+
+                        {/* DOT DERECHO */}
+                        {mostrarDots && (
+                          <div
+                            onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
+                            title="Arrastra a otra actividad para crear dependencia"
+                            style={{
+                              ...dotStyle,
+                              right: 4,  // 4px desde el borde der del hitbox
+                              transform: isHovered && !dragDepActivo
+                                ? 'translateY(-50%) scale(1.15)'
+                                : 'translateY(-50%)',
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
                   )
                 }
                 return (
                   <div key={act.id} data-act-id={act.id}
-                    style={{ position:'absolute', left: x, top: barTop, width: w, height: barH, zIndex: isDraggedNow ? 10 : 3 }}>
-                    <div style={{ position:'relative', width:'100%', height:'100%' }}>
+                    style={{
+                      position:'absolute',
+                      // v13.2: hitbox extendida 20px en cada lado para capturar
+                      // el hover cuando el mouse va hacia los dots que están AFUERA
+                      left: x - 20,
+                      top: barTop,
+                      width: w + 40,
+                      height: barH,
+                      zIndex: isDraggedNow ? 10 : 3,
+                      // El hover del wrapper activa todo lo de adentro sin dispararse
+                      // mouseleave al cruzar entre barra visible y dots
+                    }}
+                    onMouseEnter={(e) => { setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
+                    onMouseMove={(e) => !drag && setTooltip({ act, x: e.clientX, y: e.clientY })}
+                    onMouseLeave={() => { setHoveredId(null); setTooltip(null) }}
+                  >
+                    {/* Contenedor interno con offset de 20px para que la barra visible
+                        quede posicionada correctamente. Padding transparente alrededor
+                        actúa como hitbox extendida para el hover. */}
+                    <div style={{ position:'absolute', left:20, top:0, width:w, height:'100%' }}>
+                      {/* BARRA PRINCIPAL */}
                       <div
                         onMouseDown={(e) => iniciarDrag(e, act, 'move')}
                         onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
-                        onMouseEnter={(e) => { setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
-                        onMouseMove={(e) => !drag && setTooltip({ act, x: e.clientX, y: e.clientY })}
-                        onMouseLeave={() => { setHoveredId(null); setTooltip(null) }}
                         onDoubleClick={() => onAbrirInfo(act)}
-                        style={{ position:'absolute', inset:0, background: esPadre ? `linear-gradient(135deg, ${COLORS.navy} 0%, ${COLORS.navy2} 100%)` : estadoCfg.gradient, borderRadius: esPadre ? 4 : 7, display:'flex', alignItems:'center', padding:'0 10px', boxShadow: isDropTarget ? `0 0 0 3px ${COLORS.teal}, 0 4px 12px rgba(15,110,86,0.4)` : (isHovered || isDraggedNow ? `0 4px 12px rgba(10, 37, 64, 0.25)` : '0 1px 3px rgba(10, 37, 64, 0.1)'), transition: drag ? 'none' : 'box-shadow 0.15s', overflow:'hidden', cursor: isDraggedNow && drag?.tipo === 'move' ? 'grabbing' : 'grab' }}>
+                        style={{
+                          position:'absolute', inset:0,
+                          // v14.1: si es crítica, gradiente rojo oscuro (estilo MS Project)
+                          background: esPadre
+                            ? `linear-gradient(135deg, ${COLORS.navy} 0%, ${COLORS.navy2} 100%)`
+                            : esCritica
+                              ? 'linear-gradient(135deg, #991B1B 0%, #DC2626 100%)'
+                              : estadoCfg.gradient,
+                          borderRadius: esPadre ? 4 : 7,
+                          display:'flex', alignItems:'center', padding:'0 10px',
+                          boxShadow: isDropTarget
+                            ? `0 0 0 3px ${COLORS.teal}, 0 4px 16px rgba(15,110,86,0.5)`
+                            : esCritica
+                              ? `0 0 0 1px rgba(220,38,38,0.4), 0 2px 8px rgba(220,38,38,0.3)`
+                              : (isHovered || isDraggedNow ? `0 4px 12px rgba(10, 37, 64, 0.25)` : '0 1px 3px rgba(10, 37, 64, 0.1)'),
+                          transition: drag ? 'none' : 'box-shadow 0.15s, background 0.2s',
+                          overflow:'hidden',
+                          cursor: isDraggedNow && drag?.tipo === 'move' ? 'grabbing' : 'grab',
+                        }}
+                      >
                         {!esPadre && act.avance > 0 && <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${act.avance}%`, background:'rgba(255,255,255,0.25)', pointerEvents:'none' }}/>}
                         {w > 70 && <span style={{ position:'relative', fontSize:11, fontWeight:600, color:'white', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', textShadow:'0 1px 2px rgba(0,0,0,0.2)', pointerEvents:'none' }}>{act.nombre}{!esPadre && act.avance > 0 && <span style={{ opacity:0.9, fontSize:10 }}> · {act.avance}%</span>}</span>}
+                        {/* v14.1: indicador visual sutil "crítica" en la barra cuando el toggle está on */}
+                        {esCritica && w > 40 && (
+                          <span style={{
+                            position:'absolute', right:4, top:2,
+                            fontSize:9, fontWeight:800,
+                            color:'rgba(255,255,255,0.85)',
+                            letterSpacing:'0.05em',
+                            pointerEvents:'none',
+                            textShadow:'0 1px 2px rgba(0,0,0,0.3)',
+                          }}>!</span>
+                        )}
                       </div>
-                      <div onMouseDown={(e) => iniciarDrag(e, act, 'resize-left')} style={{ position:'absolute', left:0, top:0, width:6, height:'100%', cursor:'ew-resize', zIndex:4, background: isHovered && !isDraggedNow ? 'rgba(255,255,255,0.4)' : 'transparent', borderTopLeftRadius: esPadre ? 4 : 7, borderBottomLeftRadius: esPadre ? 4 : 7 }}/>
-                      <div onMouseDown={(e) => iniciarDrag(e, act, 'resize-right')} style={{ position:'absolute', right:0, top:0, width:6, height:'100%', cursor:'ew-resize', zIndex:4, background: isHovered && !isDraggedNow ? 'rgba(255,255,255,0.4)' : 'transparent', borderTopRightRadius: esPadre ? 4 : 7, borderBottomRightRadius: esPadre ? 4 : 7 }}/>
-                      {(isHovered || isDraggedNow) && !isDropTarget && (
-                        <div onMouseDown={(e) => iniciarDrag(e, act, 'dep')} title="Arrastra a otra actividad para crear dependencia" style={{ position:'absolute', right: -7, top:'50%', transform:'translateY(-50%)', width:12, height:12, borderRadius:'50%', background: COLORS.teal, border:'2px solid white', boxShadow:'0 2px 6px rgba(15,110,86,0.5)', cursor:'crosshair', zIndex:6 }}/>
+
+                      {/* RESIZE HANDLES */}
+                      <div
+                        onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'resize-left') }}
+                        style={{
+                          position:'absolute', left:0, top:0, width:8, height:'100%',
+                          cursor:'ew-resize', zIndex:4,
+                          background: isHovered && !isDraggedNow ? 'rgba(255,255,255,0.5)' : 'transparent',
+                          borderLeft: isHovered && !isDraggedNow ? '2px solid rgba(255,255,255,0.8)' : 'none',
+                          borderTopLeftRadius: esPadre ? 4 : 7, borderBottomLeftRadius: esPadre ? 4 : 7,
+                          transition: 'background 0.12s, border-color 0.12s',
+                        }}
+                      />
+                      <div
+                        onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'resize-right') }}
+                        style={{
+                          position:'absolute', right:0, top:0, width:8, height:'100%',
+                          cursor:'ew-resize', zIndex:4,
+                          background: isHovered && !isDraggedNow ? 'rgba(255,255,255,0.5)' : 'transparent',
+                          borderRight: isHovered && !isDraggedNow ? '2px solid rgba(255,255,255,0.8)' : 'none',
+                          borderTopRightRadius: esPadre ? 4 : 7, borderBottomRightRadius: esPadre ? 4 : 7,
+                          transition: 'background 0.12s, border-color 0.12s',
+                        }}
+                      />
+
+                      {/* v13.2: DOTS DE DEPENDENCIA — AFUERA de la barra (estilo MS Project/Kantata)
+                          Visibilidad:
+                          - Hover normal: ambos dots visibles en los bordes
+                          - Arrastrando desde esta barra: solo dot derecho (origen)
+                          - Otra barra está arrastrando: dots ghost punteados a ambos lados (como targets)
+                          El hitbox del padre (wrapper de 40px extra) asegura que el mouse no
+                          pierda el hover al moverse de la barra a los dots. */}
+                      {(() => {
+                        const dragDepActivo = drag && drag.tipo === 'dep'
+                        const esOrigen = dragDepActivo && drag.actId === act.id
+                        const visibleNormal = (isHovered || isDraggedNow) && !dragDepActivo
+                        const visibleComoOrigen = esOrigen
+                        const visibleComoTarget = dragDepActivo && !esOrigen
+                        if (!visibleNormal && !visibleComoOrigen && !visibleComoTarget) return null
+
+                        const esTarget = visibleComoTarget && isDropTarget
+                        const colorDot = esTarget ? '#16A34A' : COLORS.teal
+
+                        const dotStyle = {
+                          position: 'absolute',
+                          top: '50%', transform: 'translateY(-50%)',
+                          width: 12, height: 12, borderRadius: '50%',
+                          background: 'white',
+                          border: `2px solid ${colorDot}`,
+                          boxShadow: `0 2px 6px rgba(15,110,86,0.4)`,
+                          cursor: 'crosshair',
+                          zIndex: 15,
+                          borderStyle: visibleComoTarget && !esTarget ? 'dashed' : 'solid',
+                          opacity: visibleComoTarget && !esTarget ? 0.5 : 1,
+                          transition: 'transform 0.08s, border-color 0.12s',
+                        }
+
+                        return (
+                          <>
+                            {/* DOT DERECHO — AFUERA (right: -14) */}
+                            <div
+                              onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
+                              title="Arrastra a otra actividad para crear dependencia"
+                              style={{
+                                ...dotStyle,
+                                right: -14,
+                                transform: isHovered && !dragDepActivo
+                                  ? 'translateY(-50%) scale(1.15)'
+                                  : 'translateY(-50%)',
+                              }}
+                            />
+                            {/* DOT IZQUIERDO — AFUERA (left: -14) - solo hover normal */}
+                            {(visibleNormal || visibleComoTarget) && (
+                              <div
+                                onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
+                                title="Arrastra a otra actividad para crear dependencia"
+                                style={{
+                                  ...dotStyle,
+                                  left: -14,
+                                  transform: isHovered && !dragDepActivo
+                                    ? 'translateY(-50%) scale(1.15)'
+                                    : 'translateY(-50%)',
+                                }}
+                              />
+                            )}
+                          </>
+                        )
+                      })()}
+
+                      {/* Outline del drop target */}
+                      {isDropTarget && (
+                        <div style={{
+                          position:'absolute', inset:-4,
+                          border:`2.5px dashed ${COLORS.teal}`,
+                          borderRadius: esPadre ? 6 : 9,
+                          background:'rgba(15,110,86,0.08)',
+                          pointerEvents:'none',
+                          zIndex:5,
+                        }}/>
                       )}
-                      {isHovered && !isDraggedNow && (
-                        <div onMouseDown={(e) => iniciarDrag(e, act, 'dep')} style={{ position:'absolute', left: -7, top:'50%', transform:'translateY(-50%)', width:12, height:12, borderRadius:'50%', background: COLORS.teal, border:'2px solid white', boxShadow:'0 2px 6px rgba(15,110,86,0.5)', cursor:'crosshair', zIndex:6 }}/>
-                      )}
-                      {isDropTarget && <div style={{ position:'absolute', inset:-4, border:`2px dashed ${COLORS.teal}`, borderRadius: esPadre ? 6 : 9, background:'rgba(15,110,86,0.08)', pointerEvents:'none', zIndex:5 }}/>}
                     </div>
                   </div>
                 )
@@ -1082,6 +1767,25 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
           <div style={{ display:'flex', justifyContent:'space-between', color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:3, fontSize:11 }}><span>Inicio</span><span>{tooltip.act.inicio}</span></div>
           <div style={{ display:'flex', justifyContent:'space-between', color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:3, fontSize:11 }}><span>Fin</span><span>{tooltip.act.fin}</span></div>
           <div style={{ display:'flex', justifyContent:'space-between', color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:8, fontSize:11 }}><span>Duración</span><span>{diffDays(tooltip.act.inicio, tooltip.act.fin) + 1} días</span></div>
+          {/* v14.1: Holgura / Ruta crítica cuando el toggle está ON */}
+          {mostrarRutaCritica && cpm[tooltip.act.id] && !tooltip.act.es_servicio_padre && (
+            cpm[tooltip.act.id].critica ? (
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, padding:'6px 8px', background:'#FEF2F2', border:`1px solid ${COLORS.red}`, borderRadius:6 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.red} strokeWidth="2.5" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span style={{ fontSize:11, fontWeight:700, color:COLORS.red }}>RUTA CRÍTICA</span>
+                <span style={{ fontSize:10, color:COLORS.slate500, marginLeft:'auto' }}>sin holgura</span>
+              </div>
+            ) : (
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8, padding:'5px 8px', background:COLORS.slate50, borderRadius:6, fontSize:10 }}>
+                <span style={{ color:COLORS.slate600, fontWeight:600 }}>Holgura</span>
+                <span style={{ color:COLORS.teal, fontWeight:700, fontFamily:'var(--font-mono)' }}>
+                  +{cpm[tooltip.act.id].float} día{cpm[tooltip.act.id].float === 1 ? '' : 's'}
+                </span>
+              </div>
+            )
+          )}
           <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom: tooltip.act.avance > 0 ? 8 : 0 }}>
             <Badge texto={tooltip.act.estado} mapa={ESTADOS} tamano={10}/>
             {(tooltip.act.deps || []).length > 0 && <span style={{ fontSize:9, color:COLORS.teal, background:COLORS.tealLight, padding:'2px 6px', borderRadius:10, fontWeight:700 }}>← {tooltip.act.deps.length} dep</span>}
@@ -1105,6 +1809,13 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
           <div style={{ width:0, height:10, borderLeft:`1.5px dashed ${COLORS.red}` }}/>
           <span style={{ color:COLORS.slate600, fontSize:10 }}>Hoy</span>
         </div>
+        {/* v14.1: leyenda ruta crítica cuando el toggle está ON */}
+        {mostrarRutaCritica && (
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:14, height:8, background:'linear-gradient(135deg, #991B1B 0%, #DC2626 100%)', borderRadius:2 }}/>
+            <span style={{ color:COLORS.slate600, fontSize:10, fontWeight:600 }}>Ruta crítica</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1211,7 +1922,7 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
   )
 }
 
-function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual }) {
+function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, puedeEditarPeso }) {
   const [nombreNueva, setNombreNueva] = useState('')
   const [creandoBajo, setCreandoBajo] = useState(null)
   const [creando, setCreando] = useState(false)
@@ -1237,7 +1948,13 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
         </div>
       ) : padres.map(padre => {
         const hijos = actividades.filter(a => a.parent_id === padre.id).sort((a,b) => (a.numero||0) - (b.numero||0))
-        const padreAvance = hijos.length > 0 ? Math.round(hijos.reduce((s,h) => s+(h.avance||0), 0) / hijos.length) : (padre.avance||0)
+        // v12: avance ponderado con fórmula Luis
+        const padreAvance = hijos.length > 0
+          ? calcularAvancePonderado(actividades, padre.id)
+          : (padre.avance||0)
+        // v12: validación suma de pesos
+        const sumaPesos = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
+        const sumaOk = sumaPesos === 0 || sumaPesos === 100
         return (
           <div key={padre.id} style={{ marginBottom:16 }}>
             <div
@@ -1248,13 +1965,23 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                 <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>
                   <EditableText value={padre.nombre} onSave={v => onInlineUpdate(padre.id, { nombre: v })} style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-serif)' }}/>
                 </div>
-                <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>{fmtDate(padre.inicio)} → {fmtDate(padre.fin)} · {hijos.length} sub-actividades</div>
+                <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
+                  {fmtDate(padre.inicio)} → {fmtDate(padre.fin)} · {hijos.length} sub-actividades
+                  {/* v12: indicador de suma de pesos */}
+                  {hijos.length > 0 && sumaPesos > 0 && (
+                    <span style={{ marginLeft:10, padding:'1px 7px', borderRadius:4, background: sumaOk ? '#E1F5EE' : '#FEF2F2', color: sumaOk ? '#0F6E56' : '#DC2626', fontWeight:700 }}>
+                      pesos: {sumaPesos}%{!sumaOk && ' ⚠'}
+                    </span>
+                  )}
+                </div>
               </div>
               <BadgeImportancia importancia={padre.importancia} tamano="normal"/>
               <div style={{ width:140 }}><BarraAvance avance={padreAvance}/></div>
               <Badge texto={padre.estado} mapa={ESTADOS}/>
               <button onClick={() => onAbrirInfo(padre)} style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}><Icon.Info/></button>
               {padre.es_servicio_padre && <button onClick={() => onDesglosar(padre)} title="Desglosar con plantilla" style={{ padding:'5px 10px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>⚖ Desglosar</button>}
+              {/* v11: Botón eliminar visible */}
+              <button onClick={() => onEliminar?.(padre)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
             </div>
             {hijos.map(h => {
               const nivel = getNivel(h.id)
@@ -1273,14 +2000,38 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                         <EditableText value={h.nombre} onSave={v => onInlineUpdate(h.id, { nombre: v })} style={{ fontSize:13, color:COLORS.ink }}/>
                       </span>
                       {depsCount > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:3, background:COLORS.tealLight, color:COLORS.teal, padding:'2px 7px', borderRadius:10, fontSize:10, fontWeight:700 }}><Icon.Link/>{depsCount}</span>}
+                      {/* v12: Badge cobrable */}
+                      {h.es_cobrable && (
+                        <span title={`Cobrable: ${h.estado_cobro || 'Pendiente'}`} style={{ display:'inline-flex', alignItems:'center', gap:3, background: ESTADOS_COBRO[h.estado_cobro]?.bg || '#E1F5EE', color: ESTADOS_COBRO[h.estado_cobro]?.color || '#0F6E56', padding:'2px 7px', borderRadius:4, fontSize:10, fontWeight:700 }}>
+                          $ {ESTADOS_COBRO[h.estado_cobro]?.label || 'cobrable'}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>{fmtDate(h.inicio)} → {fmtDate(h.fin)} · {diffDays(h.inicio, h.fin) + 1}d</div>
                   </div>
+                  {/* v12: Input peso % (editable solo por direccion/admin) */}
+                  {(puedeEditarPeso) && (
+                    <div title="Peso ponderado (Luis)" style={{ display:'flex', alignItems:'center', gap:2 }}>
+                      <input
+                        type="number" min="0" max="100" step="1"
+                        value={h.peso || 0}
+                        onChange={e => {
+                          const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
+                          onInlineUpdate(h.id, { peso: v })
+                        }}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (h.peso || 0) > 0 ? COLORS.navy : COLORS.slate400, background: 'white' }}
+                      />
+                      <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>%</span>
+                    </div>
+                  )}
                   <BarraAvance avance={h.avance}/>
                   <select value={h.estado} onChange={e => onInlineUpdate(h.id, { estado: e.target.value })} style={{ padding:'4px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[h.estado]?.bg, color: ESTADOS[h.estado]?.color, fontWeight:500, cursor:'pointer' }}>
                     {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
                   </select>
                   <button onClick={() => onAbrirInfo(h)} title="Información" style={{ padding:'5px 9px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Info/></button>
+                  {/* v11: Botón eliminar visible */}
+                  <button onClick={() => onEliminar?.(h)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
                 </div>
               )
             })}
@@ -1316,76 +2067,142 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
 }
 
 function TabKanban({ actividades, onAbrirInfo, numeracion }) {
-  const hoy = toStr(new Date())
-  const manana = addDays(hoy, 1)
-  const semana = addDays(hoy, 7)
+  // v14.1.1: Kanban rediseñado robusto — muestra TODAS las actividades no-padre
+  // Bug anterior: filtro que ocultaba actividades padre intermedias y completadas
+  // Nuevo: 6 columnas (incluyendo completadas colapsable) + milestones visibles
 
+  const hoy = toStr(new Date())
+  const semana = addDays(hoy, 7)
+  const mes = addDays(hoy, 30)
+
+  const [mostrarCompletadas, setMostrarCompletadas] = useState(false)
+
+  const estaCompletada = (a) =>
+    a.completada === true ||
+    a.avance === 100 ||
+    a.estado === 'Completada'
+
+  // Clasificación simple: solo excluir servicios-padre "puros" (con hijos reales)
+  // Los milestones, actividades con padre, actividades root sin hijos → todo entra
   const clasifica = (a) => {
-    if (a.completada || a.avance === 100) return null
-    if (!a.fin) return null
+    if (a.estado === 'Cancelada') return null
+    if (estaCompletada(a)) return 'completadas'
+    if (!a.fin) return 'sinFecha'
     if (a.fin < hoy) return 'retrasadas'
-    if (a.fin === hoy) return 'hoy'
-    if (a.fin === manana) return 'manana'
     if (a.fin <= semana) return 'semana'
-    return null
+    if (a.fin <= mes) return 'mes'
+    return 'futuro'
   }
 
-  const cols = { retrasadas: [], hoy: [], manana: [], semana: [] }
+  const cols = { retrasadas: [], semana: [], mes: [], futuro: [], sinFecha: [], completadas: [] }
   actividades.forEach(a => {
-    // Solo sub-actividades (no padres) y actividades root sin hijos
+    // Excluir solo los "servicios padre" (agrupadores visuales con hijos)
+    // Los demás — incluyendo milestones — se muestran
     const tieneHijos = actividades.some(x => x.parent_id === a.id)
-    if (a.es_servicio_padre || tieneHijos) return
+    if (a.es_servicio_padre && tieneHijos) return
     const c = clasifica(a)
     if (c) cols[c].push(a)
   })
 
+  // Orden: por fecha fin ascendente (completadas por fin descendente)
+  Object.keys(cols).forEach(k => {
+    if (k === 'completadas') {
+      cols[k].sort((a, b) => (b.fin || '').localeCompare(a.fin || ''))
+    } else {
+      cols[k].sort((a, b) => (a.fin || '').localeCompare(b.fin || ''))
+    }
+  })
+
   const colDef = [
-    { k:'retrasadas', titulo:'🔴 Con retraso', borde:COLORS.red, bg:'#FEF2F2' },
-    { k:'hoy', titulo:'🟡 Hoy', borde:COLORS.amber, bg:'#FEF3C7' },
-    { k:'manana', titulo:'🔵 Mañana', borde:COLORS.blue, bg:'#E0EDFF' },
-    { k:'semana', titulo:'🟢 Esta semana', borde:COLORS.teal, bg:COLORS.tealLight },
+    { k:'retrasadas',  titulo:'Con retraso',   emoji:'🔴', borde:COLORS.red,      bg:'#FEF2F2' },
+    { k:'semana',      titulo:'Esta semana',   emoji:'🟡', borde:COLORS.amber,    bg:'#FEF3C7' },
+    { k:'mes',         titulo:'Este mes',      emoji:'🔵', borde:COLORS.blue,     bg:'#E0EDFF' },
+    { k:'futuro',      titulo:'Más adelante',  emoji:'🟢', borde:COLORS.teal,     bg:COLORS.tealLight },
+    { k:'sinFecha',    titulo:'Sin fecha',     emoji:'⚪', borde:COLORS.slate400, bg:COLORS.slate50 },
   ]
 
-  const totalPendientes = actividades.filter(a => !a.completada && a.avance < 100 && !a.es_servicio_padre).length
-  const totalClasificadas = Object.values(cols).reduce((s,c) => s+c.length, 0)
+  const totalMostrados = colDef.reduce((s, c) => s + cols[c.k].length, 0)
+  const totalActividadesReales = actividades.filter(a => {
+    const tieneHijos = actividades.some(x => x.parent_id === a.id)
+    return !(a.es_servicio_padre && tieneHijos) && a.estado !== 'Cancelada'
+  }).length
+
+  const renderCard = (a, c) => {
+    const diasFaltan = a.fin ? diffDays(hoy, a.fin) : null
+    const esMilestone = a.es_milestone
+    const completa = estaCompletada(a)
+    return (
+      <div key={a.id} onClick={() => onAbrirInfo(a)} style={{
+        background:'white', borderRadius:8, padding:12,
+        border:`1px solid ${COLORS.slate100}`,
+        borderLeft:`3px solid ${completa ? COLORS.teal : c.borde}`,
+        marginBottom:8, cursor:'pointer',
+        transition:'all 0.15s',
+        opacity: completa ? 0.75 : 1,
+      }}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
+        <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+          <span>{numeracion[a.id]}</span>
+          {esMilestone && <span title="Hito / Milestone" style={{ color:COLORS.navy, display:'inline-flex' }}><Icon.Diamond/></span>}
+          {a.estado === 'Bloqueada' && <Icon.Lock/>}
+          {a.importancia && <BadgeImportancia importancia={a.importancia} tamano="mini"/>}
+        </div>
+        <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, marginBottom:6, textDecoration: completa ? 'line-through' : 'none' }}>{a.nombre}</div>
+        <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:8 }}>
+          {a.fin ? fmtDate(a.fin) : 'Sin fecha'}
+          {!completa && diasFaltan !== null && diasFaltan > 0 && diasFaltan <= 60 && <> · <span style={{ color: diasFaltan <= 7 ? COLORS.amber : COLORS.slate500 }}>en {diasFaltan}d</span></>}
+          {!completa && diasFaltan !== null && diasFaltan < 0 && <> · <span style={{ color:COLORS.red, fontWeight:700 }}>{Math.abs(diasFaltan)}d tarde</span></>}
+        </div>
+        {!completa && <BarraAvance avance={a.avance||0} height={4}/>}
+        <div style={{ marginTop:6 }}><Badge texto={a.estado} mapa={ESTADOS} tamano={10}/></div>
+      </div>
+    )
+  }
 
   return (
     <div>
       <Alerta tipo="info">
         <Icon.Info/>
-        Vista Kanban por urgencia · Hoy: <strong>{fmtDate(hoy)}</strong> · {totalClasificadas} de {totalPendientes} actividades próximas a vencer
+        Kanban por urgencia · Hoy: <strong>{fmtDate(hoy)}</strong> · Mostrando <strong>{totalMostrados}</strong> de <strong>{totalActividadesReales}</strong> actividades
+        {cols.completadas.length > 0 && (
+          <>
+            {' · '}
+            <button
+              onClick={() => setMostrarCompletadas(v => !v)}
+              style={{ background:'transparent', border:'none', color:COLORS.teal, fontWeight:700, cursor:'pointer', textDecoration:'underline', fontSize:12, padding:0 }}
+            >
+              {mostrarCompletadas ? 'Ocultar' : 'Ver'} {cols.completadas.length} completadas
+            </button>
+          </>
+        )}
       </Alerta>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12, alignItems:'start' }}>
         {colDef.map(c => (
           <div key={c.k} style={{ background:'#F7F8FB', borderRadius:10, padding:12, minHeight:300 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, paddingBottom:8, borderBottom:`2px solid ${c.borde}` }}>
-              <span style={{ fontSize:12, fontWeight:700, color:COLORS.slate600 }}>{c.titulo}</span>
+              <span style={{ fontSize:12, fontWeight:700, color:COLORS.slate600 }}>{c.emoji} {c.titulo}</span>
               <span style={{ background:'white', color:COLORS.slate600, padding:'2px 10px', borderRadius:12, fontSize:11, fontWeight:600, border:`1px solid ${COLORS.slate200}` }}>{cols[c.k].length}</span>
             </div>
             {cols[c.k].length === 0 ? (
               <div style={{ padding:20, textAlign:'center', color:COLORS.slate400, fontSize:11 }}>Sin actividades</div>
-            ) : cols[c.k].map(a => {
-              return (
-                <div key={a.id} onClick={() => onAbrirInfo(a)} style={{ background:'white', borderRadius:8, padding:12, border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${c.borde}`, marginBottom:8, cursor:'pointer', transition:'all 0.15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                  onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
-                  <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
-                    <span>{numeracion[a.id]}</span>
-                    {a.estado === 'Bloqueada' && <Icon.Lock/>}
-                    <BadgeImportancia importancia={a.importancia} tamano="mini"/>
-                  </div>
-                  <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, marginBottom:6 }}>{a.nombre}</div>
-                  <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:8 }}>
-                    {fmtDate(a.fin)}
-                  </div>
-                  <BarraAvance avance={a.avance||0} height={4}/>
-                  <div style={{ marginTop:6 }}><Badge texto={a.estado} mapa={ESTADOS} tamano={10}/></div>
-                </div>
-              )
-            })}
+            ) : cols[c.k].map(a => renderCard(a, c))}
           </div>
         ))}
       </div>
+
+      {/* Columna Completadas — expandible */}
+      {mostrarCompletadas && cols.completadas.length > 0 && (
+        <div style={{ marginTop:16, background:'#F7F8FB', borderRadius:10, padding:12 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, paddingBottom:8, borderBottom:`2px solid ${COLORS.teal}` }}>
+            <span style={{ fontSize:12, fontWeight:700, color:COLORS.slate600 }}>✅ Completadas</span>
+            <span style={{ background:'white', color:COLORS.slate600, padding:'2px 10px', borderRadius:12, fontSize:11, fontWeight:600, border:`1px solid ${COLORS.slate200}` }}>{cols.completadas.length}</span>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:8 }}>
+            {cols.completadas.map(a => renderCard(a, { borde:COLORS.teal, bg:COLORS.tealLight }))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1656,12 +2473,251 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero }) {
   )
 }
 
+// v13.2: Modal propio para confirmar eliminación de dependencia
+// Reemplaza el feo window.confirm() del navegador
+function ConfirmDepDeleteModal({ data, onCancel, onConfirm }) {
+  const { predNombre, actNombre } = data
+  const isMobile = useIsMobile()
+
+  // Cerrar con Escape
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onCancel])
+
+  return (
+    <>
+      <div onClick={onCancel} style={{
+        position:'fixed', inset:0,
+        background:'rgba(10, 37, 64, 0.35)',
+        backdropFilter:'blur(2px)',
+        zIndex: 2000,
+        display:'flex', alignItems:'center', justifyContent:'center',
+      }}>
+        <div onClick={(e) => e.stopPropagation()} style={{
+          width: isMobile ? 'calc(100% - 32px)' : 460,
+          background:'white',
+          borderRadius: 14,
+          boxShadow:'0 20px 60px rgba(10, 37, 64, 0.25)',
+          overflow:'hidden',
+        }}>
+          {/* Header con icono */}
+          <div style={{ padding:'22px 24px 14px', display:'flex', alignItems:'flex-start', gap:14 }}>
+            <div style={{
+              width:40, height:40, borderRadius:'50%',
+              background:'#FEF2F2',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              flexShrink:0,
+              color: COLORS.red,
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                <line x1="4" y1="4" x2="20" y2="20"/>
+              </svg>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <h3 style={{
+                margin:0, fontSize:16, fontWeight:600,
+                color:COLORS.navy, fontFamily:'var(--font-serif)',
+                letterSpacing:'-0.01em',
+              }}>
+                Quitar dependencia
+              </h3>
+              <p style={{
+                margin:'6px 0 0', fontSize:13, color:COLORS.slate500,
+                lineHeight:1.5,
+              }}>
+                La actividad <strong style={{ color:COLORS.ink }}>{actNombre}</strong> ya no dependerá de <strong style={{ color:COLORS.ink }}>{predNombre}</strong>. Esta acción no afectará las fechas.
+              </p>
+            </div>
+          </div>
+
+          {/* Footer con botones */}
+          <div style={{
+            padding:'14px 24px 18px',
+            display:'flex', justifyContent:'flex-end', gap:10,
+            background: COLORS.slate50,
+            borderTop: `1px solid ${COLORS.slate100}`,
+          }}>
+            <button
+              onClick={onCancel}
+              style={{
+                padding:'9px 18px',
+                background:'white',
+                color:COLORS.slate600,
+                border:`1px solid ${COLORS.slate200}`,
+                borderRadius:8,
+                fontSize:13, fontWeight:600,
+                cursor:'pointer',
+                fontFamily:'inherit',
+                transition:'all 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate100 }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={onConfirm}
+              autoFocus
+              style={{
+                padding:'9px 18px',
+                background: COLORS.red,
+                color:'white',
+                border:'none',
+                borderRadius:8,
+                fontSize:13, fontWeight:600,
+                cursor:'pointer',
+                fontFamily:'inherit',
+                boxShadow:'0 2px 6px rgba(220,38,38,0.35)',
+                transition:'all 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#B91C1C' }}
+              onMouseLeave={e => { e.currentTarget.style.background = COLORS.red }}
+            >
+              Quitar dependencia
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// v13: Formulario inline para crear cliente rápido desde el modal de nuevo proyecto
+function FormClienteInline({ onCancel, onCreated }) {
+  const [form, setForm] = useState({ razon_social:'', rfc:'', contacto_nombre:'', email:'', telefono:'' })
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState(null)
+
+  const crear = async () => {
+    if (!form.razon_social.trim()) {
+      setError('La razón social es obligatoria')
+      return
+    }
+    setGuardando(true)
+    setError(null)
+    try {
+      // Generar código auto: CLI-XXX
+      const { count } = await supabase.from('clientes').select('*', { count:'exact', head:true })
+      const codigo = `CLI-${String((count || 0) + 1).padStart(3, '0')}`
+
+      const { data, error: insertError } = await supabase
+        .from('clientes')
+        .insert({
+          codigo,
+          razon_social: form.razon_social.trim(),
+          rfc: form.rfc.trim() || null,
+          contacto_nombre: form.contacto_nombre.trim() || null,
+          email: form.email.trim() || null,
+          telefono: form.telefono.trim() || null,
+        })
+        .select()
+        .single()
+      if (insertError) throw insertError
+      onCreated(data)
+    } catch (e) {
+      setError(e.message)
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop:8, padding:14, background:'#F0FDF4', border:`1px solid #86EFAC`, borderRadius:10 }}>
+      <div style={{ fontSize:11, fontWeight:700, color:COLORS.teal, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Crear cliente nuevo</div>
+      <div style={{ display:'grid', gap:8 }}>
+        <div>
+          <label style={miniLabel}>Razón social *</label>
+          <input
+            value={form.razon_social}
+            onChange={e => setForm({ ...form, razon_social: e.target.value })}
+            placeholder="Intel Tecnología de México S.A. de C.V."
+            autoFocus
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+          <div>
+            <label style={miniLabel}>RFC</label>
+            <input
+              value={form.rfc}
+              onChange={e => setForm({ ...form, rfc: e.target.value.toUpperCase() })}
+              placeholder="XAXX010101000"
+              maxLength={13}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={miniLabel}>Teléfono</label>
+            <input
+              value={form.telefono}
+              onChange={e => setForm({ ...form, telefono: e.target.value })}
+              placeholder="55 1234 5678"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        <div>
+          <label style={miniLabel}>Contacto principal</label>
+          <input
+            value={form.contacto_nombre}
+            onChange={e => setForm({ ...form, contacto_nombre: e.target.value })}
+            placeholder="Nombre del contacto"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={miniLabel}>Email</label>
+          <input
+            type="email"
+            value={form.email}
+            onChange={e => setForm({ ...form, email: e.target.value })}
+            placeholder="contacto@empresa.com"
+            style={inputStyle}
+          />
+        </div>
+        {error && (
+          <div style={{ padding:'8px 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:7, fontSize:12, color:COLORS.red }}>
+            {error}
+          </div>
+        )}
+        <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:4 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ padding:'8px 14px', background:'white', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={crear}
+            disabled={guardando || !form.razon_social.trim()}
+            style={{ padding:'8px 16px', background: guardando || !form.razon_social.trim() ? COLORS.slate400 : COLORS.teal, color:'white', border:'none', borderRadius:7, fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}
+          >
+            {guardando ? 'Creando...' : 'Crear cliente'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ModalNuevoProyecto({ onClose, onCreado }) {
   const [plantillas, setPlantillas] = useState([])
   const [clientes, setClientes] = useState([])
   const [usuarios, setUsuarios] = useState([])
   const [plantillaSel, setPlantillaSel] = useState(null)
-  const [form, setForm] = useState({ nombre:'', clienteId:'', directorId:'', capacidadMw:'', ubicacion:'', inicioFecha: new Date().toISOString().split('T')[0] })
+  const [mostrarFormCliente, setMostrarFormCliente] = useState(false) // v13
+  const [form, setForm] = useState({
+    nombre:'', clienteId:'', directorId:'',
+    capacidadMw:'', ubicacion:'',
+    inicioFecha: new Date().toISOString().split('T')[0],
+    // v12: campos nuevos
+    clasificacion: 'B', prioridad: 'Media', tipo_proyecto: 'Otros',
+  })
   const [creando, setCreando] = useState(false)
   const isMobile = useIsMobile()
 
@@ -1681,6 +2737,14 @@ function ModalNuevoProyecto({ onClose, onCreado }) {
         plantillaId: plantillaSel.id, nombre: form.nombre, clienteId: form.clienteId, directorId: form.directorId,
         inicioFecha: form.inicioFecha, capacidadMw: form.capacidadMw ? parseFloat(form.capacidadMw) : null, ubicacion: form.ubicacion || null,
       })
+      // v12: Actualizar los campos nuevos (clasificación/prioridad/tipo)
+      try {
+        await supabase.from('proyectos').update({
+          clasificacion: form.clasificacion,
+          prioridad: form.prioridad,
+          tipo_proyecto: form.tipo_proyecto,
+        }).eq('id', proyecto.id)
+      } catch (e) { console.warn('No se pudo guardar clasificación:', e.message) }
       onCreado(proyecto)
     } catch (e) { alert('Error: ' + e.message); setCreando(false) }
   }
@@ -1708,8 +2772,59 @@ function ModalNuevoProyecto({ onClose, onCreado }) {
           <div>
             <div style={labelStyle}>2. Datos</div>
             <div style={{ marginBottom:10 }}><label style={miniLabel}>Nombre *</label><input value={form.nombre} onChange={e=>setForm({...form, nombre:e.target.value})} style={inputStyle}/></div>
-            <div style={{ marginBottom:10 }}><label style={miniLabel}>Cliente *</label><select value={form.clienteId} onChange={e=>setForm({...form, clienteId:e.target.value})} style={selectStyle}><option value="">Selecciona...</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.razon_social}</option>)}</select></div>
+            <div style={{ marginBottom:10 }}>
+              <label style={miniLabel}>Cliente *</label>
+              <div style={{ display:'flex', gap:6 }}>
+                <select value={form.clienteId} onChange={e=>setForm({...form, clienteId:e.target.value})} style={{...selectStyle, flex:1}}>
+                  <option value="">Selecciona...</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.razon_social}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setMostrarFormCliente(true)}
+                  title="Crear cliente nuevo"
+                  style={{ padding:'0 12px', background:COLORS.teal, color:'white', border:'none', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}
+                >
+                  + Nuevo
+                </button>
+              </div>
+              {mostrarFormCliente && (
+                <FormClienteInline
+                  onCancel={() => setMostrarFormCliente(false)}
+                  onCreated={async (nuevoCliente) => {
+                    setClientes(prev => [...prev, nuevoCliente])
+                    setForm(f => ({ ...f, clienteId: nuevoCliente.id }))
+                    setMostrarFormCliente(false)
+                  }}
+                />
+              )}
+            </div>
             <div style={{ marginBottom:10 }}><label style={miniLabel}>Director *</label><select value={form.directorId} onChange={e=>setForm({...form, directorId:e.target.value})} style={selectStyle}><option value="">Selecciona...</option>{usuarios.filter(u => ['direccion','director_proyectos'].includes(u.rol)).map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}</select></div>
+            {/* v12: Clasificación/Prioridad/Tipo */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10 }}>
+              <div>
+                <label style={miniLabel}>Clase</label>
+                <select value={form.clasificacion} onChange={e=>setForm({...form, clasificacion:e.target.value})} style={selectStyle}>
+                  <option value="A">A — Alta</option>
+                  <option value="B">B — Media</option>
+                  <option value="C">C — Baja</option>
+                </select>
+              </div>
+              <div>
+                <label style={miniLabel}>Prioridad</label>
+                <select value={form.prioridad} onChange={e=>setForm({...form, prioridad:e.target.value})} style={selectStyle}>
+                  <option value="Alta">Alta</option>
+                  <option value="Media">Media</option>
+                  <option value="Baja">Baja</option>
+                </select>
+              </div>
+              <div>
+                <label style={miniLabel}>Tipo</label>
+                <select value={form.tipo_proyecto} onChange={e=>setForm({...form, tipo_proyecto:e.target.value})} style={selectStyle}>
+                  {TIPOS_PROYECTO.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
               <div><label style={miniLabel}>MW</label><input type="number" step="0.1" value={form.capacidadMw} onChange={e=>setForm({...form, capacidadMw:e.target.value})} style={inputStyle}/></div>
               <div><label style={miniLabel}>Inicio</label><input type="date" value={form.inicioFecha} onChange={e=>setForm({...form, inicioFecha:e.target.value})} style={inputStyle}/></div>
@@ -1806,6 +2921,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
   const [clientes, setClientes] = useState([])
   const [usuarios, setUsuarios] = useState([])
   const [menuCtx, setMenuCtx] = useState(null)  // v8: {actividad, x, y}
+  const [confirmDepDelete, setConfirmDepDelete] = useState(null)  // v13.2: {predId, actId, predNombre, actNombre}
   const isMobile = useIsMobile()
 
   const puedeVerFinanciero = usuarioActual?.rol
@@ -1886,6 +3002,28 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
     } catch (e) { alert('Error al eliminar: ' + e.message) }
   }, [proyecto, cargar])
 
+  // v11: Handler para borrar dependencia desde click en flecha del Gantt
+  // v13.2: Abre modal propio en vez de window.confirm()
+  const handleQuitarDepGantt = useCallback((predId, actId) => {
+    const pred = proyecto?.actividades?.find(a => a.id === predId)
+    const act  = proyecto?.actividades?.find(a => a.id === actId)
+    setConfirmDepDelete({
+      predId, actId,
+      predNombre: pred?.nombre || 'Actividad',
+      actNombre: act?.nombre || 'Actividad',
+    })
+  }, [proyecto])
+
+  const confirmarBorrarDep = useCallback(async () => {
+    if (!confirmDepDelete) return
+    const { predId, actId } = confirmDepDelete
+    setConfirmDepDelete(null)
+    try {
+      await quitarDependencia(actId, predId)
+      await cargar()
+    } catch (e) { alert('Error al quitar dependencia: ' + e.message) }
+  }, [confirmDepDelete, cargar])
+
   const handleToggleMilestone = useCallback(async (actividad) => {
     const nuevo = !actividad.es_milestone
     setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => a.id === actividad.id ? { ...a, es_milestone: nuevo } : a) }))
@@ -1927,7 +3065,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
   return (
     <div>
       {desglosarAct && <ModalDesglose actividad={desglosarAct} onClose={() => setDesglosarAct(null)} onDesglosado={() => { setDesglosarAct(null); cargar() }}/>}
-      {panelAct && <PanelActividad actividad={panelAct} actividades={actividades} numeracion={numeracion} usuarios={usuarios} onClose={() => setPanelAct(null)} onCambio={cargar}/>}
+      {panelAct && <PanelActividad actividad={panelAct} actividades={actividades} numeracion={numeracion} usuarios={usuarios} onClose={() => setPanelAct(null)} onCambio={cargar} onEliminar={handleEliminar}/>}
       {panelProy && <PanelProyecto proyecto={proyecto} clientes={clientes} usuarios={usuarios} onClose={() => setPanelProy(false)} onCambio={cargar}/>}
       {menuCtx && (
         <MenuContextual
@@ -1942,6 +3080,15 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
           onToggleMilestone={handleToggleMilestone}
           onCambiarImportancia={(imp) => handleCambiarImportancia(menuCtx.actividad, imp)}
           onAgregarHijo={handleAgregarHijo}
+        />
+      )}
+
+      {/* v13.2: Modal propio para confirmar eliminación de dependencia */}
+      {confirmDepDelete && (
+        <ConfirmDepDeleteModal
+          data={confirmDepDelete}
+          onCancel={() => setConfirmDepDelete(null)}
+          onConfirm={confirmarBorrarDep}
         />
       )}
 
@@ -1990,8 +3137,8 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
       </div>
 
       {tab === 'resumen' && <TabResumen proyecto={proyecto} actividades={actividades} hitos={hitos} usuarios={usuarios} puedeVerFinanciero={puedeVerFinanciero}/>}
-      {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx}/>}
-      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx}/>}
+      {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
+      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt}/>}
       {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion}/>}
       {tab === 'personas' && <TabPorPersona actividades={actividades} usuarios={usuarios} numeracion={numeracion} onAbrirInfo={setPanelAct}/>}
       {tab === 'documentos' && <TabDocumentos proyecto={proyecto}/>}
@@ -2008,10 +3155,31 @@ export default function Proyectos({ usuario }) {
   const [modalNuevo, setModalNuevo] = useState(false)
   const [filtro, setFiltro] = useState('Activos')
   const [busqueda, setBusqueda] = useState('')
+  const [duplicando, setDuplicando] = useState(false) // v12
   const isMobile = useIsMobile()
 
   const cargar = async () => { setLoading(true); setProyectos(await getProyectos()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  // v12: Duplicar proyecto completo
+  const handleDuplicarProyecto = async (proyecto, e) => {
+    e.stopPropagation()
+    const nombreSugerido = `${proyecto.nombre} (copia)`
+    const nuevoNombre = prompt(`Nombre del nuevo proyecto:`, nombreSugerido)
+    if (!nuevoNombre?.trim()) return
+    setDuplicando(true)
+    try {
+      const nuevoId = await duplicarProyecto(proyecto.id, nuevoNombre.trim())
+      await cargar()
+      setDuplicando(false)
+      if (confirm(`✓ Proyecto duplicado.\n\n¿Abrir "${nuevoNombre}" ahora?`)) {
+        setProyectoSel(nuevoId)
+      }
+    } catch (e) {
+      setDuplicando(false)
+      alert('Error al duplicar: ' + e.message)
+    }
+  }
 
   const filtrados = useMemo(() => {
     let r = proyectos
@@ -2028,6 +3196,7 @@ export default function Proyectos({ usuario }) {
 
   return (
     <div>
+      {duplicando && <div style={{ position:'fixed', top:20, right:20, background:COLORS.navy, color:'white', padding:'10px 16px', borderRadius:8, zIndex:2000, fontSize:12, fontWeight:600 }}>Duplicando proyecto...</div>}
       {modalNuevo && <ModalNuevoProyecto onClose={() => setModalNuevo(false)} onCreado={(p) => { setModalNuevo(false); cargar(); setProyectoSel(p.id) }}/>}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
@@ -2055,17 +3224,38 @@ export default function Proyectos({ usuario }) {
         <div style={{ display:'grid', gap:8 }}>
           {filtrados.map(p => {
             const tieneBloqueadas = (p.actividades || []).some(a => a.estado === 'Bloqueada')
+            // v12: avance ponderado del proyecto
+            const avancePond = p.actividades && p.actividades.length > 0
+              ? calcularAvancePonderado(p.actividades, null)
+              : (p.avance || 0)
             return (
               <div key={p.id} onClick={() => setProyectoSel(p.id)} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${ESTADOS_PROY[p.estado]?.bar || COLORS.slate400}`, borderRadius:10, padding:16, cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3, flexWrap:'wrap' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3, flexWrap:'wrap' }}>
                     <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:600 }}>{p.codigo}</span>
                     <Badge texto={p.estado} mapa={ESTADOS_PROY}/>
+                    {/* v12: Badges de clasificación, prioridad, tipo */}
+                    {p.clasificacion && <BadgeChip texto={p.clasificacion} mapa={CLASIFICACION} label="Clase"/>}
+                    {p.prioridad && p.prioridad !== 'Media' && <BadgeChip texto={p.prioridad} mapa={PRIORIDAD} label="Prioridad"/>}
+                    {p.tipo_proyecto && p.tipo_proyecto !== 'Otros' && (
+                      <span style={{ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:4, background:COLORS.slate50, color:COLORS.slate600, whiteSpace:'nowrap' }}>{p.tipo_proyecto}</span>
+                    )}
                     {tieneBloqueadas && <span title="Actividades bloqueadas" style={{ color:COLORS.amber, display:'inline-flex' }}><Icon.Lock/></span>}
                   </div>
                   <div style={{ fontSize:15, fontWeight:500, color:COLORS.ink, marginBottom:2 }}>{p.nombre}</div>
                   <div style={{ fontSize:11, color:COLORS.slate500 }}>{p.cliente?.razon_social || 'Sin cliente'}{p.director?.nombre && ` · ${p.director.nombre}`}</div>
                 </div>
+                {/* v12: Avance ponderado visual */}
+                {!isMobile && (
+                  <div style={{ minWidth:100, textAlign:'right' }}>
+                    <div style={{ fontSize:10, color:COLORS.slate500, fontWeight:600, marginBottom:3 }}>Avance ponderado</div>
+                    <div style={{ fontSize:14, fontFamily:'var(--font-mono)', fontWeight:700, color: avancePond >= 75 ? COLORS.teal : avancePond >= 40 ? COLORS.amber : COLORS.slate600 }}>{avancePond}%</div>
+                  </div>
+                )}
+                {/* v12: Botón duplicar */}
+                <button onClick={(e) => handleDuplicarProyecto(p, e)} title="Duplicar proyecto completo" style={{ padding:'6px 8px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}>
+                  <Icon.Duplicate/>
+                </button>
                 <span style={{ color:COLORS.slate400 }}>›</span>
               </div>
             )

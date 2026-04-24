@@ -643,3 +643,147 @@ export async function cambiarImportancia(actividadId, importancia) {
     .eq('id', actividadId)
   if (error) throw error
 }
+
+// ============================================================
+// v12 + v13.3 — AGREGAR AL FINAL DE tu src/supabase.js
+// (copia TODO este bloque y pégalo al final del archivo)
+// ============================================================
+
+// ----- v12: DUPLICAR PROYECTO COMPLETO -----
+// Crea una copia del proyecto con todas sus actividades (y sus deps)
+export async function duplicarProyecto(proyectoId, nuevoNombre) {
+  // 1. Traer proyecto original
+  const { data: original, error: eP } = await supabase
+    .from('proyectos').select('*').eq('id', proyectoId).single()
+  if (eP) throw eP
+
+  // 2. Generar código nuevo
+  const { count } = await supabase.from('proyectos').select('*', { count:'exact', head:true })
+  const codigo = `PRY-${String((count || 0) + 1).padStart(3, '0')}`
+
+  // 3. Crear proyecto duplicado (quitamos id, created_at, updated_at)
+  const { id: _, created_at, updated_at, codigo: _c, ...datos } = original
+  const { data: nuevo, error: eN } = await supabase
+    .from('proyectos')
+    .insert({
+      ...datos,
+      codigo,
+      nombre: nuevoNombre,
+      estado: 'Por iniciar',
+    })
+    .select().single()
+  if (eN) throw eN
+
+  // 4. Traer actividades originales
+  const { data: actsOrig } = await supabase
+    .from('actividades').select('*').eq('proyecto_id', proyectoId).order('numero')
+
+  if (!actsOrig || actsOrig.length === 0) return nuevo.id
+
+  // 5. Mapear id_viejo → id_nuevo (para preservar deps y jerarquía padre/hijo)
+  // Primero insertamos actividades SIN deps ni parent_id, y guardamos el mapeo
+  const mapaIds = {}
+  const actsParaInsertar = actsOrig.map(a => {
+    const { id, created_at, updated_at, proyecto_id, parent_id, deps, ...datos } = a
+    return { ...datos, proyecto_id: nuevo.id, avance: 0, estado: 'Sin iniciar', completada: false }
+  })
+
+  const { data: actsNuevas, error: eA } = await supabase
+    .from('actividades').insert(actsParaInsertar).select()
+  if (eA) throw eA
+
+  // Construir mapa id_viejo → id_nuevo usando el número (que preservamos)
+  actsOrig.forEach((orig, i) => {
+    const nueva = actsNuevas.find(n => n.numero === orig.numero)
+    if (nueva) mapaIds[orig.id] = nueva.id
+  })
+
+  // 6. Segundo pase: actualizar parent_id y deps con los nuevos IDs
+  const actualizaciones = []
+  for (const orig of actsOrig) {
+    const nuevoId = mapaIds[orig.id]
+    if (!nuevoId) continue
+    const cambios = {}
+    if (orig.parent_id && mapaIds[orig.parent_id]) {
+      cambios.parent_id = mapaIds[orig.parent_id]
+    }
+    if (orig.deps && orig.deps.length > 0) {
+      cambios.deps = orig.deps
+        .map(d => mapaIds[d.id] ? { ...d, id: mapaIds[d.id] } : null)
+        .filter(Boolean)
+    }
+    if (Object.keys(cambios).length > 0) {
+      actualizaciones.push(supabase.from('actividades').update(cambios).eq('id', nuevoId))
+    }
+  }
+  await Promise.all(actualizaciones)
+
+  return nuevo.id
+}
+
+// ----- v12: CALCULAR AVANCE PONDERADO (fórmula Luis) -----
+// Si parentId es null → avance del proyecto completo
+// Si parentId es un ID → avance ponderado de los hijos de ese padre
+// Fórmula: Σ (avance_i × peso_i) / Σ peso_i
+// Si no hay pesos definidos, usa promedio simple
+export function calcularAvancePonderado(actividades, parentId = null) {
+  const hijos = actividades.filter(a => (a.parent_id || null) === parentId)
+  if (hijos.length === 0) return 0
+
+  const sumaPesos = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
+
+  if (sumaPesos > 0) {
+    // Avance ponderado
+    const sumaPonderada = hijos.reduce((s, h) => s + (Number(h.peso || 0) * Number(h.avance || 0)), 0)
+    return Math.round(sumaPonderada / sumaPesos)
+  } else {
+    // Fallback: promedio simple
+    const sumaSimple = hijos.reduce((s, h) => s + Number(h.avance || 0), 0)
+    return Math.round(sumaSimple / hijos.length)
+  }
+}
+
+// ----- v12: VALIDAR SUMA DE PESOS -----
+// Verifica si los pesos de los hijos suman 100%
+// Retorna: { ok: bool, suma: number, mensaje: string }
+export function validarSumaPesos(actividades, parentId = null) {
+  const hijos = actividades.filter(a => (a.parent_id || null) === parentId)
+  const suma = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
+
+  if (suma === 0) return { ok: true, suma: 0, mensaje: 'Sin pesos definidos (usando promedio simple)' }
+  if (suma === 100) return { ok: true, suma: 100, mensaje: 'Pesos correctos' }
+  return { ok: false, suma, mensaje: `La suma es ${suma}%, debe ser 100%` }
+}
+
+// ----- v12: MARCAR ACTIVIDAD COMO COBRABLE -----
+export async function marcarCobrable(actividadId, esCobrable, estadoCobro = null, monto = null) {
+  const cambios = { es_cobrable: esCobrable }
+  if (esCobrable) {
+    cambios.estado_cobro = estadoCobro || 'Pendiente'
+    if (monto !== null) cambios.monto_cobrable = monto
+  } else {
+    cambios.estado_cobro = 'NA'
+  }
+  const { error } = await supabase.from('actividades').update(cambios).eq('id', actividadId)
+  if (error) throw error
+}
+
+// ----- v13.3: RECALCULAR FECHAS DEL PADRE -----
+// Cuando se mueve un hijo, el padre debe adaptar sus fechas (MIN inicio, MAX fin)
+// para que el grupo visual abarque todos sus hijos.
+export async function recalcularPadre(padreId) {
+  if (!padreId) return
+  const { data: hijos, error } = await supabase
+    .from('actividades').select('inicio, fin').eq('parent_id', padreId)
+  if (error) throw error
+  if (!hijos || hijos.length === 0) return
+
+  const minInicio = hijos.reduce((min, h) => !min || h.inicio < min ? h.inicio : min, null)
+  const maxFin = hijos.reduce((max, h) => !max || h.fin > max ? h.fin : max, null)
+
+  if (!minInicio || !maxFin) return
+
+  await supabase.from('actividades')
+    .update({ inicio: minInicio, fin: maxFin })
+    .eq('id', padreId)
+}
