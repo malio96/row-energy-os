@@ -409,8 +409,20 @@ export async function actualizarHito(id, cambios) {
 // FACTURAS
 // ============================================================
 export async function getFacturas() {
-  const { data } = await supabase.from('facturas').select(`*, cliente:clientes(id, razon_social), proyecto:proyectos(id, codigo, nombre)`).order('fecha_emision', { ascending: false })
-  return data || []
+  const { data } = await supabase
+    .from('facturas')
+    .select(`
+      *,
+      cliente:clientes(id, razon_social),
+      proyecto:proyectos(id, codigo, nombre),
+      hito:hitos_cobranza!hito_cobranza_id(id, fecha_cobro)
+    `)
+    .order('fecha_emision', { ascending: false })
+
+  return (data || []).map(f => ({
+    ...f,
+    fecha_pago: f.hito?.fecha_cobro || null
+  }))
 }
 
 export async function crearFactura(data) {

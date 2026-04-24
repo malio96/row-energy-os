@@ -190,8 +190,8 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
   const bloqueadas = proyectos.reduce((n,p) => n + (p.actividades || []).filter(a => a.estado === 'Bloqueada').length, 0)
   if (bloqueadas > 0) alertas.push({ titulo:`${bloqueadas} actividades bloqueadas en proyectos`, color:COLORS.amber, nav:'proyectos' })
   const proximosCierre = proyectos.filter(p => {
-    if (!p.fecha_cierre || p.estado === 'Terminado') return false
-    const d = daysUntil(p.fecha_cierre)
+    if (!p.cierre || p.estado === 'Terminado') return false
+    const d = daysUntil(p.cierre)
     return d !== null && d >= 0 && d <= 30
   })
   if (proximosCierre.length > 0) alertas.push({ titulo:`${proximosCierre.length} proyecto(s) con cierre próximo`, color:COLORS.navy, nav:'proyectos' })
@@ -270,7 +270,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
         <Tarjeta titulo={`Proyectos con cierre próximo (${proximosCierre.length})`} onVerTodo={() => onNavigate?.('proyectos')}>
           {proximosCierre.length === 0 && <EmptyMini texto="Ningún proyecto cerca de cierre"/>}
           {proximosCierre.slice(0, 5).map(p => {
-            const d = daysUntil(p.fecha_cierre)
+            const d = daysUntil(p.cierre)
             return (
               <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}` }}>
                 <div style={{ flex:1, minWidth:0 }}>
