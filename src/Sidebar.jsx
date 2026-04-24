@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { supabase, getNotificaciones } from './supabase'
 import { COLORS, useIsMobile, loadPref, savePref } from './helpers'
+import { puede } from './permisos'  // v12.5.6
 
 // ============================================================
 // v13 — Sidebar retráctil estilo Klar
 // v12.5.3: importa COLORS, useIsMobile, loadPref, savePref de helpers
+// v12.5.6: filtra módulos por permiso según rol
 // ============================================================
 
 // ============================================================
@@ -60,6 +62,18 @@ const modulos = [
 ]
 
 // ============================================================
+// v12.5.6: filtrar módulos según permisos del usuario
+// ============================================================
+function filtrarModulosPorPermisos(usuario) {
+  return modulos
+    .map(seccion => ({
+      ...seccion,
+      items: seccion.items.filter(item => puede(usuario, item.id)),
+    }))
+    .filter(seccion => seccion.items.length > 0)
+}
+
+// ============================================================
 // Componente principal
 // ============================================================
 export default function Sidebar({ usuario, onLogout }) {
@@ -69,7 +83,9 @@ export default function Sidebar({ usuario, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notifCount, setNotifCount] = useState(0)
 
-  // Cargar notificaciones no leídas
+  // v12.5.6: módulos filtrados por permiso
+  const modulosVisibles = filtrarModulosPorPermisos(usuario)
+
   useEffect(() => {
     if (!usuario?.id) return
     getNotificaciones(usuario.id).then(notifs => {
@@ -77,22 +93,18 @@ export default function Sidebar({ usuario, onLogout }) {
     }).catch(() => {})
   }, [usuario?.id, location.pathname])
 
-  // Guardar preferencia
   useEffect(() => { savePref('sidebar_collapsed', collapsed) }, [collapsed])
-
-  // Cerrar menú mobile al navegar
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   const ancho = collapsed ? 72 : 240
 
   // ============================================================
-  // MOBILE: Header + drawer + bottom nav
+  // MOBILE
   // ============================================================
   if (isMobile) {
-    const mobileNavItems = modulos.flatMap(s => s.items).filter(i => i.mobileNav).slice(0, 5)
+    const mobileNavItems = modulosVisibles.flatMap(s => s.items).filter(i => i.mobileNav).slice(0, 5)
     return (
       <>
-        {/* Header superior mobile */}
         <div style={{
           position:'fixed', top:0, left:0, right:0, zIndex:100, height:56,
           background:'white', borderBottom:`1px solid ${COLORS.slate100}`,
@@ -105,7 +117,6 @@ export default function Sidebar({ usuario, onLogout }) {
           <div style={{ width:40 }}/>
         </div>
 
-        {/* Drawer overlay */}
         {mobileOpen && (
           <>
             <div onClick={() => setMobileOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.4)', zIndex:200 }}/>
@@ -124,7 +135,7 @@ export default function Sidebar({ usuario, onLogout }) {
                 </button>
               </div>
               <div style={{ flex:1, padding:'12px 8px', overflow:'auto' }}>
-                {modulos.map((seccion, idx) => (
+                {modulosVisibles.map((seccion, idx) => (
                   <div key={idx} style={{ marginBottom: 16 }}>
                     {seccion.seccion && (
                       <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate400, letterSpacing:'0.1em', padding:'8px 12px' }}>
@@ -162,7 +173,6 @@ export default function Sidebar({ usuario, onLogout }) {
           </>
         )}
 
-        {/* Bottom nav mobile */}
         <div style={{
           position:'fixed', bottom:0, left:0, right:0, zIndex:100, height:62,
           background:'white', borderTop:`1px solid ${COLORS.slate100}`,
@@ -189,7 +199,7 @@ export default function Sidebar({ usuario, onLogout }) {
   }
 
   // ============================================================
-  // DESKTOP: Sidebar retráctil estilo Klar
+  // DESKTOP
   // ============================================================
   return (
     <aside style={{
@@ -206,7 +216,6 @@ export default function Sidebar({ usuario, onLogout }) {
       overflow: 'hidden',
       flexShrink: 0,
     }}>
-      {/* HEADER — Logo + botón colapsar */}
       <div style={{
         padding: collapsed ? '18px 0 14px' : '20px 20px 14px',
         borderBottom: `1px solid ${COLORS.slate100}`,
@@ -229,7 +238,6 @@ export default function Sidebar({ usuario, onLogout }) {
             </div>
           </div>
         )}
-        {/* Botón colapsar/expandir */}
         <button
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expandir menú' : 'Contraer menú'}
@@ -252,9 +260,8 @@ export default function Sidebar({ usuario, onLogout }) {
         </button>
       </div>
 
-      {/* NAV — Módulos */}
       <nav style={{ flex: 1, padding: '10px 8px', overflow: 'auto', overflowX: 'hidden' }}>
-        {modulos.map((seccion, idx) => (
+        {modulosVisibles.map((seccion, idx) => (
           <div key={idx} style={{ marginBottom: collapsed ? 6 : 12 }}>
             {seccion.seccion && !collapsed && (
               <div style={{
@@ -307,7 +314,6 @@ export default function Sidebar({ usuario, onLogout }) {
                         {item.label}
                       </span>
                     )}
-                    {/* Badge notificaciones en Dashboard */}
                     {!collapsed && item.id === 'dashboard' && notifCount > 0 && (
                       <span style={{
                         background: COLORS.teal, color: 'white',
@@ -325,7 +331,6 @@ export default function Sidebar({ usuario, onLogout }) {
         ))}
       </nav>
 
-      {/* FOOTER — Usuario */}
       <div style={{
         padding: collapsed ? 10 : 14,
         borderTop: `1px solid ${COLORS.slate100}`,

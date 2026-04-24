@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom'
 import { supabase } from './supabase'
 import { COLORS, useIsMobile } from './helpers'
+import { puede } from './permisos'  // v12.5.6
 import Sidebar from './Sidebar'
 import Proyectos from './Proyectos'
 import Cotizaciones from './Cotizaciones'
@@ -17,7 +18,7 @@ import Dashboard from './Dashboard'
 import CommandPalette from './CommandPalette'
 
 // ============================================================
-// v12.5.3: Rutas centralizadas (usadas por Dashboard y CommandPalette)
+// v12.5.3: Rutas centralizadas
 // ============================================================
 const RUTAS_POR_SECCION = {
   dashboard: '/',
@@ -41,7 +42,7 @@ const inputStyle = {
 }
 
 // ============================================================
-// LOGIN — v12.5.3: sin credenciales hardcoded
+// LOGIN
 // ============================================================
 function Login({ onLogin }) {
   const [email, setEmail] = useState('')
@@ -100,7 +101,18 @@ function Login({ onLogin }) {
 }
 
 // ============================================================
-// DASHBOARD WRAPPER — conecta onNavigate con react-router
+// v12.5.6: RUTA PROTEGIDA
+// Si el usuario no tiene permiso para este módulo, redirige a Dashboard
+// ============================================================
+function RutaProtegida({ usuario, modulo, children }) {
+  if (!puede(usuario, modulo)) {
+    return <Navigate to="/" replace/>
+  }
+  return children
+}
+
+// ============================================================
+// DASHBOARD WRAPPER
 // ============================================================
 function DashboardWrapper({ usuario }) {
   const navigate = useNavigate()
@@ -109,7 +121,7 @@ function DashboardWrapper({ usuario }) {
 }
 
 // ============================================================
-// COMMAND PALETTE WRAPPER — conecta onNavigate con react-router
+// COMMAND PALETTE WRAPPER
 // ============================================================
 function CommandPaletteWrapper({ open, onClose }) {
   const navigate = useNavigate()
@@ -118,7 +130,7 @@ function CommandPaletteWrapper({ open, onClose }) {
 }
 
 // ============================================================
-// v13: LAYOUT estilo Klar
+// LAYOUT
 // ============================================================
 function Layout({ usuario, onLogout, children }) {
   const [cmdOpen, setCmdOpen] = useState(false)
@@ -160,7 +172,7 @@ function Layout({ usuario, onLogout, children }) {
 }
 
 // ============================================================
-// APP — v12.5.3: onAuthStateChange + manejo robusto de errores
+// APP — v12.5.6: rutas protegidas por permiso
 // ============================================================
 export default function App() {
   const [usuario, setUsuario] = useState(null)
@@ -181,7 +193,6 @@ export default function App() {
         .single()
 
       if (error || !data) {
-        // Usuario autenticado pero no encontrado en la tabla: reset limpio
         console.warn('Usuario autenticado pero no encontrado en tabla usuarios. Cerrando sesión.')
         await supabase.auth.signOut()
         if (mounted) { setUsuario(null); setLoading(false) }
@@ -191,10 +202,8 @@ export default function App() {
       if (mounted) { setUsuario(data); setLoading(false) }
     }
 
-    // 1. Carga inicial de sesión
     supabase.auth.getSession().then(({ data: { session } }) => cargarUsuario(session))
 
-    // 2. Listener: sincroniza cambios de sesión (token refresh, signOut desde otra pestaña, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       cargarUsuario(session)
     })
@@ -217,17 +226,60 @@ export default function App() {
     <BrowserRouter>
       <Layout usuario={usuario} onLogout={handleLogout}>
         <Routes>
+          {/* Dashboard siempre accesible (todos los roles lo tienen) */}
           <Route path="/" element={<DashboardWrapper usuario={usuario}/>}/>
-          <Route path="/proyectos" element={<Proyectos usuario={usuario}/>}/>
-          <Route path="/cotizaciones" element={<Cotizaciones usuario={usuario}/>}/>
-          <Route path="/leads" element={<Leads usuario={usuario}/>}/>
-          <Route path="/cobranza" element={<Cobranza usuario={usuario}/>}/>
-          <Route path="/facturacion" element={<Facturacion usuario={usuario}/>}/>
-          <Route path="/compras" element={<Compras usuario={usuario}/>}/>
-          <Route path="/contratos" element={<Contratos usuario={usuario}/>}/>
-          <Route path="/cierre" element={<Cierre usuario={usuario}/>}/>
-          <Route path="/postventa" element={<Postventa usuario={usuario}/>}/>
-          <Route path="/config" element={<Configuracion usuario={usuario}/>}/>
+
+          {/* v12.5.6: rutas protegidas por permiso */}
+          <Route path="/proyectos" element={
+            <RutaProtegida usuario={usuario} modulo="proyectos">
+              <Proyectos usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/cotizaciones" element={
+            <RutaProtegida usuario={usuario} modulo="cotizaciones">
+              <Cotizaciones usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/leads" element={
+            <RutaProtegida usuario={usuario} modulo="leads">
+              <Leads usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/cobranza" element={
+            <RutaProtegida usuario={usuario} modulo="cobranza">
+              <Cobranza usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/facturacion" element={
+            <RutaProtegida usuario={usuario} modulo="facturacion">
+              <Facturacion usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/compras" element={
+            <RutaProtegida usuario={usuario} modulo="compras">
+              <Compras usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/contratos" element={
+            <RutaProtegida usuario={usuario} modulo="contratos">
+              <Contratos usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/cierre" element={
+            <RutaProtegida usuario={usuario} modulo="cierre">
+              <Cierre usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/postventa" element={
+            <RutaProtegida usuario={usuario} modulo="postventa">
+              <Postventa usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/config" element={
+            <RutaProtegida usuario={usuario} modulo="config">
+              <Configuracion usuario={usuario}/>
+            </RutaProtegida>
+          }/>
         </Routes>
       </Layout>
     </BrowserRouter>
