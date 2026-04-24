@@ -1499,3 +1499,84 @@ export async function invitarUsuarioViaEdge({ nombre, email, rol, telefono = nul
 
   return data
 }
+
+// ============================================================
+// PATCH SUPABASE v12.5.9 — CRUD Alertas Config
+// ============================================================
+//
+// CÓMO APLICAR:
+//   1. Abre src/supabase.js
+//   2. Ve hasta el FINAL del archivo
+//   3. Pega TODO este bloque
+//   4. Guarda
+// ============================================================
+
+
+// ============================================================
+// v12.5.9: Alertas config (por usuario)
+// ============================================================
+
+// Obtiene la config de alertas del usuario actual
+// Si no tiene config, la crea con defaults por rol
+export async function getAlertasConfig(usuarioId) {
+  if (!usuarioId) throw new Error('usuarioId requerido')
+
+  const { data, error } = await supabase
+    .from('alertas_config')
+    .select('*')
+    .eq('usuario_id', usuarioId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('getAlertasConfig:', error)
+    return null
+  }
+
+  // Si no existe, crear con defaults por rol
+  if (!data) {
+    await supabase.rpc('aplicar_defaults_alertas', { p_usuario_id: usuarioId })
+    const { data: nuevaConfig } = await supabase
+      .from('alertas_config')
+      .select('*')
+      .eq('usuario_id', usuarioId)
+      .single()
+    return nuevaConfig
+  }
+
+  return data
+}
+
+// Actualiza la config de alertas del usuario
+export async function actualizarAlertasConfig(usuarioId, cambios) {
+  if (!usuarioId) throw new Error('usuarioId requerido')
+
+  const { data, error } = await supabase
+    .from('alertas_config')
+    .update({ ...cambios, updated_at: new Date().toISOString() })
+    .eq('usuario_id', usuarioId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Resetear a defaults del rol (útil si el usuario quiere volver al default)
+export async function resetearAlertasConfig(usuarioId) {
+  if (!usuarioId) throw new Error('usuarioId requerido')
+
+  // Borrar la config actual
+  await supabase.from('alertas_config').delete().eq('usuario_id', usuarioId)
+
+  // Recrear con defaults
+  await supabase.rpc('aplicar_defaults_alertas', { p_usuario_id: usuarioId })
+
+  // Retornar la nueva
+  const { data } = await supabase
+    .from('alertas_config')
+    .select('*')
+    .eq('usuario_id', usuarioId)
+    .single()
+
+  return data
+}
