@@ -787,3 +787,147 @@ export async function recalcularPadre(padreId) {
     .update({ inicio: minInicio, fin: maxFin })
     .eq('id', padreId)
 }
+
+// ============================================================
+// PATCH SUPABASE v12 — calcularCargaPorColaborador + identificarCuellosBotella
+// ============================================================
+//
+// ERROR QUE ARREGLA:
+//   Uncaught SyntaxError: The requested module '/src/supabase.js'
+//   does not provide an export named 'calcularCargaPorColaborador'
+//   (at Dashboard.jsx:4:10)
+//
+// CÓMO APLICAR:
+//   1. Abre src/supabase.js
+//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
+//   3. Pega TODO este bloque (desde la línea "// ============")
+//   4. Guarda (Cmd+S)
+//   5. Vite recarga solo, la app vuelve a cargar
+//
+// NOTA:
+//   Son funciones puras — no requieren tablas SQL nuevas.
+//   Trabajan sobre las actividades y usuarios que ya cargas.
+// ============================================================
+
+// ============================================================
+// v12: Cálculo de carga por colaborador (para VistaPersonas de Luis)
+// ============================================================
+export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
+  // Rango de "esta semana" (lunes-domingo de la semana actual)
+  const hoy = new Date()
+  const diaSemana = hoy.getDay() // 0=domingo, 1=lunes...
+  const diasDesdeLunes = diaSemana === 0 ? 6 : diaSemana - 1
+  const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - diasDesdeLunes); lunes.setHours(0,0,0,0)
+  const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 7)
+
+  // Solo usuarios que trabajan en operaciones (equipo, director de proyectos, admin)
+  const usuariosOperativos = usuarios.filter(u =>
+    ['equipo_proyectos', 'director_proyectos', 'admin', 'direccion'].includes(u.rol)
+  )
+
+  return usuariosOperativos.map(u => {
+    const capacidad = Number(u.capacidad_horas_semana || 40) // horas/semana, default 40
+    const actsUsuario = actividades.filter(a => a.responsable_id === u.id || a.asignado_id === u.id)
+    const activas = actsUsuario.filter(a => !['Completada','Cancelada'].includes(a.estado))
+    const completadas = actsUsuario.filter(a => a.estado === 'Completada')
+
+    // Horas consumidas esta semana: contar días traslapados con la semana actual × 8h
+    let horasSemana = 0
+    activas.forEach(a => {
+      if (!a.fecha_inicio || !a.fecha_fin) return
+      const ini = new Date(a.fecha_inicio); ini.setHours(0,0,0,0)
+      const fin = new Date(a.fecha_fin); fin.setHours(23,59,59,999)
+      // Intersección con [lunes, domingo)
+      const interIni = ini > lunes ? ini : lunes
+      const interFin = fin < domingo ? fin : new Date(domingo.getTime() - 1)
+      if (interFin < interIni) return
+      const diasTraslape = Math.max(1, Math.ceil((interFin - interIni) / (1000*60*60*24)))
+      horasSemana += diasTraslape * 8 // 8h por día
+    })
+
+    const porcentaje = capacidad > 0 ? Math.round((horasSemana / capacidad) * 100) : 0
+    const sobrecargado = porcentaje > 100
+    const subutilizado = porcentaje < 50 && activas.length > 0
+
+    // Tiempo promedio en actividades completadas (duración real)
+    let tiempoPromedioDias = null
+    if (completadas.length > 0) {
+      const dias = completadas.map(a => {
+        const ini = a.fecha_inicio_real || a.fecha_inicio
+        const fin = a.fecha_fin_real || a.fecha_fin
+        if (!ini || !fin) return null
+        return Math.ceil((new Date(fin) - new Date(ini)) / (1000*60*60*24))
+      }).filter(d => d !== null && d > 0)
+      if (dias.length > 0) {
+        tiempoPromedioDias = Math.round(dias.reduce((s,d) => s+d, 0) / dias.length)
+      }
+    }
+
+    // Desviación: (real - estimado) / estimado
+    let desviacionPct = 0
+    if (completadas.length > 0) {
+      const desvs = completadas.map(a => {
+        const iniEst = a.fecha_inicio
+        const finEst = a.fecha_fin
+        const iniReal = a.fecha_inicio_real || iniEst
+        const finReal = a.fecha_fin_real || finEst
+        if (!iniEst || !finEst || !iniReal || !finReal) return null
+        const estDias = Math.ceil((new Date(finEst) - new Date(iniEst)) / (1000*60*60*24))
+        const realDias = Math.ceil((new Date(finReal) - new Date(iniReal)) / (1000*60*60*24))
+        if (estDias <= 0) return null
+        return ((realDias - estDias) / estDias) * 100
+      }).filter(v => v !== null)
+      if (desvs.length > 0) {
+        desviacionPct = Math.round(desvs.reduce((s,v) => s+v, 0) / desvs.length)
+      }
+    }
+
+    return {
+      usuario: u,
+      asignadas: activas.length,
+      completadas: completadas.length,
+      horasSemana,
+      capacidad,
+      porcentaje,
+      sobrecargado,
+      subutilizado,
+      tiempoPromedioDias,
+      desviacionPct,
+    }
+  })
+}
+
+// ============================================================
+// v12: Identificar cuellos de botella (para VistaPersonas de Luis)
+// ============================================================
+export function identificarCuellosBotella(actividades = []) {
+  const hoy = new Date(); hoy.setHours(0,0,0,0)
+
+  // Actividades retrasadas: estado activo + fecha_fin < hoy
+  const retrasadas = actividades.filter(a => {
+    if (['Completada','Cancelada'].includes(a.estado)) return false
+    if (!a.fecha_fin) return false
+    return new Date(a.fecha_fin) < hoy
+  }).map(a => {
+    const diasRetraso = Math.ceil((hoy - new Date(a.fecha_fin)) / (1000*60*60*24))
+    return { ...a, diasRetraso }
+  })
+
+  // Agrupar por nombre de actividad (etapa más recurrente)
+  const porEtapaMap = {}
+  retrasadas.forEach(a => {
+    const key = a.nombre || 'Sin nombre'
+    if (!porEtapaMap[key]) porEtapaMap[key] = { nombre: key, count: 0, totalDias: 0 }
+    porEtapaMap[key].count += 1
+    porEtapaMap[key].totalDias += a.diasRetraso
+  })
+
+  const porEtapa = Object.values(porEtapaMap)
+    .sort((a,b) => b.count - a.count)
+    .slice(0, 5) // top 5 cuellos de botella
+
+  return {
+    retrasadas,
+    porEtapa,
+  }
+}
