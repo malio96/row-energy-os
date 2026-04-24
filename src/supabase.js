@@ -526,7 +526,7 @@ export async function getHitosProyecto(proyectoId) {
     .from('hitos_cobranza')
     .select('*')
     .eq('proyecto_id', proyectoId)
-    .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+    .order('fecha_esperada', { ascending: true, nullsFirst: false })
   if (error) throw error
   return data || []
 }
@@ -834,9 +834,9 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
     // Horas consumidas esta semana: contar días traslapados con la semana actual × 8h
     let horasSemana = 0
     activas.forEach(a => {
-      if (!a.fecha_inicio || !a.fecha_fin) return
-      const ini = new Date(a.fecha_inicio); ini.setHours(0,0,0,0)
-      const fin = new Date(a.fecha_fin); fin.setHours(23,59,59,999)
+      if (!a.inicio || !a.fin) return
+      const ini = new Date(a.inicio); ini.setHours(0,0,0,0)
+      const fin = new Date(a.fin); fin.setHours(23,59,59,999)
       // Intersección con [lunes, domingo)
       const interIni = ini > lunes ? ini : lunes
       const interFin = fin < domingo ? fin : new Date(domingo.getTime() - 1)
@@ -844,43 +844,30 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
       const diasTraslape = Math.max(1, Math.ceil((interFin - interIni) / (1000*60*60*24)))
       horasSemana += diasTraslape * 8 // 8h por día
     })
+ 
 
     const porcentaje = capacidad > 0 ? Math.round((horasSemana / capacidad) * 100) : 0
     const sobrecargado = porcentaje > 100
     const subutilizado = porcentaje < 50 && activas.length > 0
 
-    // Tiempo promedio en actividades completadas (duración real)
+     // Tiempo promedio en actividades completadas
+    // NOTA: Tu tabla 'actividades' no tiene columnas fecha_inicio_real/fecha_fin_real,
+    // usamos inicio/fin como referencia de duración.
     let tiempoPromedioDias = null
     if (completadas.length > 0) {
       const dias = completadas.map(a => {
-        const ini = a.fecha_inicio_real || a.fecha_inicio
-        const fin = a.fecha_fin_real || a.fecha_fin
-        if (!ini || !fin) return null
-        return Math.ceil((new Date(fin) - new Date(ini)) / (1000*60*60*24))
+        if (!a.inicio || !a.fin) return null
+        return Math.ceil((new Date(a.fin) - new Date(a.inicio)) / (1000*60*60*24))
       }).filter(d => d !== null && d > 0)
       if (dias.length > 0) {
         tiempoPromedioDias = Math.round(dias.reduce((s,d) => s+d, 0) / dias.length)
       }
     }
-
-    // Desviación: (real - estimado) / estimado
+ 
+    // Desviación real vs estimado — por ahora es 0 porque no tenemos fechas reales separadas.
+    // Si en el futuro agregas columnas fecha_inicio_real/fecha_fin_real a la tabla,
+    // podemos calcular desviación aquí.
     let desviacionPct = 0
-    if (completadas.length > 0) {
-      const desvs = completadas.map(a => {
-        const iniEst = a.fecha_inicio
-        const finEst = a.fecha_fin
-        const iniReal = a.fecha_inicio_real || iniEst
-        const finReal = a.fecha_fin_real || finEst
-        if (!iniEst || !finEst || !iniReal || !finReal) return null
-        const estDias = Math.ceil((new Date(finEst) - new Date(iniEst)) / (1000*60*60*24))
-        const realDias = Math.ceil((new Date(finReal) - new Date(iniReal)) / (1000*60*60*24))
-        if (estDias <= 0) return null
-        return ((realDias - estDias) / estDias) * 100
-      }).filter(v => v !== null)
-      if (desvs.length > 0) {
-        desviacionPct = Math.round(desvs.reduce((s,v) => s+v, 0) / desvs.length)
-      }
-    }
 
     return {
       usuario: u,
@@ -903,13 +890,13 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
 export function identificarCuellosBotella(actividades = []) {
   const hoy = new Date(); hoy.setHours(0,0,0,0)
 
-  // Actividades retrasadas: estado activo + fecha_fin < hoy
+  // Actividades retrasadas: estado activo + fin < hoy
   const retrasadas = actividades.filter(a => {
     if (['Completada','Cancelada'].includes(a.estado)) return false
-    if (!a.fecha_fin) return false
-    return new Date(a.fecha_fin) < hoy
+    if (!a.fin) return false
+    return new Date(a.fin) < hoy
   }).map(a => {
-    const diasRetraso = Math.ceil((hoy - new Date(a.fecha_fin)) / (1000*60*60*24))
+    const diasRetraso = Math.ceil((hoy - new Date(a.fin)) / (1000*60*60*24))
     return { ...a, diasRetraso }
   })
 
