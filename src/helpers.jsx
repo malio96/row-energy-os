@@ -1,6 +1,18 @@
 // ============================================================
-// HELPERS COMPARTIDOS — Row Energy OS v2.1
+// HELPERS COMPARTIDOS — Row Energy OS v2.2
 // v12.5.3: Agregado bgKlar a COLORS (usado por Layout de App.jsx)
+// v12.5.7: 11 fixes de auditoría
+//   C1 — fmtDate normaliza entrada no-string
+//   C2 — relativeTime maneja fechas futuras ("en 3 días")
+//   I1 — fmtMoney filtra strings vacíos y espacios
+//   I3 — daysUntil usa timezone local (no UTC)
+//   I4 — useIsMobile con debounce de 100ms
+//   I5 — Avatar robusto con trim/filter
+//   M1 — BarraAvance castea a Number
+//   M3 — savePref loggea errores
+//   M4 — fmtMoney negativos con signo antes del $
+//   M5 — EmptyState: acción documentada como ReactNode
+//   S4 — Icon warn en dev para typos
 // ============================================================
 import { useState, useEffect } from 'react'
 
@@ -74,25 +86,54 @@ export const ESTADOS_CONTRATO = {
 // ============================================================
 // FORMATEADORES
 // ============================================================
+
+// v12.5.7 I1 + M4: valida vacíos/espacios y signo antes del $
 export function fmtMoney(n, short=false) {
-  if (n === null || n === undefined || isNaN(n)) return '—'
+  // I1: null, undefined, '', ' ', strings que no son números
+  if (n === null || n === undefined || n === '' || (typeof n === 'string' && n.trim() === '')) return '—'
   const num = Number(n)
-  if (short && Math.abs(num) >= 1000000) return '$' + (num/1000000).toFixed(1) + 'M'
-  if (short && Math.abs(num) >= 1000) return '$' + (num/1000).toFixed(0) + 'k'
+  if (isNaN(num)) return '—'
+
+  if (short && Math.abs(num) >= 1000000) {
+    // M4: signo antes del $
+    const sign = num < 0 ? '-' : ''
+    return sign + '$' + Math.abs(num/1000000).toFixed(1) + 'M'
+  }
+  if (short && Math.abs(num) >= 1000) {
+    const sign = num < 0 ? '-' : ''
+    return sign + '$' + Math.abs(num/1000).toFixed(0) + 'k'
+  }
   return '$' + num.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
+// v12.5.7 C1: normaliza entrada antes de parsear
 export function fmtDate(s, format='short') {
   if (!s) return '—'
-  const d = new Date(s + (s.includes && s.includes('T') ? '' : 'T00:00:00'))
-  if (isNaN(d)) return s
+  // C1: normalizar a string (maneja Date objects, timestamps, etc.)
+  const str = String(s)
+  const d = new Date(str.includes('T') ? str : str + 'T00:00:00')
+  if (isNaN(d)) return '—'
   if (format === 'long') return d.toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric' })
   if (format === 'relative') return relativeTime(d)
   return d.toLocaleDateString('es-MX', { day:'2-digit', month:'2-digit', year:'numeric' })
 }
 
+// v12.5.7 C2: maneja fechas futuras ("en 3 días") además del pasado ("hace 3 días")
 export function relativeTime(date) {
   const diff = (new Date() - new Date(date)) / 1000
+
+  // C2: fechas futuras
+  if (diff < 0) {
+    const futuro = Math.abs(diff)
+    if (futuro < 60) return 'en un momento'
+    if (futuro < 3600) return `en ${Math.floor(futuro/60)} min`
+    if (futuro < 86400) return `en ${Math.floor(futuro/3600)} h`
+    if (futuro < 604800) return `en ${Math.floor(futuro/86400)} días`
+    if (futuro < 2592000) return `en ${Math.floor(futuro/604800)} semanas`
+    return `en ${Math.floor(futuro/2592000)} meses`
+  }
+
+  // Pasado (comportamiento original)
   if (diff < 60) return 'hace un momento'
   if (diff < 3600) return `hace ${Math.floor(diff/60)} min`
   if (diff < 86400) return `hace ${Math.floor(diff/3600)} h`
@@ -105,9 +146,12 @@ export function diffDays(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000)
 }
 
+// v12.5.7 I3: usa fecha local en vez de UTC (evita desfase nocturno en CDMX)
 export function daysUntil(fecha) {
   if (!fecha) return null
-  return diffDays(new Date().toISOString().split('T')[0], fecha)
+  const hoy = new Date()
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+  return diffDays(hoyStr, fecha)
 }
 
 // ============================================================
@@ -118,15 +162,24 @@ export function Badge({ texto, mapa, size=11 }) {
   return <span style={{ display:'inline-flex', alignItems:'center', fontSize:size, fontWeight:500, padding:'3px 10px', borderRadius:20, background:c.bg, color:c.color, whiteSpace:'nowrap' }}>{texto}</span>
 }
 
+// v12.5.7 I5: trim + filter para nombres con espacios raros o de 1 palabra
 export function Avatar({ nombre, size=28 }) {
-  const iniciales = nombre?.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase() || '?'
+  const iniciales = nombre
+    ?.trim()
+    ?.split(/\s+/)
+    ?.filter(Boolean)
+    ?.map(n => n[0])
+    ?.slice(0, 2)
+    ?.join('')
+    ?.toUpperCase() || '?'
   const colors = ['#1B3A6B','#0F6E56','#C89B3C','#6B4C9A','#D97706','#DC2626','#3B82F6','#10B981']
-  const color = colors[(nombre?.length||0) % colors.length]
+  const color = colors[(nombre?.length || 0) % colors.length]
   return <div style={{ width:size, height:size, borderRadius:'50%', background:color, color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:Math.max(10, size*0.38), fontWeight:600, flexShrink:0 }}>{iniciales}</div>
 }
 
+// v12.5.7 M1: Number() explícito
 export function BarraAvance({ avance, color=COLORS.navy2, height=5, showNumber=true }) {
-  const v = Math.max(0, Math.min(100, avance||0))
+  const v = Math.max(0, Math.min(100, Number(avance) || 0))
   return (
     <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:showNumber ? 100 : 60 }}>
       <div style={{ flex:1, height, background:'#EEF2F6', borderRadius:height/2, overflow:'hidden' }}>
@@ -137,6 +190,8 @@ export function BarraAvance({ avance, color=COLORS.navy2, height=5, showNumber=t
   )
 }
 
+// v12.5.7 M5: 'accion' debe ser ReactNode (componente JSX), no función
+// Uso correcto: <EmptyState accion={<button>Click</button>}/>
 export function EmptyState({ icon, titulo, descripcion, accion }) {
   return (
     <div style={{ padding:'50px 20px', background:'white', border:`1px dashed ${COLORS.slate200}`, borderRadius:12, textAlign:'center' }}>
@@ -155,6 +210,8 @@ export function LoadingState() {
 // ============================================================
 // ÍCONOS
 // ============================================================
+
+// v12.5.7 S4: warn en dev si un tipo no existe
 export function Icon(tipo) {
   const s = {
     X:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>,
@@ -187,6 +244,11 @@ export function Icon(tipo) {
     Message:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
     Scale:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>,
     Diamond:<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 22 12 12 22 2 12z"/></svg>,
+  }
+
+  // S4: warn en dev si el tipo no existe (silencia en producción)
+  if (tipo && !s[tipo] && typeof window !== 'undefined' && window?.location?.hostname === 'localhost') {
+    console.warn(`Icon: tipo "${tipo}" no existe. Tipos disponibles:`, Object.keys(s).join(', '))
   }
   return s[tipo] || null
 }
@@ -236,9 +298,22 @@ export const card = {
 // ============================================================
 // HOOKS
 // ============================================================
+
+// v12.5.7 I4: debounce de 100ms para evitar rerenders en resize
 export function useIsMobile() {
   const [m, setM] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
-  useEffect(() => { const h = () => setM(window.innerWidth < 768); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h) }, [])
+  useEffect(() => {
+    let timer = null
+    const handler = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => setM(window.innerWidth < 768), 100)
+    }
+    window.addEventListener('resize', handler)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', handler)
+    }
+  }, [])
   return m
 }
 
@@ -257,6 +332,9 @@ export function loadPref(key, defaultValue) {
   try { const v = localStorage.getItem(`rowenergy:${key}`); return v ? JSON.parse(v) : defaultValue }
   catch { return defaultValue }
 }
+
+// v12.5.7 M3: loggea errores en vez de silenciarlos
 export function savePref(key, value) {
-  try { localStorage.setItem(`rowenergy:${key}`, JSON.stringify(value)) } catch {}
+  try { localStorage.setItem(`rowenergy:${key}`, JSON.stringify(value)) }
+  catch (e) { console.warn(`No se pudo guardar preferencia "${key}":`, e.message) }
 }
