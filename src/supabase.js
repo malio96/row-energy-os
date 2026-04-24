@@ -930,3 +930,268 @@ export function identificarCuellosBotella(actividades = []) {
     porEtapa,
   }
 }
+
+// ============================================================
+// PATCH SUPABASE v12.5.4 — CRUD Gastos + Cuentas por Pagar
+// ============================================================
+//
+// CÓMO APLICAR:
+//   1. Abre src/supabase.js
+//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
+//   3. Pega TODO este bloque después de identificarCuellosBotella()
+//   4. Guarda (Cmd+S)
+//
+// NOTA:
+//   Son funciones 100% aditivas. No toca ningún código existente.
+//   Usan las 2 tablas nuevas: gastos_variables y cuentas_por_pagar
+// ============================================================
+
+
+// ============================================================
+// v12.5.4: GASTOS VARIABLES
+// ============================================================
+
+// Lista todos los gastos variables (opcionalmente filtrados por año)
+export async function getGastosVariables(anio = null) {
+  let query = supabase
+    .from('gastos_variables')
+    .select('*, creador:usuarios!creado_por(id, nombre)')
+    .order('anio', { ascending: false })
+    .order('mes', { ascending: false })
+
+  if (anio) query = query.eq('anio', anio)
+
+  const { data, error } = await query
+  if (error) { console.error('getGastosVariables:', error); return [] }
+  return data || []
+}
+
+// Crear un gasto variable nuevo
+export async function crearGasto({ categoria, monto, mes, anio, notas = null }) {
+  const { data: userData } = await supabase.auth.getUser()
+  const authId = userData?.user?.id
+  let creadoPor = null
+  if (authId) {
+    const { data: u } = await supabase.from('usuarios').select('id').eq('auth_id', authId).single()
+    creadoPor = u?.id || null
+  }
+
+  const { data, error } = await supabase
+    .from('gastos_variables')
+    .insert({ categoria, monto: Number(monto), mes: Number(mes), anio: Number(anio), notas, creado_por: creadoPor })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Actualizar gasto existente
+export async function actualizarGasto(id, cambios) {
+  const { data, error } = await supabase
+    .from('gastos_variables')
+    .update(cambios)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Eliminar gasto
+export async function eliminarGasto(id) {
+  const { error } = await supabase.from('gastos_variables').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Helper: agrupar gastos por categoría para un mes/año específico
+// Retorna: { categoria: montoTotal, ... }
+export function agruparGastosPorCategoria(gastos, mes, anio) {
+  return gastos
+    .filter(g => g.mes === mes && g.anio === anio)
+    .reduce((acc, g) => {
+      acc[g.categoria] = (acc[g.categoria] || 0) + Number(g.monto || 0)
+      return acc
+    }, {})
+}
+
+// Helper: agrupar gastos históricos por año (para gráfico de líneas)
+// Retorna: { 2024: [enero, feb, ...], 2025: [...], 2026: [...] }
+export function agruparGastosHistoricos(gastos) {
+  const result = {}
+  gastos.forEach(g => {
+    if (!result[g.anio]) result[g.anio] = Array(12).fill(0)
+    result[g.anio][g.mes - 1] += Number(g.monto || 0)
+  })
+  return result
+}
+
+
+// ============================================================
+// v12.5.4: CUENTAS POR PAGAR
+// ============================================================
+
+// Lista todas las cuentas por pagar (opcionalmente filtradas)
+export async function getCuentasPorPagar({ estado = null, soloSemanaActual = false } = {}) {
+  let query = supabase
+    .from('cuentas_por_pagar')
+    .select(`
+      *,
+      creador:usuarios!creado_por(id, nombre),
+      autorizador:usuarios!autorizado_por(id, nombre),
+      pagador:usuarios!pagado_por(id, nombre),
+      proyecto:proyectos(id, codigo, nombre)
+    `)
+    .order('fecha_pago', { ascending: true })
+
+  if (estado) query = query.eq('estado', estado)
+
+  if (soloSemanaActual) {
+    const hoy = new Date()
+    const dia = hoy.getDay()
+    const diasDesdeLunes = dia === 0 ? 6 : dia - 1
+    const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - diasDesdeLunes)
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6)
+    query = query
+      .gte('fecha_pago', lunes.toISOString().split('T')[0])
+      .lte('fecha_pago', domingo.toISOString().split('T')[0])
+  }
+
+  const { data, error } = await query
+  if (error) { console.error('getCuentasPorPagar:', error); return [] }
+  return data || []
+}
+
+// Crear cuenta por pagar nueva
+export async function crearCuentaPorPagar({ concepto, monto, fecha_pago, proveedor = null, notas = null, proyecto_id = null }) {
+  const { data: userData } = await supabase.auth.getUser()
+  const authId = userData?.user?.id
+  let creadoPor = null
+  if (authId) {
+    const { data: u } = await supabase.from('usuarios').select('id').eq('auth_id', authId).single()
+    creadoPor = u?.id || null
+  }
+
+  const { data, error } = await supabase
+    .from('cuentas_por_pagar')
+    .insert({
+      concepto,
+      monto: Number(monto),
+      fecha_pago,
+      proveedor,
+      notas,
+      proyecto_id,
+      estado: 'Pendiente',
+      autorizado: false,
+      creado_por: creadoPor,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Autorizar cuenta (acción especial que registra quién y cuándo)
+export async function autorizarCuentaPorPagar(id) {
+  const { data: userData } = await supabase.auth.getUser()
+  const authId = userData?.user?.id
+  let autorizadoPor = null
+  if (authId) {
+    const { data: u } = await supabase.from('usuarios').select('id').eq('auth_id', authId).single()
+    autorizadoPor = u?.id || null
+  }
+
+  const { data, error } = await supabase
+    .from('cuentas_por_pagar')
+    .update({
+      autorizado: true,
+      estado: 'Autorizado',
+      autorizado_por: autorizadoPor,
+      autorizado_en: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Des-autorizar cuenta (revertir autorización)
+export async function desautorizarCuentaPorPagar(id) {
+  const { data, error } = await supabase
+    .from('cuentas_por_pagar')
+    .update({
+      autorizado: false,
+      estado: 'Pendiente',
+      autorizado_por: null,
+      autorizado_en: null,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Marcar como pagada
+export async function marcarCuentaPorPagarComoPagada(id) {
+  const { data: userData } = await supabase.auth.getUser()
+  const authId = userData?.user?.id
+  let pagadoPor = null
+  if (authId) {
+    const { data: u } = await supabase.from('usuarios').select('id').eq('auth_id', authId).single()
+    pagadoPor = u?.id || null
+  }
+
+  const { data, error } = await supabase
+    .from('cuentas_por_pagar')
+    .update({
+      estado: 'Pagado',
+      pagado_por: pagadoPor,
+      pagado_en: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Actualizar cualquier campo de la cuenta
+export async function actualizarCuentaPorPagar(id, cambios) {
+  const { data, error } = await supabase
+    .from('cuentas_por_pagar')
+    .update(cambios)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Eliminar cuenta (solo si no está pagada — integridad de auditoría)
+export async function eliminarCuentaPorPagar(id) {
+  const { data: cuenta } = await supabase
+    .from('cuentas_por_pagar')
+    .select('estado')
+    .eq('id', id)
+    .single()
+
+  if (cuenta?.estado === 'Pagado') {
+    throw new Error('No se puede eliminar una cuenta ya pagada. Usa Cancelar en su lugar.')
+  }
+
+  const { error } = await supabase.from('cuentas_por_pagar').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Cancelar cuenta (en lugar de eliminar si ya tiene historial)
+export async function cancelarCuentaPorPagar(id, motivo = null) {
+  const { data, error } = await supabase
+    .from('cuentas_por_pagar')
+    .update({ estado: 'Cancelado', notas: motivo })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}

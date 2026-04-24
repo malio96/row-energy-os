@@ -1,80 +1,65 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getProyectos, getCotizaciones, getLeads, getHitos, getFacturas, getCompras, getPostventaTickets, getClientes, getUsuarios } from './supabase'
-// v12: nuevas helpers para vista Personas
+// v12: helpers para vista Personas
 import { calcularCargaPorColaborador, identificarCuellosBotella } from './supabase'
+// v12.5.4: CRUD gastos y cuentas por pagar (reemplaza localStorage)
+import {
+  getGastosVariables, crearGasto, actualizarGasto, eliminarGasto,
+  agruparGastosPorCategoria, agruparGastosHistoricos,
+  getCuentasPorPagar, crearCuentaPorPagar,
+  autorizarCuentaPorPagar, desautorizarCuentaPorPagar,
+  marcarCuentaPorPagarComoPagada, eliminarCuentaPorPagar, actualizarCuentaPorPagar,
+} from './supabase'
 import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
+// v12.5.5: Modal custom (reemplaza prompt/confirm/alert nativos)
+import { useModal } from './Modal'
 
 // ============================================================
-// CONFIG: Nombres de mes en español (para ADMIN META vs REAL)
+// CONFIG: Nombres de mes en español
 // ============================================================
 const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
 // ============================================================
 // METAS — lo que quiere Malio / jefa de admin
 // ============================================================
-// META mensual de cobranza (MXN). Por ahora hardcoded, luego vendrá de DB.
-const META_COBRANZA_MENSUAL = 2500000  // $2.5M mensual por defecto
-const META_CLIENTES_NUEVOS_MES = 3      // del manual Ampere: 3 clientes/mes
-const META_TIEMPO_RESPUESTA_HORAS = 1   // respuesta <1h
+const META_COBRANZA_MENSUAL = 2500000
+const META_CLIENTES_NUEVOS_MES = 3
+const META_TIEMPO_RESPUESTA_HORAS = 1
 
-// Clientes "watchlist" que la jefa de admin quiere ver siempre arriba
 const CLIENTES_WATCHLIST = [
   'Cielo Azul', 'GKN', 'Energia Real', 'Energía Real',
   'MITINFRA', 'SHARL', 'EDP', 'Arizmendi', 'Arizmerndi'
 ]
 
 // ============================================================
-// v12.5 — Mockups por default para indicadores admin (editables)
-// Los datos reales vendrán de la DB más adelante
-// ============================================================
-const MOCK_GASTOS_CATEGORIAS_DEFAULT = {
-  Servicios: 1356000,   // 67% de $2M aprox
-  Otros:     527000,    // 26%
-  Prestamos: 140000,    // 7%
-}
-
-// Últimos 12 meses de gastos variables por año (para gráfico histórico)
-const MOCK_GASTOS_HISTORICOS_DEFAULT = {
-  2024: [3600,1250,4950,750,3600,2300,3330,2700,2260,7670,3210,450],
-  2025: [2870,2110,2220,1260,3550,5370,4510,1290,1140,1220,4080,5690],
-  2026: [2890,3020,2010,2030,0,0,0,0,0,0,0,0], // solo hasta abril
-}
-
-const MOCK_CUENTAS_POR_PAGAR_DEFAULT = [
-  { id:1, concepto:'Nómina semanal Natalia', monto:2000, fecha:'2026-04-25', autorizado:false },
-  { id:2, concepto:'Nómina primera quincena', monto:150000, fecha:'2026-04-30', autorizado:false },
-  { id:3, concepto:'Jarming Asesores', monto:19971.35, fecha:'2026-04-28', autorizado:false },
-  { id:4, concepto:'NRC Consultores', monto:9744, fecha:'2026-04-29', autorizado:false },
-  { id:5, concepto:'Odoo', monto:754, fecha:'2026-04-26', autorizado:false },
-  { id:6, concepto:'Megacable Internet', monto:12064, fecha:'2026-04-27', autorizado:false },
-  { id:7, concepto:'IVA / ISR mensual', monto:85000, fecha:'2026-05-17', autorizado:false },
-]
-
-// ============================================================
-// MAIN DASHBOARD (con selector de vista por departamento)
+// MAIN DASHBOARD
 // ============================================================
 export default function Dashboard({ usuario, onNavigate }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState(loadPref('dash_vista', 'ejecutivo'))
+  const [refreshTick, setRefreshTick] = useState(0)  // v12.5.4: trigger para recargar datos
   const isMobile = useIsMobile()
 
   useEffect(() => {
     const cargar = async () => {
       setLoading(true)
-      const [proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios] = await Promise.all([
+      const [proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, gastos, cxp] = await Promise.all([
         getProyectos(), getCotizaciones(), getLeads(), getHitos(),
-        getFacturas(), getCompras(), getPostventaTickets(), getClientes(), getUsuarios()
+        getFacturas(), getCompras(), getPostventaTickets(), getClientes(), getUsuarios(),
+        getGastosVariables(), getCuentasPorPagar(),  // v12.5.4
       ])
-      // v12: aplanar actividades para vista Personas
       const actividades = proyectos.flatMap(p => (p.actividades || []).map(a => ({ ...a, proyecto: { id: p.id, codigo: p.codigo, nombre: p.nombre } })))
-      setData({ proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, actividades })
+      setData({ proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, actividades, gastos, cxp })
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [refreshTick])
 
   useEffect(() => { savePref('dash_vista', vista) }, [vista])
+
+  // v12.5.4: función para que las vistas puedan pedir recarga de datos
+  const recargar = () => setRefreshTick(t => t + 1)
 
   if (loading || !data) return <LoadingState/>
 
@@ -85,12 +70,12 @@ export default function Dashboard({ usuario, onNavigate }) {
     { key:'marketing',       label:'Marketing',       icon:'Message' },
     { key:'compras',         label:'Compras',         icon:'Archive' },
     { key:'cobranza',        label:'Cobranza',        icon:'Dollar' },
-    { key:'personas',        label:'Personas',        icon:'Users' },  // v12
+    { key:'personas',        label:'Personas',        icon:'Users' },
   ]
 
   return (
     <div>
-      {/* ======== HEADER con saludo y selector de vista ======== */}
+      {/* HEADER */}
       <div style={{ marginBottom:20 }}>
         <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>
           Hola, {usuario?.nombre?.split(' ')[0] || 'Malio'}
@@ -100,7 +85,7 @@ export default function Dashboard({ usuario, onNavigate }) {
         </p>
       </div>
 
-      {/* Selector de vistas (tabs) */}
+      {/* Selector de vistas */}
       <div style={{
         display:'flex', gap:4, marginBottom:20, overflowX:'auto',
         background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:4,
@@ -123,9 +108,9 @@ export default function Dashboard({ usuario, onNavigate }) {
         })}
       </div>
 
-      {/* ======== CONTENIDO SEGÚN VISTA ======== */}
+      {/* CONTENIDO */}
       {vista === 'ejecutivo'      && <VistaEjecutivo      data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
-      {vista === 'administracion' && <VistaAdministracion data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
+      {vista === 'administracion' && <VistaAdministracion data={data} onNavigate={onNavigate} isMobile={isMobile} recargar={recargar}/>}
       {vista === 'ventas'         && <VistaVentas        data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'marketing'      && <VistaMarketing     data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'compras'        && <VistaCompras       data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
@@ -136,12 +121,11 @@ export default function Dashboard({ usuario, onNavigate }) {
 }
 
 // ============================================================
-// VISTA EJECUTIVO — la que ya tenías (preservada 100%)
+// VISTA EJECUTIVO
 // ============================================================
 function VistaEjecutivo({ data, onNavigate, isMobile }) {
   const { proyectos, cotizaciones, leads, hitos, facturas, tickets } = data
 
-  // ============ KPIs ============
   const proyectosActivos = proyectos.filter(p => p.estado !== 'Terminado' && p.estado !== 'Cancelado')
   const cotizacionesPipeline = cotizaciones.filter(c => ['Borrador', 'Enviada', 'En revisión'].includes(c.estado))
   const leadsActivos = leads.filter(l => !['Ganado','Perdido'].includes(l.etapa))
@@ -160,7 +144,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
     return new Date(f.fecha_pago) >= inicioMes
   }).reduce((s,f) => s + Number(f.total || 0), 0)
 
-  // ============ Pipeline por etapa ============
   const pipelinePorEtapa = ETAPAS_LEAD.filter(e => !['Ganado','Perdido'].includes(e.key)).map(e => {
     const arr = leads.filter(l => l.etapa === e.key)
     return {
@@ -172,7 +155,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
   })
   const maxMonto = Math.max(...pipelinePorEtapa.map(p => p.monto), 1)
 
-  // ============ Aging ============
   const aging = { '0-30':0, '31-60':0, '61-90':0, '+90':0 }
   facturas.filter(f => f.estado === 'Emitida' && f.fecha_vencimiento).forEach(f => {
     const dias = Math.floor((hoy - new Date(f.fecha_vencimiento)) / (1000*60*60*24))
@@ -184,7 +166,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
     else aging['+90'] += monto
   })
 
-  // ============ Alertas ============
   const alertas = []
   if (vencido > 0) alertas.push({ titulo:`${fmtMoney(vencido, true)} en facturas vencidas`, color:COLORS.red, nav:'cobranza' })
   const bloqueadas = proyectos.reduce((n,p) => n + (p.actividades || []).filter(a => a.estado === 'Bloqueada').length, 0)
@@ -200,7 +181,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
 
   return (
     <>
-      {/* Alertas arriba */}
       {alertas.length > 0 && (
         <div style={{ display:'grid', gap:8, marginBottom:20 }}>
           {alertas.map((a, i) => (
@@ -213,7 +193,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
         </div>
       )}
 
-      {/* KPIs grandes */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
         <KpiHero label="Pipeline ponderado" valor={fmtMoney(ponderado, true)} sub={`${leadsActivos.length} leads activos`} color={COLORS.teal} onClick={() => onNavigate?.('leads')}/>
@@ -222,7 +201,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr', gap:16, marginBottom:20 }}>
-        {/* Pipeline visual */}
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
             <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.ink, margin:0 }}>Pipeline comercial</h3>
@@ -241,7 +219,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
           ))}
         </div>
 
-        {/* Aging */}
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
             <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.ink, margin:0 }}>Cobranza vencida</h3>
@@ -265,7 +242,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
         </div>
       </div>
 
-      {/* Proyectos próximos a cierre y cotizaciones pendientes */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
         <Tarjeta titulo={`Proyectos con cierre próximo (${proximosCierre.length})`} onVerTodo={() => onNavigate?.('proyectos')}>
           {proximosCierre.length === 0 && <EmptyMini texto="Ningún proyecto cerca de cierre"/>}
@@ -299,7 +275,6 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
         </Tarjeta>
       </div>
 
-      {/* Acciones rápidas */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
         <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14 }}>Acciones rápidas</h3>
         <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:10 }}>
@@ -314,13 +289,15 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
 }
 
 // ============================================================
-// VISTA ADMINISTRACIÓN (lo que quiere la jefa de admin)
-// v12.5: + Cotizado/Aceptado del mes, Gastos variables, Cuentas por pagar
+// VISTA ADMINISTRACIÓN
+// v12.5.5: Modal custom + botones Editar en gastos y cxp
 // ============================================================
-function VistaAdministracion({ data, onNavigate, isMobile }) {
-  const { facturas, clientes, hitos, cotizaciones = [] } = data
+function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
+  const { facturas, clientes, hitos, cotizaciones = [], gastos = [], cxp = [], proyectos = [] } = data
+  const modal = useModal()  // v12.5.5
   const hoy = new Date()
   const anio = hoy.getFullYear()
+  const mesActual = hoy.getMonth() + 1  // 1-12 para match con BD
 
   // === META vs REAL mensual (cobranza) ===
   const porMes = Array(12).fill(0).map(() => ({ meta: META_COBRANZA_MENSUAL, real: 0 }))
@@ -329,20 +306,18 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
     const d = new Date(f.fecha_pago)
     if (d.getFullYear() === anio) porMes[d.getMonth()].real += Number(f.total || 0)
   })
-  const mesActual = hoy.getMonth()
-  const metaAcum  = porMes.slice(0, mesActual+1).reduce((s,m) => s+m.meta, 0)
-  const realAcum  = porMes.slice(0, mesActual+1).reduce((s,m) => s+m.real, 0)
+  const mesIdx = hoy.getMonth()
+  const metaAcum  = porMes.slice(0, mesIdx+1).reduce((s,m) => s+m.meta, 0)
+  const realAcum  = porMes.slice(0, mesIdx+1).reduce((s,m) => s+m.real, 0)
   const avancePct = metaAcum > 0 ? Math.round((realAcum/metaAcum)*100) : 0
 
-  // === Clientes nuevos por mes (Con contrato / Sin documento) ===
-  // Por ahora un resumen simple basado en fecha_creacion de cliente
+  // === Clientes nuevos por mes ===
   const nuevosPorMes = Array(12).fill(0).map(() => ({ conContrato:0, sinDoc:0 }))
   ;(clientes || []).forEach(c => {
     const created = c.created_at || c.fecha_creacion
     if (!created) return
     const d = new Date(created)
     if (d.getFullYear() === anio) {
-      // Heurística simple: si tiene rfc completo lo consideramos "con contrato/OC", sino "sin documento"
       if (c.rfc && c.rfc.length >= 12) nuevosPorMes[d.getMonth()].conContrato++
       else nuevosPorMes[d.getMonth()].sinDoc++
     }
@@ -350,7 +325,7 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
   const totalConContrato = nuevosPorMes.reduce((s,m) => s+m.conContrato, 0)
   const totalSinDoc      = nuevosPorMes.reduce((s,m) => s+m.sinDoc, 0)
 
-  // === v12.5: Cotizado y Aceptado del mes (automático desde BD, editable) ===
+  // === Cotizado y Aceptado del mes (automático desde BD, editable) ===
   const cotizadoCalc = Array(12).fill(0)
   const aceptadoCalc = Array(12).fill(0)
   cotizaciones.forEach(c => {
@@ -361,16 +336,21 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
     cotizadoCalc[d.getMonth()] += Number(c.monto_total || 0)
     if (c.estado === 'Aprobada') aceptadoCalc[d.getMonth()] += 1
   })
-  // Permitir override manual (localStorage)
   const [cotizadoOverride, setCotizadoOverride] = useState(loadPref('admin_cotizado_override', null))
   const [aceptadoOverride, setAceptadoOverride] = useState(loadPref('admin_aceptado_override', null))
   const cotizadoMes = cotizadoOverride || cotizadoCalc
   const aceptadoMes = aceptadoOverride || aceptadoCalc
   useEffect(() => savePref('admin_cotizado_override', cotizadoOverride), [cotizadoOverride])
   useEffect(() => savePref('admin_aceptado_override', aceptadoOverride), [aceptadoOverride])
-  const editarMesBarra = (idx, tipo) => {
+  const editarMesBarra = async (idx, tipo) => {
     const actual = tipo === 'cot' ? cotizadoMes[idx] : aceptadoMes[idx]
-    const nuevo = prompt(`${tipo === 'cot' ? 'Cotizado' : 'Aceptado'} ${MESES_ES[idx]} ${anio}:`, actual)
+    const nuevo = await modal.prompt({
+      titulo: `${tipo === 'cot' ? 'Cotizado' : 'Aceptado'} ${MESES_ES[idx]} ${anio}`,
+      mensaje: tipo === 'cot' ? 'Monto total cotizado en MXN' : 'Cantidad de cotizaciones aprobadas',
+      defaultValue: actual,
+      tipo: 'number',
+      icono: 'Edit',
+    })
     if (nuevo === null) return
     const n = Number(nuevo) || 0
     if (tipo === 'cot') {
@@ -382,27 +362,179 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
     }
   }
 
-  // === v12.5: Gastos variables (pie + histórico) ===
-  const [gastosCategorias, setGastosCategorias] = useState(loadPref('admin_gastos_cat', MOCK_GASTOS_CATEGORIAS_DEFAULT))
-  const [gastosHistoricos, setGastosHistoricos] = useState(loadPref('admin_gastos_hist', MOCK_GASTOS_HISTORICOS_DEFAULT))
-  useEffect(() => savePref('admin_gastos_cat', gastosCategorias), [gastosCategorias])
-  useEffect(() => savePref('admin_gastos_hist', gastosHistoricos), [gastosHistoricos])
+  // === v12.5.4: Gastos variables DESDE BD ===
+  const gastosCategorias = agruparGastosPorCategoria(gastos, mesActual, anio)
+  const gastosHistoricos = agruparGastosHistoricos(gastos)
   const gastosTotal = Object.values(gastosCategorias).reduce((s,v) => s+Number(v||0), 0)
 
-  // === v12.5: Cuentas por pagar esta semana ===
-  const [cuentasPorPagar, setCuentasPorPagar] = useState(loadPref('admin_cxp', MOCK_CUENTAS_POR_PAGAR_DEFAULT))
-  useEffect(() => savePref('admin_cxp', cuentasPorPagar), [cuentasPorPagar])
-  const cxpAutorizadas = cuentasPorPagar.filter(c => c.autorizado).reduce((s,c) => s+Number(c.monto||0), 0)
-  const cxpPendientes = cuentasPorPagar.filter(c => !c.autorizado).reduce((s,c) => s+Number(c.monto||0), 0)
-  const toggleAutorizar = (id) => setCuentasPorPagar(prev => prev.map(c => c.id === id ? { ...c, autorizado: !c.autorizado } : c))
-  const agregarCxp = () => {
-    const concepto = prompt('Concepto:'); if (!concepto) return
-    const monto = Number(prompt('Monto $:') || 0); if (!monto) return
-    setCuentasPorPagar([...cuentasPorPagar, { id: Date.now(), concepto, monto, fecha: new Date().toISOString().split('T')[0], autorizado:false }])
-  }
-  const eliminarCxp = (id) => setCuentasPorPagar(cuentasPorPagar.filter(c => c.id !== id))
+  const editarGastoCategoria = async (categoria) => {
+    const actual = gastosCategorias[categoria] || 0
+    const nuevo = await modal.prompt({
+      titulo: `Editar ${categoria}`,
+      mensaje: `Monto en MXN para ${MESES_ES[mesActual-1]} ${anio}. Ingresa 0 para eliminar.`,
+      defaultValue: actual,
+      tipo: 'number',
+      icono: 'Dollar',
+    })
+    if (nuevo === null) return
+    const montoNuevo = Number(nuevo) || 0
 
-  // === Watchlist de clientes con seguimiento ===
+    try {
+      const existente = gastos.find(g => g.categoria === categoria && g.mes === mesActual && g.anio === anio)
+
+      if (existente && montoNuevo > 0) {
+        await actualizarGasto(existente.id, { monto: montoNuevo })
+      } else if (existente && montoNuevo === 0) {
+        await eliminarGasto(existente.id)
+      } else if (!existente && montoNuevo > 0) {
+        await crearGasto({ categoria, monto: montoNuevo, mes: mesActual, anio })
+      }
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error al guardar', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
+  const agregarCategoriaGasto = async () => {
+    const resultado = await modal.editor({
+      titulo: 'Nueva categoría de gasto',
+      mensaje: `Se registrará en ${MESES_ES[mesActual-1]} ${anio}`,
+      icono: 'Plus',
+      textoBoton: 'Agregar',
+      campos: [
+        { key: 'categoria', label: 'Nombre de la categoría', tipo: 'text', required: true, placeholder: 'Ej: Servicios, Préstamos...' },
+        { key: 'monto', label: 'Monto (MXN)', tipo: 'number', required: true, placeholder: '0' },
+      ],
+    })
+    if (!resultado) return
+
+    try {
+      await crearGasto({
+        categoria: resultado.categoria.trim(),
+        monto: Number(resultado.monto) || 0,
+        mes: mesActual,
+        anio,
+      })
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error al crear', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
+  // === v12.5.4: Cuentas por pagar DESDE BD ===
+  const cxpSemana = cxp
+  const cxpAutorizadas = cxpSemana.filter(c => c.autorizado && c.estado !== 'Cancelado').reduce((s,c) => s+Number(c.monto||0), 0)
+  const cxpPendientes  = cxpSemana.filter(c => !c.autorizado && c.estado !== 'Cancelado' && c.estado !== 'Pagado').reduce((s,c) => s+Number(c.monto||0), 0)
+
+  const toggleAutorizar = async (cuenta) => {
+    try {
+      if (cuenta.autorizado) {
+        await desautorizarCuentaPorPagar(cuenta.id)
+      } else {
+        await autorizarCuentaPorPagar(cuenta.id)
+      }
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
+  const marcarPagada = async (cuenta) => {
+    if (!cuenta.autorizado) {
+      await modal.alert({ titulo: 'Falta autorizar', mensaje: 'Primero autoriza la cuenta antes de marcarla como pagada.', icono: 'Alert' })
+      return
+    }
+    const ok = await modal.confirm({
+      titulo: 'Marcar como pagada',
+      mensaje: `La cuenta "${cuenta.concepto}" se registrará como PAGADA. Esta acción queda en el audit trail.`,
+      textoBoton: 'Marcar pagada',
+      icono: 'Check',
+    })
+    if (!ok) return
+    try {
+      await marcarCuentaPorPagarComoPagada(cuenta.id)
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
+  const agregarCxp = async () => {
+    const fechaDefault = new Date(); fechaDefault.setDate(fechaDefault.getDate() + 7)
+    const resultado = await modal.editor({
+      titulo: 'Nueva cuenta por pagar',
+      mensaje: 'Registra un pago pendiente. Queda como Pendiente hasta que sea autorizado.',
+      icono: 'Plus',
+      textoBoton: 'Crear cuenta',
+      campos: [
+        { key: 'concepto',   label: 'Concepto',          tipo: 'text',   required: true, placeholder: 'Ej: Nómina Natalia, Jarming Asesores...' },
+        { key: 'monto',      label: 'Monto (MXN)',       tipo: 'number', required: true, placeholder: '0' },
+        { key: 'fecha_pago', label: 'Fecha de pago',     tipo: 'date',   required: true, defaultValue: fechaDefault.toISOString().split('T')[0] },
+        { key: 'proveedor',  label: 'Proveedor (opcional)', tipo: 'text', placeholder: 'Nombre del proveedor' },
+      ],
+    })
+    if (!resultado) return
+
+    try {
+      await crearCuentaPorPagar({
+        concepto: resultado.concepto.trim(),
+        monto: resultado.monto,
+        fecha_pago: resultado.fecha_pago,
+        proveedor: resultado.proveedor?.trim() || null,
+      })
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error al crear', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
+  // v12.5.5: Editar cuenta existente
+  const editarCxp = async (cuenta) => {
+    const resultado = await modal.editor({
+      titulo: 'Editar cuenta por pagar',
+      mensaje: cuenta.estado === 'Pagado' ? 'Esta cuenta ya está pagada. Los cambios aplicarán al registro pero no revertirán el pago.' : 'Modifica los datos de la cuenta.',
+      icono: 'Edit',
+      textoBoton: 'Guardar cambios',
+      campos: [
+        { key: 'concepto',   label: 'Concepto',          tipo: 'text',   required: true, defaultValue: cuenta.concepto },
+        { key: 'monto',      label: 'Monto (MXN)',       tipo: 'number', required: true, defaultValue: cuenta.monto },
+        { key: 'fecha_pago', label: 'Fecha de pago',     tipo: 'date',   required: true, defaultValue: cuenta.fecha_pago },
+        { key: 'proveedor',  label: 'Proveedor',         tipo: 'text',   defaultValue: cuenta.proveedor || '' },
+      ],
+    })
+    if (!resultado) return
+
+    try {
+      await actualizarCuentaPorPagar(cuenta.id, {
+        concepto: resultado.concepto.trim(),
+        monto: resultado.monto,
+        fecha_pago: resultado.fecha_pago,
+        proveedor: resultado.proveedor?.trim() || null,
+      })
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error al guardar', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
+  const eliminarCxp = async (cuenta) => {
+    const ok = await modal.confirm({
+      titulo: 'Eliminar cuenta',
+      mensaje: `La cuenta "${cuenta.concepto}" por ${fmtMoney(Number(cuenta.monto||0), true)} se eliminará permanentemente. Esta acción no se puede deshacer.`,
+      destructivo: true,
+      textoBoton: 'Eliminar',
+      icono: 'Trash',
+    })
+    if (!ok) return
+    try {
+      await eliminarCuentaPorPagar(cuenta.id)
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'No se puede eliminar', mensaje: err.message || 'Error al eliminar', icono: 'Alert' })
+    }
+  }
+
+  // === Watchlist de clientes ===
   const watchlist = (clientes || []).filter(c =>
     CLIENTES_WATCHLIST.some(w => (c.razon_social || '').toLowerCase().includes(w.toLowerCase()))
   ).map(c => {
@@ -415,7 +547,7 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
     return { ...c, porCobrar, vencidas: vencidas.length }
   })
 
-  // Objetivos y planeación semana (localStorage por ahora)
+  // Objetivos y planeación semana
   const [objetivos, setObjetivos] = useState(loadPref('admin_objetivos', [
     'Seguimiento clientes: Energía Real',
     'Realizar pagos pendientes de la semana',
@@ -435,15 +567,18 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
 
   return (
     <>
+      {/* v12.5.5: Render del modal (una sola vez) */}
+      <modal.Render/>
+
       {/* KPIs superiores */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
-        <KpiHero label="Meta acumulada" valor={fmtMoney(metaAcum, true)} sub={`${MESES_ES[mesActual]} YTD`} color={COLORS.slate500}/>
+        <KpiHero label="Meta acumulada" valor={fmtMoney(metaAcum, true)} sub={`${MESES_ES[mesIdx]} YTD`} color={COLORS.slate500}/>
         <KpiHero label="Real acumulado" valor={fmtMoney(realAcum, true)} sub={`${avancePct}% vs meta`} color={avancePct >= 90 ? COLORS.teal : avancePct >= 70 ? COLORS.amber : COLORS.red}/>
         <KpiHero label="Clientes nuevos con contrato" valor={totalConContrato} sub={`año ${anio}`} color={COLORS.navy}/>
         <KpiHero label="Clientes nuevos sin documento" valor={totalSinDoc} sub="pendientes de formalizar" color={COLORS.amber}/>
       </div>
 
-      {/* Gráfico META vs REAL mensual */}
+      {/* Gráfico META vs REAL */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
           <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Avance de cobranza — META vs REAL</h3>
@@ -455,7 +590,7 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
         <GraficoMetaReal porMes={porMes} isMobile={isMobile}/>
       </div>
 
-      {/* Gráfico Clientes nuevos + Watchlist */}
+      {/* Clientes nuevos + Watchlist */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
@@ -486,15 +621,13 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
         </Tarjeta>
       </div>
 
-      {/* Objetivos + Planeación semana */}
+      {/* Objetivos + Planeación */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
         <ListaEditable titulo="Objetivos de la semana" items={objetivos} setItems={setObjetivos} color={COLORS.teal}/>
         <ListaEditable titulo="Planeación de la semana" items={planeacion} setItems={setPlaneacion} color={COLORS.navy}/>
       </div>
 
-      {/* ============================================================ */}
-      {/* v12.5 NUEVO: Cotizado y Aceptado del mes */}
-      {/* ============================================================ */}
+      {/* Cotizado + Aceptado del mes */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
@@ -518,52 +651,52 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* v12.5 NUEVO: Gastos variables (pie + histórico) */}
-      {/* ============================================================ */}
+      {/* v12.5.4: Gastos variables desde BD */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.4fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
             <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Gastos variables</h3>
             <span style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{fmtMoney(gastosTotal, true)}</span>
           </div>
-          <DonutGastos categorias={gastosCategorias} total={gastosTotal} onEditar={(k) => {
-            const nuevo = prompt(`${k} (MXN):`, gastosCategorias[k])
-            if (nuevo === null) return
-            setGastosCategorias({ ...gastosCategorias, [k]: Number(nuevo)||0 })
-          }}/>
+          <div style={{ fontSize:10, color:COLORS.slate400, marginBottom:8 }}>{MESES_ES[mesIdx]} {anio}</div>
+          <DonutGastos categorias={gastosCategorias} total={gastosTotal} onEditar={editarGastoCategoria}/>
+          <button onClick={agregarCategoriaGasto} style={{
+            marginTop:10, width:'100%', padding:'8px', background:COLORS.slate50, border:`1px dashed ${COLORS.slate200}`,
+            borderRadius:8, fontSize:11, fontWeight:600, color:COLORS.slate600, cursor:'pointer'
+          }}>+ Agregar categoría</button>
         </div>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
             <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Gastos variables históricos</h3>
-            <div style={{ display:'flex', gap:12, fontSize:11 }}>
-              <Leyenda color="#93C5FD" label="2024"/>
-              <Leyenda color={COLORS.navy} label="2025"/>
-              <Leyenda color="#1F2937" label="2026"/>
+            <div style={{ display:'flex', gap:12, fontSize:11, flexWrap:'wrap' }}>
+              {Object.keys(gastosHistoricos).sort().map(yr => (
+                <Leyenda key={yr} color={yr === String(anio) ? '#1F2937' : yr === String(anio-1) ? COLORS.navy : '#93C5FD'} label={yr}/>
+              ))}
             </div>
           </div>
-          <GraficoLineaHistorico series={gastosHistoricos} isMobile={isMobile}/>
+          {Object.keys(gastosHistoricos).length === 0
+            ? <EmptyMini texto="Sin gastos registrados aún"/>
+            : <GraficoLineaHistorico series={gastosHistoricos} isMobile={isMobile}/>
+          }
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* v12.5 NUEVO: Cuentas por pagar esta semana */}
-      {/* ============================================================ */}
+      {/* v12.5.5: Cuentas por pagar con botón Editar */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:20 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, flexWrap:'wrap', gap:10 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Cuentas por pagar esta semana</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Cuentas por pagar</h3>
           <div style={{ display:'flex', gap:14, fontSize:11 }}>
             <span style={{ color:COLORS.amber, fontWeight:600 }}>Pendientes: {fmtMoney(cxpPendientes, true)}</span>
             <span style={{ color:COLORS.teal, fontWeight:600 }}>Autorizadas: {fmtMoney(cxpAutorizadas, true)}</span>
           </div>
         </div>
         <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:10, fontStyle:'italic' }}>
-          *Requiere autorización de dirección — click en el círculo para autorizar*
+          Click en círculo para autorizar · Lápiz para editar · Click en "Marcar pagada" cuando se ejecute
         </div>
-        {cuentasPorPagar.length === 0 && <EmptyMini texto="Sin cuentas por pagar esta semana"/>}
-        {cuentasPorPagar.map(c => (
-          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}` }}>
-            <button onClick={() => toggleAutorizar(c.id)} style={{
+        {cxpSemana.length === 0 && <EmptyMini texto="Sin cuentas por pagar registradas"/>}
+        {cxpSemana.map(c => (
+          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}`, opacity: c.estado === 'Cancelado' ? 0.5 : 1 }}>
+            <button onClick={() => toggleAutorizar(c)} title={c.autorizado ? `Autorizado por ${c.autorizador?.nombre || '?'} ${c.autorizado_en ? 'el ' + new Date(c.autorizado_en).toLocaleDateString('es-MX') : ''}` : 'Click para autorizar'} style={{
               width:22, height:22, minWidth:22, borderRadius:'50%',
               border:`2px solid ${c.autorizado ? COLORS.teal : COLORS.slate200}`,
               background: c.autorizado ? COLORS.teal : 'white',
@@ -573,13 +706,41 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
               {c.autorizado && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
             </button>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:13, color:COLORS.ink, fontWeight:500, textDecoration: c.autorizado ? 'line-through' : 'none', opacity: c.autorizado ? 0.6 : 1 }}>{c.concepto}</div>
-              <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2 }}>Fecha: {c.fecha}</div>
+              <div style={{ fontSize:13, color:COLORS.ink, fontWeight:500, textDecoration: c.estado === 'Pagado' || c.estado === 'Cancelado' ? 'line-through' : 'none', opacity: c.estado === 'Pagado' || c.estado === 'Cancelado' ? 0.6 : 1 }}>
+                {c.concepto}
+                {c.proveedor && <span style={{ fontSize:10, color:COLORS.slate400, marginLeft:8 }}>· {c.proveedor}</span>}
+              </div>
+              <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2, display:'flex', gap:10, flexWrap:'wrap' }}>
+                <span>Fecha: {c.fecha_pago}</span>
+                {c.proyecto && <span>· Proyecto: {c.proyecto.codigo}</span>}
+                {c.estado === 'Pagado' && c.pagador && (
+                  <span style={{ color:COLORS.teal, fontWeight:600 }}>✓ Pagado por {c.pagador.nombre}</span>
+                )}
+              </div>
             </div>
-            <div style={{ fontSize:12, fontFamily:'var(--font-mono)', color: c.autorizado ? COLORS.slate400 : COLORS.navy, fontWeight:700, minWidth:90, textAlign:'right' }}>
+            <div style={{ fontSize:12, fontFamily:'var(--font-mono)', color: c.estado === 'Pagado' || c.estado === 'Cancelado' ? COLORS.slate400 : COLORS.navy, fontWeight:700, minWidth:90, textAlign:'right' }}>
               {fmtMoney(Number(c.monto||0), true)}
             </div>
-            <button onClick={() => eliminarCxp(c.id)} style={{ border:'none', background:'transparent', color:COLORS.slate400, cursor:'pointer', padding:4, display:'flex' }}>{Icon('X')}</button>
+            {c.autorizado && c.estado !== 'Pagado' && c.estado !== 'Cancelado' && (
+              <button onClick={() => marcarPagada(c)} title="Marcar pagada" style={{
+                fontSize:10, padding:'4px 8px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap'
+              }}>Marcar pagada</button>
+            )}
+            {/* v12.5.5: Botón Editar */}
+            <button onClick={() => editarCxp(c)} title="Editar cuenta" style={{
+              border:`1px solid ${COLORS.slate200}`, background:'white', color:COLORS.slate500, cursor:'pointer', padding:'4px 6px', borderRadius:6, display:'flex', alignItems:'center',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}
+            >{Icon('Edit')}</button>
+            {c.estado !== 'Pagado' && (
+              <button onClick={() => eliminarCxp(c)} title="Eliminar cuenta" style={{
+                border:`1px solid ${COLORS.slate200}`, background:'white', color:COLORS.slate400, cursor:'pointer', padding:'4px 6px', borderRadius:6, display:'flex', alignItems:'center',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = COLORS.red; e.currentTarget.style.borderColor = '#FECACA' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate400; e.currentTarget.style.borderColor = COLORS.slate200 }}
+              >{Icon('Trash')}</button>
+            )}
           </div>
         ))}
         <button onClick={agregarCxp} style={{
@@ -592,30 +753,26 @@ function VistaAdministracion({ data, onNavigate, isMobile }) {
 }
 
 // ============================================================
-// VISTA VENTAS (KPIs del manual Ampere)
+// VISTA VENTAS
 // ============================================================
 function VistaVentas({ data, onNavigate, isMobile }) {
   const { leads, cotizaciones, clientes } = data
   const hoy = new Date()
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
 
-  // Clientes nuevos este mes (de leads ganados)
   const clientesNuevosMes = leads.filter(l => {
     if (l.etapa !== 'Ganado') return false
     const fecha = l.updated_at || l.created_at
     return fecha && new Date(fecha) >= inicioMes
   }).length
 
-  // Conversión de cotizaciones
   const cotTotal = cotizaciones.length
   const cotAprobadas = cotizaciones.filter(c => c.estado === 'Aprobada').length
   const cotRechazadas = cotizaciones.filter(c => c.estado === 'Rechazada').length
   const cotPct = cotTotal > 0 ? Math.round((cotAprobadas/cotTotal)*100) : 0
   const cotPctRechazo = cotTotal > 0 ? Math.round((cotRechazadas/cotTotal)*100) : 0
 
-  // Pipeline por etapa
   const leadsActivos = leads.filter(l => !['Ganado','Perdido'].includes(l.etapa))
-  const totalPipeline = leadsActivos.reduce((s,l) => s+Number(l.monto_estimado||0), 0)
   const ponderado = leadsActivos.reduce((s,l) => s+(Number(l.monto_estimado||0)*Number(l.probabilidad||0)/100), 0)
 
   return (
@@ -628,13 +785,11 @@ function VistaVentas({ data, onNavigate, isMobile }) {
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
-        {/* Donut Aceptadas vs Rechazadas vs Pendientes */}
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-serif)' }}>Estado de cotizaciones</h3>
           <DonutCotizaciones cotizaciones={cotizaciones}/>
         </div>
 
-        {/* Top clientes potenciales */}
         <Tarjeta titulo="Top leads por monto" onVerTodo={() => onNavigate?.('leads')}>
           {leadsActivos.length === 0 && <EmptyMini texto="Sin leads activos"/>}
           {[...leadsActivos].sort((a,b) => Number(b.monto_estimado||0)-Number(a.monto_estimado||0)).slice(0,5).map(l => (
@@ -660,10 +815,9 @@ function VistaVentas({ data, onNavigate, isMobile }) {
 }
 
 // ============================================================
-// VISTA MARKETING (redes sociales semanales)
+// VISTA MARKETING
 // ============================================================
 function VistaMarketing({ data, onNavigate, isMobile }) {
-  // Datos de ejemplo del PDF de la jefa (editables con localStorage)
   const [fb, setFb] = useState(loadPref('mkt_fb', {
     s1: { visualizaciones: 38, espectadores: 34, interaccion: 11, visitas: 5, seguidores: 3 },
     s2: { visualizaciones: 36, espectadores: 36, interaccion: 10, visitas: 5, seguidores: 3 },
@@ -682,23 +836,13 @@ function VistaMarketing({ data, onNavigate, isMobile }) {
         Click en cualquier número para editarlo. Los datos se guardan en tu navegador por ahora.
       </div>
 
-      <RedSocial
-        titulo="Facebook"
-        color="#1877F2"
+      <RedSocial titulo="Facebook" color="#1877F2"
         metrics={['visualizaciones','espectadores','interaccion','visitas','seguidores']}
-        data={fb}
-        onChange={setFb}
-        isMobile={isMobile}
-      />
+        data={fb} onChange={setFb} isMobile={isMobile}/>
 
-      <RedSocial
-        titulo="Instagram"
-        color="#E4405F"
+      <RedSocial titulo="Instagram" color="#E4405F"
         metrics={['visualizaciones','alcance','interaccion','visitas','seguidores']}
-        data={ig}
-        onChange={setIg}
-        isMobile={isMobile}
-      />
+        data={ig} onChange={setIg} isMobile={isMobile}/>
     </>
   )
 }
@@ -714,7 +858,6 @@ function VistaCompras({ data, onNavigate, isMobile }) {
   const pagadas  = compras.filter(c => c.estado === 'Pagada')
   const pendientePago = compras.filter(c => c.estado === 'Aprobada' || c.estado === 'Recibida').reduce((s,c) => s+Number(c.monto||0), 0)
 
-  // Top proveedores por monto acumulado
   const porProv = {}
   compras.forEach(c => {
     const key = c.proveedor || c.proveedor_nombre || 'Sin proveedor'
@@ -771,10 +914,10 @@ function VistaCompras({ data, onNavigate, isMobile }) {
 }
 
 // ============================================================
-// VISTA COBRANZA (resumen - el detalle completo va en Cobranza v2)
+// VISTA COBRANZA
 // ============================================================
 function VistaCobranza({ data, onNavigate, isMobile }) {
-  const { facturas, clientes } = data
+  const { facturas } = data
   const hoy = new Date()
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
 
@@ -787,7 +930,6 @@ function VistaCobranza({ data, onNavigate, isMobile }) {
 
   const avancePct = META_COBRANZA_MENSUAL > 0 ? Math.min(100, Math.round((cobradoMes/META_COBRANZA_MENSUAL)*100)) : 0
 
-  // Top 5 facturas vencidas
   const vencidasList = facturas.filter(f => {
     if (f.estado !== 'Emitida' || !f.fecha_vencimiento) return false
     return new Date(f.fecha_vencimiento) < hoy
@@ -805,7 +947,6 @@ function VistaCobranza({ data, onNavigate, isMobile }) {
         <KpiHero label="Vencido" valor={fmtMoney(vencido, true)} sub={vencidasList.length + ' factura(s)'} color={vencido > 0 ? COLORS.red : COLORS.teal}/>
       </div>
 
-      {/* Barra META vs REAL del mes actual */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
         <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>Avance de cobranza {MESES_ES[hoy.getMonth()]} {hoy.getFullYear()}</h3>
         <div style={{ position:'relative', height:28, background:COLORS.slate50, borderRadius:8, overflow:'hidden', marginBottom:8 }}>
@@ -904,9 +1045,6 @@ function Leyenda({ color, label }) {
   )
 }
 
-// ============================================================
-// GRÁFICO META vs REAL (SVG barras dobles por mes)
-// ============================================================
 function GraficoMetaReal({ porMes, isMobile }) {
   const H = 220
   const W = isMobile ? 700 : 900
@@ -920,7 +1058,6 @@ function GraficoMetaReal({ porMes, isMobile }) {
   return (
     <div style={{ overflowX:'auto' }}>
       <svg width={W} height={H} style={{ display:'block', minWidth:W }}>
-        {/* Y axis con grid */}
         {[0, 0.25, 0.5, 0.75, 1].map(p => {
           const y = PAD_T + innerH - p*innerH
           return (
@@ -930,8 +1067,6 @@ function GraficoMetaReal({ porMes, isMobile }) {
             </g>
           )
         })}
-
-        {/* Barras */}
         {porMes.map((m, i) => {
           const cx = PAD_L + slot*i + slot/2
           const bw = Math.min(slot*0.32, 24)
@@ -1042,8 +1177,6 @@ function DonutCotizaciones({ cotizaciones }) {
 }
 
 function RedSocial({ titulo, color, metrics, data, onChange, isMobile }) {
-  const [editMetric, setEditMetric] = useState(null)
-
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
@@ -1068,12 +1201,12 @@ function RedSocial({ titulo, color, metrics, data, onChange, isMobile }) {
               <div style={{ display:'flex', gap:6, alignItems:'flex-end', justifyContent:'center', height:80, marginBottom:8 }}>
                 <div style={{ width:16, height: `${(v1/max)*80}px`, background:COLORS.slate400, borderRadius:'3px 3px 0 0', minHeight:2, cursor:'pointer' }}
                   onClick={() => {
-                    const nuevo = prompt(`${m} - Semana 1:`, v1)
+                    const nuevo = window.prompt(`${m} - Semana 1:`, v1)
                     if (nuevo !== null) onChange({ ...data, s1: { ...data.s1, [m]: Number(nuevo)||0 } })
                   }}/>
                 <div style={{ width:16, height: `${(v2/max)*80}px`, background:color, borderRadius:'3px 3px 0 0', minHeight:2, cursor:'pointer' }}
                   onClick={() => {
-                    const nuevo = prompt(`${m} - Semana 2:`, v2)
+                    const nuevo = window.prompt(`${m} - Semana 2:`, v2)
                     if (nuevo !== null) onChange({ ...data, s2: { ...data.s2, [m]: Number(nuevo)||0 } })
                   }}/>
               </div>
@@ -1137,7 +1270,7 @@ function NotaRecordatorio({ titulo, items }) {
 }
 
 // ============================================================
-// v12: VISTA PERSONAS — Capacidad y KPIs por colaborador (Luis)
+// VISTA PERSONAS
 // ============================================================
 function VistaPersonas({ data, onNavigate, isMobile }) {
   const { actividades, usuarios } = data
@@ -1147,7 +1280,6 @@ function VistaPersonas({ data, onNavigate, isMobile }) {
     [actividades, usuarios]
   )
 
-  // Orden: sobrecargados primero, luego por % carga descendente
   const ordenada = [...carga].sort((a, b) => {
     if (a.sobrecargado !== b.sobrecargado) return a.sobrecargado ? -1 : 1
     return b.porcentaje - a.porcentaje
@@ -1159,35 +1291,20 @@ function VistaPersonas({ data, onNavigate, isMobile }) {
   const horasAsignadas = carga.reduce((s, c) => s + c.horasSemana, 0)
   const cargaGlobalPct = capacidadTotal > 0 ? Math.round((horasAsignadas / capacidadTotal) * 100) : 0
 
-  // Cuellos de botella
   const cuellos = useMemo(() => identificarCuellosBotella(actividades || []), [actividades])
 
   return (
     <>
-      {/* KPIs arriba */}
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
         <KpiHero label="Colaboradores" valor={carga.length} sub="activos" color={COLORS.navy}/>
-        <KpiHero
-          label="Carga global"
-          valor={`${cargaGlobalPct}%`}
-          sub={`${horasAsignadas}h de ${capacidadTotal}h`}
-          color={cargaGlobalPct > 100 ? COLORS.red : cargaGlobalPct >= 70 ? COLORS.teal : COLORS.amber}
-        />
-        <KpiHero
-          label="Sobrecargados"
-          valor={sobrecargados}
-          sub={sobrecargados > 0 ? '> 100% carga' : 'ninguno'}
-          color={sobrecargados > 0 ? COLORS.red : COLORS.teal}
-        />
-        <KpiHero
-          label="Subutilizados"
-          valor={subutilizados}
-          sub={subutilizados > 0 ? '< 50% carga' : 'ninguno'}
-          color={subutilizados > 0 ? COLORS.amber : COLORS.teal}
-        />
+        <KpiHero label="Carga global" valor={`${cargaGlobalPct}%`} sub={`${horasAsignadas}h de ${capacidadTotal}h`}
+          color={cargaGlobalPct > 100 ? COLORS.red : cargaGlobalPct >= 70 ? COLORS.teal : COLORS.amber}/>
+        <KpiHero label="Sobrecargados" valor={sobrecargados} sub={sobrecargados > 0 ? '> 100% carga' : 'ninguno'}
+          color={sobrecargados > 0 ? COLORS.red : COLORS.teal}/>
+        <KpiHero label="Subutilizados" valor={subutilizados} sub={subutilizados > 0 ? '< 50% carga' : 'ninguno'}
+          color={subutilizados > 0 ? COLORS.amber : COLORS.teal}/>
       </div>
 
-      {/* Cuellos de botella (Luis) */}
       {cuellos.porEtapa.length > 0 && (
         <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`3px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:16 }}>
           <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>
@@ -1212,15 +1329,12 @@ function VistaPersonas({ data, onNavigate, isMobile }) {
         </div>
       )}
 
-      {/* Lista de colaboradores */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
         <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-serif)' }}>
           Capacidad y KPIs por colaborador · esta semana
         </h3>
         {ordenada.length === 0 && (
-          <div style={{ padding:30, textAlign:'center', color:COLORS.slate400, fontSize:12 }}>
-            Sin colaboradores cargados
-          </div>
+          <div style={{ padding:30, textAlign:'center', color:COLORS.slate400, fontSize:12 }}>Sin colaboradores cargados</div>
         )}
         <div style={{ display:'grid', gap:10 }}>
           {ordenada.map(c => <PersonaCard key={c.usuario.id} carga={c} isMobile={isMobile}/>)}
@@ -1276,16 +1390,11 @@ function PersonaCard({ carga, isMobile }) {
           </div>
         </div>
         <div style={{ textAlign:'right' }}>
-          <div style={{ fontSize:20, fontFamily:'var(--font-mono)', fontWeight:700, color }}>
-            {porcentaje}%
-          </div>
-          <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>
-            {horasSemana}h / {capacidad}h
-          </div>
+          <div style={{ fontSize:20, fontFamily:'var(--font-mono)', fontWeight:700, color }}>{porcentaje}%</div>
+          <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{horasSemana}h / {capacidad}h</div>
         </div>
       </div>
 
-      {/* Barra de capacidad */}
       <div style={{ position:'relative', height:12, background:COLORS.slate50, borderRadius:6, overflow:'hidden', marginBottom:10 }}>
         <div style={{ width:`${pctVisible}%`, height:'100%', background:color, borderRadius:6, transition:'width 0.3s' }}/>
         {porcentaje > 100 && (
@@ -1295,7 +1404,6 @@ function PersonaCard({ carga, isMobile }) {
         )}
       </div>
 
-      {/* KPIs (solo desktop) */}
       {!isMobile && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10, fontSize:11 }}>
           <div style={{ padding:'8px 10px', background:COLORS.slate50, borderRadius:6 }}>
@@ -1304,9 +1412,7 @@ function PersonaCard({ carga, isMobile }) {
           </div>
           <div style={{ padding:'8px 10px', background:COLORS.slate50, borderRadius:6 }}>
             <div style={{ fontSize:9, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', marginBottom:2 }}>Tiempo promedio</div>
-            <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>
-              {tiempoPromedioDias ? `${tiempoPromedioDias}d` : '—'}
-            </div>
+            <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{tiempoPromedioDias ? `${tiempoPromedioDias}d` : '—'}</div>
           </div>
           <div style={{ padding:'8px 10px', background: desviacionPct > 20 ? '#FEF2F2' : desviacionPct < -10 ? '#E1F5EE' : COLORS.slate50, borderRadius:6 }}>
             <div style={{ fontSize:9, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', marginBottom:2 }}>Desviación</div>
@@ -1321,10 +1427,9 @@ function PersonaCard({ carga, isMobile }) {
 }
 
 // ============================================================
-// v12.5: COMPONENTES AUXILIARES PARA NUEVOS WIDGETS ADMIN
+// COMPONENTES AUXILIARES (gráficos)
 // ============================================================
 
-// Gráfico de barras mensuales (para Cotizado y Aceptado del mes)
 function GraficoBarrasMensuales({ valores, color, formato, onEditar, isMobile }) {
   const H = 180
   const W = isMobile ? 520 : 450
@@ -1372,13 +1477,18 @@ function GraficoBarrasMensuales({ valores, color, formato, onEditar, isMobile })
   )
 }
 
-// Donut de Gastos variables (Servicios / Otros / Préstamos)
 function DonutGastos({ categorias, total, onEditar }) {
-  const colores = { Servicios:'#60A5FA', Otros:'#93C5FD', Prestamos:COLORS.navy }
+  const defaultColors = ['#60A5FA', '#93C5FD', COLORS.navy, COLORS.teal, COLORS.amber, COLORS.purple, COLORS.gold]
+  const entries = Object.entries(categorias)
+  const getColor = (k, i) => {
+    const fixed = { Servicios:'#60A5FA', Otros:'#93C5FD', Prestamos:COLORS.navy, Préstamos:COLORS.navy }
+    return fixed[k] || defaultColors[i % defaultColors.length]
+  }
+
   const CX = 110, CY = 110, R = 80
   let acum = 0
   const paths = []
-  Object.entries(categorias).forEach(([k, v]) => {
+  entries.forEach(([k, v], i) => {
     if (v === 0 || total === 0) return
     const startAngle = (acum/total)*2*Math.PI
     const endAngle = ((acum+v)/total)*2*Math.PI
@@ -1387,7 +1497,7 @@ function DonutGastos({ categorias, total, onEditar }) {
     const y1 = CY + R*Math.sin(startAngle-Math.PI/2)
     const x2 = CX + R*Math.cos(endAngle-Math.PI/2)
     const y2 = CY + R*Math.sin(endAngle-Math.PI/2)
-    paths.push(<path key={k} d={`M ${CX} ${CY} L ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} Z`} fill={colores[k] || COLORS.slate400}/>)
+    paths.push(<path key={k} d={`M ${CX} ${CY} L ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} Z`} fill={getColor(k, i)}/>)
     acum += v
   })
 
@@ -1405,25 +1515,29 @@ function DonutGastos({ categorias, total, onEditar }) {
         </text>
       </svg>
       <div style={{ flex:1, minWidth:140 }}>
-        {Object.entries(categorias).map(([k, v]) => {
+        {entries.length === 0 && <EmptyMini texto="Sin gastos este mes. Agrega una categoría abajo."/>}
+        {entries.map(([k, v], i) => {
           const pct = total > 0 ? Math.round((v/total)*100) : 0
           return (
-            <div key={k} onClick={() => onEditar && onEditar(k)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:`1px solid ${COLORS.slate50}`, cursor: onEditar ? 'pointer' : 'default' }}>
+            <div key={k} onClick={() => onEditar && onEditar(k)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:`1px solid ${COLORS.slate50}`, cursor: onEditar ? 'pointer' : 'default' }}
+              onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <span style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color:COLORS.ink }}>
-                <span style={{ width:12, height:12, borderRadius:3, background:colores[k] || COLORS.slate400 }}/>
+                <span style={{ width:12, height:12, borderRadius:3, background:getColor(k, i) }}/>
                 {k} <span style={{ color:COLORS.slate400, fontSize:10 }}>{pct}%</span>
               </span>
               <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate600, fontWeight:600 }}>{fmtMoney(v, true)}</span>
             </div>
           )
         })}
-        <div style={{ fontSize:10, color:COLORS.slate400, marginTop:8, fontStyle:'italic' }}>Click en fila para editar</div>
+        {entries.length > 0 && (
+          <div style={{ fontSize:10, color:COLORS.slate400, marginTop:8, fontStyle:'italic' }}>Click en fila para editar o eliminar (ingresa 0)</div>
+        )}
       </div>
     </div>
   )
 }
 
-// Gráfico de línea histórico (gastos variables 2024/2025/2026)
 function GraficoLineaHistorico({ series, isMobile }) {
   const H = 220
   const W = isMobile ? 580 : 500
@@ -1433,16 +1547,22 @@ function GraficoLineaHistorico({ series, isMobile }) {
 
   const allValues = Object.values(series).flat().filter(v => v > 0)
   const maxVal = Math.max(...allValues, 1)
-  const nice = Math.ceil(maxVal/1000)*1000
-  const slot = innerW / 11 // 12 meses = 11 espacios
+  const nice = niceMax(maxVal)
+  const slot = innerW / 11
 
-  const coloresSerie = { '2024':'#93C5FD', '2025':COLORS.navy, '2026':'#1F2937' }
+  const anios = Object.keys(series).sort()
+  const anioActual = String(new Date().getFullYear())
+  const coloresSerie = (yr) => {
+    if (yr === anioActual) return '#1F2937'
+    if (yr === String(Number(anioActual) - 1)) return COLORS.navy
+    return '#93C5FD'
+  }
 
   const pathPara = (arr) => {
     return arr.map((v, i) => {
       const x = PAD_L + slot*i
       const y = PAD_T + innerH - (v/nice)*innerH
-      if (v === 0 && i > 3) return null // no dibujar ceros futuros
+      if (v === 0) return null
       return `${i === 0 || arr[i-1] === 0 ? 'M' : 'L'} ${x} ${y}`
     }).filter(Boolean).join(' ')
   }
@@ -1456,22 +1576,25 @@ function GraficoLineaHistorico({ series, isMobile }) {
             <g key={p}>
               <line x1={PAD_L} y1={y} x2={PAD_L+innerW} y2={y} stroke={COLORS.slate100} strokeDasharray={p === 0 ? '' : '3 3'}/>
               <text x={PAD_L - 6} y={y+4} textAnchor="end" fontSize="9" fill={COLORS.slate500} fontFamily="var(--font-mono)">
-                {Math.round(nice*p/1000)}k
+                {nice >= 1000000 ? `${Math.round(nice*p/1000000)}M` : nice >= 1000 ? `${Math.round(nice*p/1000)}k` : Math.round(nice*p)}
               </text>
             </g>
           )
         })}
-        {Object.entries(series).map(([anio, arr]) => (
-          <g key={anio}>
-            <path d={pathPara(arr)} fill="none" stroke={coloresSerie[anio]} strokeWidth="2"/>
-            {arr.map((v, i) => {
-              if (v === 0) return null
-              const x = PAD_L + slot*i
-              const y = PAD_T + innerH - (v/nice)*innerH
-              return <circle key={i} cx={x} cy={y} r="3" fill={coloresSerie[anio]}/>
-            })}
-          </g>
-        ))}
+        {anios.map((anio) => {
+          const arr = series[anio]
+          return (
+            <g key={anio}>
+              <path d={pathPara(arr)} fill="none" stroke={coloresSerie(anio)} strokeWidth="2"/>
+              {arr.map((v, i) => {
+                if (v === 0) return null
+                const x = PAD_L + slot*i
+                const y = PAD_T + innerH - (v/nice)*innerH
+                return <circle key={i} cx={x} cy={y} r="3" fill={coloresSerie(anio)}/>
+              })}
+            </g>
+          )
+        })}
         {MESES_ES.map((m, i) => (
           <text key={i} x={PAD_L + slot*i} y={H - 10} textAnchor="middle" fontSize="9" fill={COLORS.slate500} fontFamily="var(--font-mono)">{m}</text>
         ))}
@@ -1480,7 +1603,6 @@ function GraficoLineaHistorico({ series, isMobile }) {
   )
 }
 
-// Helper: redondea a un "nice" máximo para el eje Y
 function niceMax(v) {
   if (v <= 0) return 1
   const mag = Math.pow(10, Math.floor(Math.log10(v)))
