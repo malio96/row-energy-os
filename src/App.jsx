@@ -18,13 +18,28 @@ import CommandPalette from './CommandPalette'
 const COLORS = {
   navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56',
   slate50:'#F8FAFC', slate100:'#F1F5F9', slate400:'#94A3B8',
-  slate500:'#64748B', ink:'#1C2128', red:'#DC2626'
+  slate500:'#64748B', ink:'#1C2128', red:'#DC2626',
+  // v13: fondo estilo Klar
+  bgKlar:'#F5F5F4',
 }
 
 const inputStyle = {
   width:'100%', padding:'10px 12px',
   border:`1px solid ${COLORS.slate100}`, borderRadius:8,
   fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box'
+}
+
+// ============================================================
+// Hook: detectar mobile (mismo que usa Sidebar)
+// ============================================================
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
 }
 
 // ============================================================
@@ -135,10 +150,18 @@ function CommandPaletteWrapper({ open, onClose }) {
 }
 
 // ============================================================
-// LAYOUT (con listener Cmd+K)
+// v13: LAYOUT estilo Klar (separación + borde redondeado + fondo beige)
+// Cambios vs versión anterior:
+//   - Fondo exterior beige (#F5F5F4) en lugar de slate50
+//   - Contenedor interno blanco con border-radius y sombra sutil
+//   - Respeta el margin de 12px del Sidebar v13
+//   - En mobile: header fijo arriba (56px) + bottom nav (62px)
+//   - Listener Cmd+K se mantiene igual
+//   - onLogout: cierra sesión y regresa al login
 // ============================================================
-function Layout({ usuario, children }) {
+function Layout({ usuario, onLogout, children }) {
   const [cmdOpen, setCmdOpen] = useState(false)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     const handler = () => setCmdOpen(true)
@@ -147,9 +170,32 @@ function Layout({ usuario, children }) {
   }, [])
 
   return (
-    <div style={{ display:'flex', height:'100vh', background:COLORS.slate50 }}>
-      <Sidebar usuario={usuario}/>
-      <main style={{ flex:1, overflow:'auto', padding:'28px 32px' }}>{children}</main>
+    <div style={{
+      display:'flex',
+      minHeight:'100vh',
+      background: COLORS.bgKlar,  // v13: fondo beige estilo Klar
+      flexDirection: isMobile ? 'column' : 'row',
+    }}>
+      <Sidebar usuario={usuario} onLogout={onLogout}/>
+      <main style={{
+        flex:1,
+        minWidth:0,  // Importante: permite que el contenido se encoja
+        overflow:'auto',
+        // Desktop: padding que combina con margin:12 del Sidebar
+        // Mobile: espacio arriba para header (56px+16) y abajo para bottom nav (62px+16)
+        padding: isMobile ? '72px 16px 78px' : '12px 12px 12px 0',
+      }}>
+        {/* v13: Contenedor interno blanco con bordes redondeados estilo Klar */}
+        <div style={{
+          background:'white',
+          borderRadius: isMobile ? 0 : 16,
+          boxShadow: isMobile ? 'none' : '0 1px 3px rgba(10, 37, 64, 0.04), 0 8px 24px rgba(10, 37, 64, 0.06)',
+          padding: isMobile ? '20px 16px' : '24px 28px',
+          minHeight: isMobile ? 'auto' : 'calc(100vh - 24px)',
+        }}>
+          {children}
+        </div>
+      </main>
       <CommandPaletteWrapper open={cmdOpen} onClose={() => setCmdOpen(false)}/>
     </div>
   )
@@ -174,12 +220,18 @@ export default function App() {
     check()
   }, [])
 
+  // v13: handler de cerrar sesión
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setUsuario(null)
+  }
+
   if (loading) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color:COLORS.slate400, fontFamily:'var(--font-sans)' }}>Cargando...</div>
   if (!usuario) return <Login onLogin={setUsuario}/>
 
   return (
     <BrowserRouter>
-      <Layout usuario={usuario}>
+      <Layout usuario={usuario} onLogout={handleLogout}>
         <Routes>
           <Route path="/" element={<DashboardWrapper usuario={usuario}/>}/>
           <Route path="/proyectos" element={<Proyectos usuario={usuario}/>}/>
