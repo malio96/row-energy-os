@@ -1,7 +1,9 @@
 // ============================================================
-// Modal.jsx — v12.5.5
+// Modal.jsx — v12.5.6
 // Modal estilo Row Energy (réplica del diseño del Gantt)
 // Reemplaza prompt() / confirm() / alert() nativos del navegador
+//
+// v12.5.6: agregado soporte para tipo 'select' en editor (dropdowns)
 // ============================================================
 import { useState, useEffect, useRef } from 'react'
 import { COLORS } from './helpers'
@@ -15,6 +17,18 @@ import { COLORS } from './helpers'
 //   const ok = await modal.confirm({ titulo, mensaje, destructivo })
 //   await modal.alert({ titulo, mensaje })
 //   const cambios = await modal.editor({ titulo, campos })
+//
+// Ejemplo de campos para editor:
+//   [
+//     { key: 'nombre', label: 'Nombre', tipo: 'text', required: true, defaultValue: '...' },
+//     { key: 'monto', label: 'Monto', tipo: 'number', required: true },
+//     { key: 'fecha', label: 'Fecha', tipo: 'date' },
+//     { key: 'rol', label: 'Rol', tipo: 'select', required: true, defaultValue: 'ventas',
+//       opciones: [
+//         { value: 'direccion', label: 'Dirección' },
+//         { value: 'ventas', label: 'Ventas' },
+//       ] },
+//   ]
 // ============================================================
 export function useModal() {
   const [estado, setEstado] = useState({ abierto: false })
@@ -28,7 +42,6 @@ export function useModal() {
     setEstado({ abierto: false })
   }
 
-  // prompt: devuelve string o null si cancela
   const prompt = (opts) => new Promise(resolve => {
     resolverRef.current = resolve
     setEstado({
@@ -37,13 +50,12 @@ export function useModal() {
       titulo: opts.titulo || 'Ingresar valor',
       mensaje: opts.mensaje || '',
       defaultValue: opts.defaultValue ?? '',
-      inputTipo: opts.tipo || 'text',  // text, number, date
+      inputTipo: opts.tipo || 'text',
       placeholder: opts.placeholder || '',
       icono: opts.icono || 'Edit',
     })
   })
 
-  // confirm: devuelve true / false
   const confirm = (opts) => new Promise(resolve => {
     resolverRef.current = resolve
     setEstado({
@@ -57,7 +69,6 @@ export function useModal() {
     })
   })
 
-  // alert: devuelve true cuando se cierra
   const alert = (opts) => new Promise(resolve => {
     resolverRef.current = resolve
     setEstado({
@@ -70,8 +81,6 @@ export function useModal() {
     })
   })
 
-  // editor: modal con múltiples campos. Devuelve objeto con valores o null si cancela.
-  // campos: [{ key: 'concepto', label: 'Concepto', tipo: 'text', defaultValue: '...', required: true, placeholder: '...' }]
   const editor = (opts) => new Promise(resolve => {
     resolverRef.current = resolve
     setEstado({
@@ -95,7 +104,7 @@ export function useModal() {
 
 
 // ============================================================
-// ModalUI — visual
+// ModalUI
 // ============================================================
 function ModalUI({ estado, onCerrar }) {
   const [valor, setValor] = useState(estado.tipo === 'prompt' ? estado.defaultValue : '')
@@ -107,21 +116,19 @@ function ModalUI({ estado, onCerrar }) {
   })
   const inputRef = useRef(null)
 
-  // Autoenfoque al abrir
   useEffect(() => {
     if (inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [])
 
-  // ESC cierra, Enter confirma (en prompt/confirm/alert)
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
         if (estado.tipo === 'prompt' || estado.tipo === 'confirm' || estado.tipo === 'editor') onCerrar(null)
         else onCerrar(true)
       }
-      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
         if (estado.tipo === 'prompt') onCerrar(valor)
         if (estado.tipo === 'alert') onCerrar(true)
         if (estado.tipo === 'confirm') onCerrar(true)
@@ -137,13 +144,11 @@ function ModalUI({ estado, onCerrar }) {
   }
 
   const confirmarEditor = () => {
-    // Validar campos requeridos
     for (const c of estado.campos) {
       if (c.required && !valoresEditor[c.key]) {
-        return  // no cierra
+        return
       }
     }
-    // Castear números
     const resultado = {}
     estado.campos.forEach(c => {
       const v = valoresEditor[c.key]
@@ -156,7 +161,6 @@ function ModalUI({ estado, onCerrar }) {
 
   return (
     <>
-      {/* Overlay */}
       <div
         onClick={() => onCerrar(estado.tipo === 'alert' ? true : null)}
         style={{
@@ -168,7 +172,6 @@ function ModalUI({ estado, onCerrar }) {
         }}
       />
 
-      {/* Modal */}
       <div
         role="dialog"
         aria-modal="true"
@@ -184,9 +187,11 @@ function ModalUI({ estado, onCerrar }) {
           boxShadow: '0 20px 60px rgba(10, 37, 64, 0.18)',
           zIndex: 10001,
           animation: 'popIn 0.15s ease',
+          maxHeight: '90vh',
+          overflowY: 'auto',
         }}
       >
-        {/* Header con ícono + título */}
+        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 10 }}>
           <div style={{
             width: 38, height: 38, minWidth: 38,
@@ -208,7 +213,6 @@ function ModalUI({ estado, onCerrar }) {
           </div>
         </div>
 
-        {/* Mensaje */}
         {estado.mensaje && (
           <div style={{
             fontSize: 14,
@@ -221,7 +225,7 @@ function ModalUI({ estado, onCerrar }) {
           </div>
         )}
 
-        {/* Input para prompt */}
+        {/* Input prompt */}
         {estado.tipo === 'prompt' && (
           <div style={{ marginBottom: 18, marginLeft: 52 }}>
             <input
@@ -230,56 +234,52 @@ function ModalUI({ estado, onCerrar }) {
               value={valor}
               onChange={e => setValor(e.target.value)}
               placeholder={estado.placeholder}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                border: `1px solid ${COLORS.slate200}`,
-                borderRadius: 8,
-                fontSize: 14,
-                outline: 'none',
-                fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
+              style={inputStyle()}
               onFocus={e => e.currentTarget.style.borderColor = COLORS.navy}
               onBlur={e => e.currentTarget.style.borderColor = COLORS.slate200}
             />
           </div>
         )}
 
-        {/* Campos para editor */}
+        {/* Campos editor */}
         {estado.tipo === 'editor' && (
           <div style={{ marginBottom: 18, marginLeft: 52, display: 'grid', gap: 12 }}>
             {estado.campos.map((campo, idx) => (
               <div key={campo.key}>
-                <label style={{
-                  display: 'block',
-                  fontSize: 11, fontWeight: 600,
-                  color: COLORS.slate500,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  marginBottom: 5,
-                }}>
+                <label style={labelStyle()}>
                   {campo.label} {campo.required && <span style={{ color: COLORS.red }}>*</span>}
                 </label>
-                <input
-                  ref={idx === 0 ? inputRef : null}
-                  type={campo.tipo || 'text'}
-                  value={valoresEditor[campo.key] ?? ''}
-                  onChange={e => setValoresEditor({ ...valoresEditor, [campo.key]: e.target.value })}
-                  placeholder={campo.placeholder || ''}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    border: `1px solid ${COLORS.slate200}`,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    boxSizing: 'border-box',
-                  }}
-                  onFocus={e => e.currentTarget.style.borderColor = COLORS.navy}
-                  onBlur={e => e.currentTarget.style.borderColor = COLORS.slate200}
-                />
+                {campo.tipo === 'select' ? (
+                  <select
+                    ref={idx === 0 ? inputRef : null}
+                    value={valoresEditor[campo.key] ?? ''}
+                    onChange={e => setValoresEditor({ ...valoresEditor, [campo.key]: e.target.value })}
+                    style={{ ...inputStyle(), cursor: 'pointer', appearance: 'menulist' }}
+                    onFocus={e => e.currentTarget.style.borderColor = COLORS.navy}
+                    onBlur={e => e.currentTarget.style.borderColor = COLORS.slate200}
+                  >
+                    {!campo.required && <option value="">— Sin selección —</option>}
+                    {(campo.opciones || []).map(op => (
+                      <option key={op.value} value={op.value}>{op.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    ref={idx === 0 ? inputRef : null}
+                    type={campo.tipo || 'text'}
+                    value={valoresEditor[campo.key] ?? ''}
+                    onChange={e => setValoresEditor({ ...valoresEditor, [campo.key]: e.target.value })}
+                    placeholder={campo.placeholder || ''}
+                    style={inputStyle()}
+                    onFocus={e => e.currentTarget.style.borderColor = COLORS.navy}
+                    onBlur={e => e.currentTarget.style.borderColor = COLORS.slate200}
+                  />
+                )}
+                {campo.ayuda && (
+                  <div style={{ fontSize: 10, color: COLORS.slate500, marginTop: 4 }}>
+                    {campo.ayuda}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -339,7 +339,6 @@ function ModalUI({ estado, onCerrar }) {
         </div>
       </div>
 
-      {/* Animaciones */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -354,10 +353,31 @@ function ModalUI({ estado, onCerrar }) {
   )
 }
 
+function inputStyle() {
+  return {
+    width: '100%',
+    padding: '10px 14px',
+    border: `1px solid ${COLORS.slate200}`,
+    borderRadius: 8,
+    fontSize: 14,
+    outline: 'none',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    background: 'white',
+  }
+}
 
-// ============================================================
-// Ícono del modal (círculo pequeño arriba a la izquierda)
-// ============================================================
+function labelStyle() {
+  return {
+    display: 'block',
+    fontSize: 11, fontWeight: 600,
+    color: COLORS.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: 5,
+  }
+}
+
 function IconoModal({ tipo }) {
   const iconos = {
     Edit: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>,
@@ -367,6 +387,7 @@ function IconoModal({ tipo }) {
     Alert: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>,
     Dollar: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
     Unlink: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.84 12.25l1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="M5.17 11.75l-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>,
+    Users: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   }
   return iconos[tipo] || iconos.Edit
 }
