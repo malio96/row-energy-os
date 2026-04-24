@@ -47,7 +47,7 @@ export async function getPlantillaActividades(plantillaId) {
 export async function getProyectos() {
   const { data, error } = await supabase
     .from('proyectos')
-    .select(`*, cliente:clientes(id, razon_social, codigo), director:usuarios!director_id(id, nombre)`)
+    .select(`*, cliente:clientes(id, razon_social, codigo), director:usuarios!director_id(id, nombre), actividades(*)`)
     .order('created_at', { ascending: false })
   if (error) { console.error('getProyectos:', error); return [] }
   return data || []

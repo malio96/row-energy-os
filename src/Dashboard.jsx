@@ -10,6 +10,9 @@ import {
   autorizarCuentaPorPagar, desautorizarCuentaPorPagar,
   marcarCuentaPorPagarComoPagada, eliminarCuentaPorPagar, actualizarCuentaPorPagar,
 } from './supabase'
+// v12.5.9: sistema de alertas configurables
+import { getAlertasConfig } from './supabase'
+import { generarAlertas, colorAlerta, bgAlerta } from './alertas'
 import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
 // v12.5.5: Modal custom (reemplaza prompt/confirm/alert nativos)
 import { useModal } from './Modal'
@@ -39,6 +42,7 @@ export default function Dashboard({ usuario, onNavigate }) {
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState(loadPref('dash_vista', 'ejecutivo'))
   const [refreshTick, setRefreshTick] = useState(0)  // v12.5.4: trigger para recargar datos
+  const [alertasConfig, setAlertasConfig] = useState(null)  // v12.5.9
   const isMobile = useIsMobile()
 
   useEffect(() => {
@@ -56,6 +60,15 @@ export default function Dashboard({ usuario, onNavigate }) {
     cargar()
   }, [refreshTick])
 
+  // v12.5.9: cargar config de alertas del usuario actual
+  useEffect(() => {
+    if (!usuario?.id) return
+    getAlertasConfig(usuario.id).then(setAlertasConfig).catch(err => {
+      console.warn('No se pudo cargar alertasConfig:', err)
+      setAlertasConfig(null)
+    })
+  }, [usuario?.id])
+
   useEffect(() => { savePref('dash_vista', vista) }, [vista])
 
   // v12.5.4: función para que las vistas puedan pedir recarga de datos
@@ -72,6 +85,9 @@ export default function Dashboard({ usuario, onNavigate }) {
     { key:'cobranza',        label:'Cobranza',        icon:'Dollar' },
     { key:'personas',        label:'Personas',        icon:'Users' },
   ]
+
+  // v12.5.9: calcular carga (necesaria para alerta de sobrecarga)
+  const cargaColaboradores = calcularCargaPorColaborador(data.actividades || [], data.usuarios || [])
 
   return (
     <div>
@@ -109,7 +125,7 @@ export default function Dashboard({ usuario, onNavigate }) {
       </div>
 
       {/* CONTENIDO */}
-      {vista === 'ejecutivo'      && <VistaEjecutivo      data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
+      {vista === 'ejecutivo'      && <VistaEjecutivo      data={data} onNavigate={onNavigate} isMobile={isMobile} usuario={usuario} alertasConfig={alertasConfig} cargaColaboradores={cargaColaboradores}/>}
       {vista === 'administracion' && <VistaAdministracion data={data} onNavigate={onNavigate} isMobile={isMobile} recargar={recargar}/>}
       {vista === 'ventas'         && <VistaVentas        data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'marketing'      && <VistaMarketing     data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
@@ -121,10 +137,49 @@ export default function Dashboard({ usuario, onNavigate }) {
 }
 
 // ============================================================
-// VISTA EJECUTIVO
+// v12.5.9: BANNER DE ALERTAS
+// Reemplaza el bloque de alertas hardcoded usando el generador
 // ============================================================
-function VistaEjecutivo({ data, onNavigate, isMobile }) {
-  const { proyectos, cotizaciones, leads, hitos, facturas, tickets } = data
+function BannerAlertas({ alertas, onNavigate }) {
+  if (!alertas || alertas.length === 0) return null
+
+  // onNavigate espera nombres tipo 'cobranza', 'proyectos', etc — no rutas
+  const nav = (alerta) => {
+    if (alerta.modulo) onNavigate?.(alerta.modulo)
+  }
+
+  return (
+    <div style={{ display:'grid', gap:8, marginBottom:20 }}>
+      {alertas.map(a => {
+        const color = colorAlerta(a.severidad)
+        return (
+          <div key={a.id} onClick={() => nav(a)} style={{
+            display:'flex', alignItems:'center', gap:10,
+            padding:'12px 16px', background:'white',
+            border:`1px solid ${COLORS.slate100}`,
+            borderLeft:`3px solid ${color}`,
+            borderRadius:10, cursor:'pointer',
+            transition:'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = bgAlerta(a.severidad) }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+          >
+            <div style={{ color }}>{Icon('Alert')}</div>
+            <span style={{ flex:1, fontSize:13, color:COLORS.ink, fontWeight:500 }}>{a.mensaje}</span>
+            <span style={{ fontSize:11, color:COLORS.slate400, textTransform:'uppercase', fontWeight:600 }}>Ver →</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ============================================================
+// VISTA EJECUTIVO
+// v12.5.9: usa generador de alertas en vez de hardcoded
+// ============================================================
+function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, cargaColaboradores }) {
+  const { proyectos, cotizaciones, leads, hitos, facturas, tickets, actividades, cxp } = data
 
   const proyectosActivos = proyectos.filter(p => p.estado !== 'Terminado' && p.estado !== 'Cancelado')
   const cotizacionesPipeline = cotizaciones.filter(c => ['Borrador', 'Enviada', 'En revisión'].includes(c.estado))
@@ -166,32 +221,31 @@ function VistaEjecutivo({ data, onNavigate, isMobile }) {
     else aging['+90'] += monto
   })
 
-  const alertas = []
-  if (vencido > 0) alertas.push({ titulo:`${fmtMoney(vencido, true)} en facturas vencidas`, color:COLORS.red, nav:'cobranza' })
-  const bloqueadas = proyectos.reduce((n,p) => n + (p.actividades || []).filter(a => a.estado === 'Bloqueada').length, 0)
-  if (bloqueadas > 0) alertas.push({ titulo:`${bloqueadas} actividades bloqueadas en proyectos`, color:COLORS.amber, nav:'proyectos' })
   const proximosCierre = proyectos.filter(p => {
     if (!p.cierre || p.estado === 'Terminado') return false
     const d = daysUntil(p.cierre)
     return d !== null && d >= 0 && d <= 30
   })
-  if (proximosCierre.length > 0) alertas.push({ titulo:`${proximosCierre.length} proyecto(s) con cierre próximo`, color:COLORS.navy, nav:'proyectos' })
-  const ticketsUrgentes = tickets.filter(t => t.prioridad === 'Alta' && t.estado !== 'Cerrado')
-  if (ticketsUrgentes.length > 0) alertas.push({ titulo:`${ticketsUrgentes.length} ticket(s) de alta prioridad`, color:COLORS.red, nav:'postventa' })
 
+  // v12.5.9: generar alertas vía sistema nuevo en vez de hardcoded
+  const alertas = useMemo(() => {
+    if (!alertasConfig) return []
+    return generarAlertas({
+      usuario,
+      config: alertasConfig,
+      facturas,
+      actividades,
+      proyectos,
+      cxp,
+      leads,
+      cotizaciones,
+      carga: cargaColaboradores,
+    })
+  }, [alertasConfig, usuario, facturas, actividades, proyectos, cxp, leads, cotizaciones, cargaColaboradores])
   return (
     <>
-      {alertas.length > 0 && (
-        <div style={{ display:'grid', gap:8, marginBottom:20 }}>
-          {alertas.map((a, i) => (
-            <div key={i} onClick={() => onNavigate?.(a.nav)} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${a.color}`, borderRadius:10, cursor:'pointer' }}>
-              <div style={{ color:a.color }}>{Icon('Alert')}</div>
-              <span style={{ flex:1, fontSize:13, color:COLORS.ink, fontWeight:500 }}>{a.titulo}</span>
-              <span style={{ fontSize:11, color:COLORS.slate400, textTransform:'uppercase', fontWeight:600 }}>Ver →</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* v12.5.9: Banner unificado de alertas */}
+      <BannerAlertas alertas={alertas} onNavigate={onNavigate}/>
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
