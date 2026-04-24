@@ -1195,3 +1195,259 @@ export async function cancelarCuentaPorPagar(id, motivo = null) {
   if (error) throw error
   return data
 }
+
+// ============================================================
+// PATCH SUPABASE v12.5.6 — CRUD de Usuarios
+// ============================================================
+//
+// CÓMO APLICAR:
+//   1. Abre src/supabase.js
+//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
+//   3. Pega TODO este bloque
+//   4. Guarda (Cmd+S)
+//
+// NOTA:
+//   - 100% aditivo, no toca código existente
+//   - Incluye reglas duras para proteger integridad del sistema
+// ============================================================
+
+
+// ============================================================
+// v12.5.6: USUARIOS (CRUD completo)
+// ============================================================
+
+// getUsuarios ya existe, pero por si quieres también los inactivos:
+export async function getTodosUsuarios() {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .order('nombre')
+  if (error) { console.error('getTodosUsuarios:', error); return [] }
+  return data || []
+}
+
+// Crear usuario nuevo en la tabla 'usuarios'
+// NOTA: Este usuario NO tendrá auth_id hasta que alguien lo invite a Supabase Auth
+// y haga su primer login. Por eso tiene un paso adicional.
+export async function crearUsuario({ nombre, email, rol, telefono = null, capacidad_horas_semana = 40, activo = true }) {
+  // Validación básica
+  if (!nombre?.trim()) throw new Error('El nombre es obligatorio')
+  if (!email?.trim()) throw new Error('El email es obligatorio')
+  if (!rol) throw new Error('El rol es obligatorio')
+
+  const emailLower = email.toLowerCase().trim()
+
+  // Verificar si el email ya existe
+  const { data: existente } = await supabase
+    .from('usuarios')
+    .select('id')
+    .eq('email', emailLower)
+    .maybeSingle()
+
+  if (existente) {
+    throw new Error(`Ya existe un usuario con el email ${emailLower}`)
+  }
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .insert({
+      nombre: nombre.trim(),
+      email: emailLower,
+      rol,
+      telefono: telefono?.trim() || null,
+      capacidad_horas_semana: Number(capacidad_horas_semana) || 40,
+      activo,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Actualizar usuario existente
+// Reglas duras aplicadas:
+//   - No se puede cambiar email a uno que ya existe
+export async function actualizarUsuario(id, cambios) {
+  if (!id) throw new Error('ID de usuario requerido')
+
+  // Si se está cambiando el email, verificar que no exista duplicado
+  if (cambios.email) {
+    const emailLower = cambios.email.toLowerCase().trim()
+    const { data: existente } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('email', emailLower)
+      .neq('id', id)
+      .maybeSingle()
+
+    if (existente) {
+      throw new Error(`Ya existe otro usuario con el email ${emailLower}`)
+    }
+    cambios.email = emailLower
+  }
+
+  // Normalizar strings
+  if (cambios.nombre) cambios.nombre = cambios.nombre.trim()
+  if (cambios.telefono !== undefined) cambios.telefono = cambios.telefono?.trim() || null
+  if (cambios.capacidad_horas_semana !== undefined) cambios.capacidad_horas_semana = Number(cambios.capacidad_horas_semana) || 40
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update(cambios)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Eliminar usuario con reglas duras:
+//   - No se puede eliminar a sí mismo
+//   - No se puede eliminar el último usuario con rol 'direccion'
+//   - Si tiene foreign keys activas, en lugar de eliminar se sugiere desactivar
+export async function eliminarUsuario(id, idSolicitante) {
+  if (!id) throw new Error('ID de usuario requerido')
+
+  // Regla 1: no auto-eliminación
+  if (id === idSolicitante) {
+    throw new Error('No puedes eliminar tu propia cuenta')
+  }
+
+  // Obtener el usuario a eliminar
+  const { data: usuario, error: eGet } = await supabase
+    .from('usuarios')
+    .select('id, rol, nombre')
+    .eq('id', id)
+    .single()
+
+  if (eGet || !usuario) throw new Error('Usuario no encontrado')
+
+  // Regla 2: si es direccion, verificar que haya al menos otro
+  if (usuario.rol === 'direccion') {
+    const { count } = await supabase
+      .from('usuarios')
+      .select('*', { count: 'exact', head: true })
+      .eq('rol', 'direccion')
+      .eq('activo', true)
+
+    if ((count || 0) <= 1) {
+      throw new Error(
+        `No se puede eliminar: ${usuario.nombre} es el único usuario con rol Dirección. ` +
+        `Debe existir al menos uno activo.`
+      )
+    }
+  }
+
+  // Intentar eliminar. Si falla por foreign keys, sugerir desactivar
+  const { error } = await supabase.from('usuarios').delete().eq('id', id)
+  if (error) {
+    if (error.code === '23503') {
+      // Foreign key violation
+      throw new Error(
+        `No se puede eliminar: ${usuario.nombre} tiene registros asociados ` +
+        `(proyectos, cotizaciones, etc.). Desactiva el usuario en su lugar.`
+      )
+    }
+    throw error
+  }
+}
+
+// Desactivar usuario (alternativa segura a eliminar)
+// Reglas duras:
+//   - No se puede desactivar a sí mismo
+//   - No se puede desactivar el último usuario activo con rol 'direccion'
+export async function desactivarUsuario(id, idSolicitante) {
+  if (!id) throw new Error('ID de usuario requerido')
+
+  if (id === idSolicitante) {
+    throw new Error('No puedes desactivar tu propia cuenta')
+  }
+
+  const { data: usuario } = await supabase
+    .from('usuarios')
+    .select('id, rol, nombre, activo')
+    .eq('id', id)
+    .single()
+
+  if (!usuario) throw new Error('Usuario no encontrado')
+
+  if (usuario.rol === 'direccion' && usuario.activo) {
+    const { count } = await supabase
+      .from('usuarios')
+      .select('*', { count: 'exact', head: true })
+      .eq('rol', 'direccion')
+      .eq('activo', true)
+
+    if ((count || 0) <= 1) {
+      throw new Error(
+        `No se puede desactivar: ${usuario.nombre} es el único usuario con rol Dirección activo.`
+      )
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({ activo: false })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Reactivar usuario
+export async function activarUsuario(id) {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({ activo: true })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Cambiar rol de usuario con reglas duras:
+//   - No se puede cambiar su propio rol si es el único direccion
+export async function cambiarRolUsuario(id, nuevoRol, idSolicitante) {
+  if (!id) throw new Error('ID de usuario requerido')
+  if (!nuevoRol) throw new Error('Nuevo rol requerido')
+
+  const { data: usuario } = await supabase
+    .from('usuarios')
+    .select('id, rol, nombre')
+    .eq('id', id)
+    .single()
+
+  if (!usuario) throw new Error('Usuario no encontrado')
+
+  // Regla: si está degradando el último direccion, bloquear
+  if (usuario.rol === 'direccion' && nuevoRol !== 'direccion') {
+    const { count } = await supabase
+      .from('usuarios')
+      .select('*', { count: 'exact', head: true })
+      .eq('rol', 'direccion')
+      .eq('activo', true)
+
+    if ((count || 0) <= 1) {
+      throw new Error(
+        `No se puede cambiar el rol: ${usuario.nombre} es el único usuario con rol Dirección. ` +
+        `Primero asigna otro usuario como Dirección.`
+      )
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({ rol: nuevoRol })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
