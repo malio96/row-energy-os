@@ -1,22 +1,23 @@
 import { useState, useEffect } from 'react'
 import {
   getTodosUsuarios, getClientes,
-  crearUsuario, actualizarUsuario, eliminarUsuario,
+  actualizarUsuario, eliminarUsuario,
   desactivarUsuario, activarUsuario, cambiarRolUsuario,
+  invitarUsuarioViaEdge,  // v12.5.8
 } from './supabase'
 import { COLORS, Avatar, Icon } from './helpers'
 import { useModal } from './Modal'
 import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
-  puedeGestionarUsuarios, labelRol, descripcionRol, modulosPermitidos
+  puedeGestionarUsuarios, labelRol, descripcionRol,
 } from './permisos'
 
 // ============================================================
 // v12.5.6: Configuración con gestión de usuarios (solo direccion)
-// v12.5.6c2: rol ahora es dropdown en lugar de texto libre
+// v12.5.6c2: rol dropdown en lugar de texto libre
+// v12.5.8: invitación automática via Edge Function
 // ============================================================
 
-// Construir opciones para el dropdown de roles a partir de la matriz
 const OPCIONES_ROL = ROLES_DISPONIBLES.map(r => ({
   value: r,
   label: `${PERMISOS_POR_ROL[r].label} — ${PERMISOS_POR_ROL[r].descripcion}`,
@@ -79,12 +80,13 @@ export default function Configuracion({ usuario }) {
 // ============================================================
 function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
 
+  // v12.5.8: crear usuario con invitación automática
   const abrirModalCrear = async () => {
     const resultado = await modal.editor({
-      titulo: 'Nuevo usuario',
-      mensaje: 'Los permisos se asignan automáticamente según el rol. El usuario deberá ser invitado a Supabase Auth por separado para poder iniciar sesión.',
+      titulo: 'Invitar nuevo usuario',
+      mensaje: 'Se creará el registro en la BD y se enviará un email de invitación automáticamente. El usuario podrá iniciar sesión después de crear su contraseña desde el email.',
       icono: 'Plus',
-      textoBoton: 'Crear usuario',
+      textoBoton: 'Crear e invitar',
       campos: [
         { key: 'nombre',   label: 'Nombre completo', tipo: 'text',   required: true, placeholder: 'Ej: Juan Pérez' },
         { key: 'email',    label: 'Email',            tipo: 'text',   required: true, placeholder: 'juan@row.energy' },
@@ -96,16 +98,26 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
     if (!resultado) return
 
     try {
-      await crearUsuario({
+      const respuesta = await invitarUsuarioViaEdge({
         nombre: resultado.nombre,
         email: resultado.email,
         rol: resultado.rol,
         telefono: resultado.telefono,
         capacidad_horas_semana: resultado.capacidad_horas_semana,
       })
+
+      await modal.alert({
+        titulo: '✉️ Invitación enviada',
+        mensaje: respuesta.mensaje || `Usuario creado. Invitación enviada a ${resultado.email}.`,
+        icono: 'Check',
+      })
       recargar()
     } catch (err) {
-      await modal.alert({ titulo: 'Error al crear usuario', mensaje: err.message || String(err), icono: 'Alert' })
+      await modal.alert({
+        titulo: 'Error al invitar',
+        mensaje: err.message || String(err),
+        icono: 'Alert',
+      })
     }
   }
 
@@ -126,11 +138,9 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
     if (!resultado) return
 
     try {
-      // Si el rol cambió, usar cambiarRolUsuario (respeta reglas duras)
       if (resultado.rol !== u.rol) {
         await cambiarRolUsuario(u.id, resultado.rol, usuarioActual.id)
       }
-      // Actualizar los demás campos
       await actualizarUsuario(u.id, {
         nombre: resultado.nombre,
         email: resultado.email,
@@ -156,11 +166,8 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
     if (!ok) return
 
     try {
-      if (u.activo) {
-        await desactivarUsuario(u.id, usuarioActual.id)
-      } else {
-        await activarUsuario(u.id)
-      }
+      if (u.activo) await desactivarUsuario(u.id, usuarioActual.id)
+      else await activarUsuario(u.id)
       recargar()
     } catch (err) {
       await modal.alert({ titulo: 'No se puede realizar', mensaje: err.message || String(err), icono: 'Alert' })
@@ -201,7 +208,7 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
           border:'none', borderRadius:8, fontSize:13, fontWeight:600,
           cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6,
         }}>
-          {Icon('Plus')} Agregar usuario
+          {Icon('Plus')} Invitar usuario
         </button>
       </div>
 
@@ -388,7 +395,7 @@ function TabSistema({ usuario }) {
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:24 }}>
       <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, marginBottom:16 }}>Información del sistema</h3>
       <div style={{ display:'grid', gap:12, fontSize:13 }}>
-        <InfoRow label="Versión" valor="Row Energy OS 1.0 (v12.5.6)"/>
+        <InfoRow label="Versión" valor="Row Energy OS 1.0 (v12.5.8)"/>
         <InfoRow label="Base de datos" valor="Supabase (conectada)" color={COLORS.teal}/>
         <InfoRow label="Hosting" valor="Vercel · app.row.energy"/>
         <InfoRow label="Normativa base" valor="LSE 2025 · Reglamento LSE"/>

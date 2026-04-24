@@ -1451,3 +1451,51 @@ export async function cambiarRolUsuario(id, nuevoRol, idSolicitante) {
   if (error) throw error
   return data
 }
+
+// ============================================================
+// PATCH SUPABASE v12.5.8 — Invitación de usuarios via Edge Function
+// ============================================================
+//
+// CÓMO APLICAR:
+//   1. Abre src/supabase.js
+//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
+//   3. Pega TODO este bloque
+//   4. Guarda
+// ============================================================
+
+
+// ============================================================
+// v12.5.8: Invitar usuario vía Edge Function
+// Crea usuario en tabla + envía email con magic link en UN SOLO PASO
+// ============================================================
+export async function invitarUsuarioViaEdge({ nombre, email, rol, telefono = null, capacidad_horas_semana = 40 }) {
+  // Obtener el JWT del usuario actual (para autenticar la llamada)
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Debes estar autenticado para invitar usuarios')
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL no configurado')
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/invitar-usuario`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      nombre,
+      email,
+      rol,
+      telefono,
+      capacidad_horas_semana,
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.error || `Error HTTP ${response.status}`)
+  }
+
+  return data
+}
