@@ -1,32 +1,12 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { supabase, getNotificaciones } from './supabase'
+import { COLORS, useIsMobile, loadPref, savePref } from './helpers'
 
 // ============================================================
 // v13 — Sidebar retráctil estilo Klar
-// Cambios vs versión anterior:
-//   1. Botón para colapsar/expandir (solo desktop)
-//   2. Separación del borde (padding exterior)
-//   3. Esquinas redondeadas estilo Klar
-//   4. Cuando colapsado muestra solo iconos (60px)
-//   5. Cuando expandido 220px con labels
-//   6. Estado persistente en localStorage
+// v12.5.3: importa COLORS, useIsMobile, loadPref, savePref de helpers
 // ============================================================
-
-const COLORS = {
-  navy: '#0A2540', navy2: '#1B3A6B', teal: '#0F6E56',
-  slate50: '#F8FAFC', slate100: '#F1F5F9', slate200: '#E2E8F0',
-  slate400: '#94A3B8', slate500: '#64748B', slate600: '#475569',
-  bg: '#F5F5F4', // Fondo estilo Klar (beige muy claro / warm gray)
-}
-
-// Helpers de persistencia
-const loadPref = (key, def) => {
-  try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : def } catch { return def }
-}
-const savePref = (key, val) => {
-  try { localStorage.setItem(key, JSON.stringify(val)) } catch {}
-}
 
 // ============================================================
 // Definición de módulos
@@ -78,19 +58,6 @@ const modulos = [
     },
   ]},
 ]
-
-// ============================================================
-// Hook: detectar mobile
-// ============================================================
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
-  }, [])
-  return isMobile
-}
 
 // ============================================================
 // Componente principal
@@ -226,14 +193,12 @@ export default function Sidebar({ usuario, onLogout }) {
   // ============================================================
   return (
     <aside style={{
-      // v13: Separación del borde (no pegado al marco)
       margin: 12,
       width: ancho,
       minWidth: ancho,
       maxWidth: ancho,
       height: 'calc(100vh - 24px)',
       background: 'white',
-      // v13: Esquinas redondeadas estilo Klar
       borderRadius: 16,
       boxShadow: '0 1px 3px rgba(10, 37, 64, 0.04), 0 8px 24px rgba(10, 37, 64, 0.06)',
       display: 'flex', flexDirection: 'column',
