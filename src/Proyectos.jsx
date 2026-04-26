@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
+// v15.2: exportGantt se importa dinámicamente al hacer click (jspdf+exceljs son ~1.4MB)
 import {
   supabase, getProyectos, getProyectoConActividades, getUsuarios, getClientes,
   getPlantillas, getPlantillaActividades, crearProyectoDesdePlantilla,
@@ -917,7 +918,7 @@ function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
   )
 }
 
-function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep }) {
+function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep }) {
   const [zoom, setZoom] = useState('dia')
   const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 8)
   const ROW_HEIGHT = 42
@@ -1258,6 +1259,29 @@ function GanttInteractivo({ actividadesProp, onRecargar, onDesglosar, onAbrirInf
           if (hoyIdx >= 0 && scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, hoyIdx * DAY_WIDTH - 200), behavior:'smooth' })
         }} style={{ padding:'6px 10px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}>
           <Icon.Calendar/> Ir a hoy
+        </button>
+        {/* v15.2: Export PDF / Excel — lazy-loaded para no inflar el bundle */}
+        <button
+          onClick={async () => {
+            const m = await import('./exportGantt')
+            await m.exportarGanttExcel(proyecto, actividades, usuarios)
+          }}
+          title="Descargar cronograma como Excel (.xlsx)"
+          style={{ padding:'6px 10px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l2 4 2-4h2"/></svg>
+          Excel
+        </button>
+        <button
+          onClick={async () => {
+            const m = await import('./exportGantt')
+            m.exportarGanttPDF(proyecto, actividades, usuarios)
+          }}
+          title="Descargar cronograma como PDF"
+          style={{ padding:'6px 10px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          PDF
         </button>
         {/* v14.1: Toggle Ruta Crítica */}
         <button
@@ -3149,7 +3173,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
 
       {tab === 'resumen' && <TabResumen proyecto={proyecto} actividades={actividades} hitos={hitos} usuarios={usuarios} puedeVerFinanciero={puedeVerFinanciero}/>}
       {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
-      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt}/>}
+      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt}/>}
       {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion}/>}
       {tab === 'personas' && <TabPorPersona actividades={actividades} usuarios={usuarios} numeracion={numeracion} onAbrirInfo={setPanelAct}/>}
       {tab === 'documentos' && <TabDocumentos proyecto={proyecto}/>}
