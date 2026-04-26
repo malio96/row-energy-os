@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { supabase, getNotificaciones } from './supabase'
 import { COLORS, useIsMobile, loadPref, savePref } from './helpers'
-import { puede } from './permisos'  // v12.5.6
+import { puede } from './permisos'
+import CampanaAlertas from './CampanaAlertas'  // v12.5.9c
 
 // ============================================================
 // v13 — Sidebar retráctil estilo Klar
-// v12.5.3: importa COLORS, useIsMobile, loadPref, savePref de helpers
 // v12.5.6: filtra módulos por permiso según rol
+// v12.5.9c: campana de alertas reemplaza el sistema viejo de notifCount
 // ============================================================
 
 // ============================================================
@@ -61,9 +61,6 @@ const modulos = [
   ]},
 ]
 
-// ============================================================
-// v12.5.6: filtrar módulos según permisos del usuario
-// ============================================================
 function filtrarModulosPorPermisos(usuario) {
   return modulos
     .map(seccion => ({
@@ -76,22 +73,13 @@ function filtrarModulosPorPermisos(usuario) {
 // ============================================================
 // Componente principal
 // ============================================================
-export default function Sidebar({ usuario, onLogout }) {
+export default function Sidebar({ usuario, onLogout, onNavigate }) {
   const location = useLocation()
   const isMobile = useIsMobile()
   const [collapsed, setCollapsed] = useState(() => loadPref('sidebar_collapsed', false))
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [notifCount, setNotifCount] = useState(0)
 
-  // v12.5.6: módulos filtrados por permiso
   const modulosVisibles = filtrarModulosPorPermisos(usuario)
-
-  useEffect(() => {
-    if (!usuario?.id) return
-    getNotificaciones(usuario.id).then(notifs => {
-      setNotifCount((notifs || []).filter(n => !n.leida).length)
-    }).catch(() => {})
-  }, [usuario?.id, location.pathname])
 
   useEffect(() => { savePref('sidebar_collapsed', collapsed) }, [collapsed])
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
@@ -114,7 +102,8 @@ export default function Sidebar({ usuario, onLogout }) {
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.navy} strokeWidth="2" strokeLinecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
           <div style={{ fontFamily:'var(--font-serif)', fontSize:16, fontWeight:500, color:COLORS.navy, letterSpacing:'-0.02em' }}>Row Energy</div>
-          <div style={{ width:40 }}/>
+          {/* v12.5.9c: campana en mobile header */}
+          <CampanaAlertas usuario={usuario} onNavigate={onNavigate} collapsed={false}/>
         </div>
 
         {mobileOpen && (
@@ -213,7 +202,7 @@ export default function Sidebar({ usuario, onLogout }) {
       boxShadow: '0 1px 3px rgba(10, 37, 64, 0.04), 0 8px 24px rgba(10, 37, 64, 0.06)',
       display: 'flex', flexDirection: 'column',
       transition: 'width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease',
-      overflow: 'hidden',
+      overflow: 'visible',  // v12.5.9c: visible para que el popover de la campana no se recorte
       flexShrink: 0,
     }}>
       <div style={{
@@ -223,9 +212,10 @@ export default function Sidebar({ usuario, onLogout }) {
         alignItems: 'center',
         justifyContent: collapsed ? 'center' : 'space-between',
         flexShrink: 0,
+        gap: 8,
       }}>
         {!collapsed && (
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{
               fontFamily: 'var(--font-serif)', fontSize: 18, color: COLORS.navy,
               fontWeight: 500, letterSpacing: '-0.02em',
@@ -238,26 +228,32 @@ export default function Sidebar({ usuario, onLogout }) {
             </div>
           </div>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? 'Expandir menú' : 'Contraer menú'}
-          style={{
-            width: 28, height: 28, minWidth: 28,
-            border: `1px solid ${COLORS.slate100}`,
-            background: 'white',
-            borderRadius: 8,
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: COLORS.slate500,
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-        </button>
+
+        {/* v12.5.9c: campana + botón colapsar */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+          <CampanaAlertas usuario={usuario} onNavigate={onNavigate} collapsed={collapsed}/>
+
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? 'Expandir menú' : 'Contraer menú'}
+            style={{
+              width: 28, height: 28, minWidth: 28,
+              border: `1px solid ${COLORS.slate100}`,
+              background: 'white',
+              borderRadius: 8,
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: COLORS.slate500,
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <nav style={{ flex: 1, padding: '10px 8px', overflow: 'auto', overflowX: 'hidden' }}>
@@ -312,15 +308,6 @@ export default function Sidebar({ usuario, onLogout }) {
                         flex: 1,
                       }}>
                         {item.label}
-                      </span>
-                    )}
-                    {!collapsed && item.id === 'dashboard' && notifCount > 0 && (
-                      <span style={{
-                        background: COLORS.teal, color: 'white',
-                        fontSize: 9, fontWeight: 700,
-                        padding: '2px 6px', borderRadius: 10, minWidth: 16, textAlign: 'center',
-                      }}>
-                        {notifCount}
                       </span>
                     )}
                   </div>

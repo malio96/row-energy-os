@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, getClientes, getUsuarios, getPlantillas } from './supabase'
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
 export default function Cotizaciones({ usuario }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Deep-link desde Centro de Alertas: capturar ?cotizacion=X en el primer render
+  const deepLinkRef = useRef({ cotizacionId: searchParams.get('cotizacion'), aplicado: false })
   const [cots, setCots] = useState([])
   const [loading, setLoading] = useState(true)
   const [selId, setSelId] = useState(null)
@@ -10,6 +14,15 @@ export default function Cotizaciones({ usuario }) {
 
   const cargar = async () => { setLoading(true); setCots(await getCotizaciones()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  useEffect(() => {
+    if (deepLinkRef.current.aplicado) return
+    if (cots.length === 0) return
+    const { cotizacionId } = deepLinkRef.current
+    if (cotizacionId && cots.some(c => c.id === cotizacionId)) setSelId(cotizacionId)
+    deepLinkRef.current.aplicado = true
+    if (searchParams.get('cotizacion')) setSearchParams({}, { replace: true })
+  }, [cots, searchParams, setSearchParams])
 
   if (selId) return <CotizacionDetalle id={selId} usuario={usuario} onVolver={() => { setSelId(null); cargar() }}/>
 

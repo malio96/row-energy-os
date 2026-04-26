@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   supabase, getProyectos, getProyectoConActividades, getUsuarios, getClientes,
   getPlantillas, getPlantillaActividades, crearProyectoDesdePlantilla,
@@ -2910,7 +2911,7 @@ function ModalDesglose({ actividad, onClose, onDesglosado }) {
   )
 }
 
-function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
+function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicialId }) {
   const [proyecto, setProyecto] = useState(null)
   const [hitos, setHitos] = useState([])
   const [tab, setTab] = useState('resumen')
@@ -2922,6 +2923,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
   const [usuarios, setUsuarios] = useState([])
   const [menuCtx, setMenuCtx] = useState(null)  // v8: {actividad, x, y}
   const [confirmDepDelete, setConfirmDepDelete] = useState(null)  // v13.2: {predId, actId, predNombre, actNombre}
+  const deepLinkActRef = useRef(false)
   const isMobile = useIsMobile()
 
   const puedeVerFinanciero = usuarioActual?.rol
@@ -2948,6 +2950,15 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
     cargar()
     Promise.all([getClientes(), getUsuarios()]).then(([c, u]) => { setClientes(c); setUsuarios(u) })
   }, [cargar])
+
+  // Deep-link desde Centro de Alertas: abrir panel de actividad cuando proyecto cargue
+  useEffect(() => {
+    if (deepLinkActRef.current) return
+    if (!proyecto || !actividadInicialId) return
+    const act = (proyecto.actividades || []).find(a => a.id === actividadInicialId)
+    if (act) setPanelAct(act)
+    deepLinkActRef.current = true
+  }, [proyecto, actividadInicialId])
 
   const numeracion = useMemo(() => generarNumeracion(proyecto?.actividades || []), [proyecto])
 
@@ -3149,9 +3160,17 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual }) {
 }
 
 export default function Proyectos({ usuario }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Deep-link desde Centro de Alertas: capturar params en el primer render para que sobrevivan al cleanup de URL
+  const deepLinkRef = useRef({
+    proyectoId: searchParams.get('proyecto'),
+    actividadId: searchParams.get('actividad'),
+    aplicado: false,
+  })
   const [proyectos, setProyectos] = useState([])
   const [loading, setLoading] = useState(true)
   const [proyectoSel, setProyectoSel] = useState(null)
+  const [deepLinkActividadId, setDeepLinkActividadId] = useState(null)
   const [modalNuevo, setModalNuevo] = useState(false)
   const [filtro, setFiltro] = useState('Activos')
   const [busqueda, setBusqueda] = useState('')
@@ -3160,6 +3179,21 @@ export default function Proyectos({ usuario }) {
 
   const cargar = async () => { setLoading(true); setProyectos(await getProyectos()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  // Deep-link: aplicar ?proyecto=X cuando los proyectos terminen de cargar; limpiar URL después
+  useEffect(() => {
+    if (deepLinkRef.current.aplicado) return
+    if (proyectos.length === 0) return
+    const { proyectoId, actividadId } = deepLinkRef.current
+    if (proyectoId && proyectos.some(p => p.id === proyectoId)) {
+      setProyectoSel(proyectoId)
+      setDeepLinkActividadId(actividadId)
+    }
+    deepLinkRef.current.aplicado = true
+    if (searchParams.get('proyecto') || searchParams.get('actividad')) {
+      setSearchParams({}, { replace: true })
+    }
+  }, [proyectos, searchParams, setSearchParams])
 
   // v12: Duplicar proyecto completo
   const handleDuplicarProyecto = async (proyecto, e) => {
@@ -3192,7 +3226,7 @@ export default function Proyectos({ usuario }) {
     return r
   }, [proyectos, filtro, busqueda])
 
-  if (proyectoSel) return <DetalleProyecto proyectoId={proyectoSel} onVolver={() => { setProyectoSel(null); cargar() }} usuarioActual={usuario}/>
+  if (proyectoSel) return <DetalleProyecto proyectoId={proyectoSel} actividadInicialId={deepLinkActividadId} onVolver={() => { setProyectoSel(null); setDeepLinkActividadId(null); cargar() }} usuarioActual={usuario}/>
 
   return (
     <div>

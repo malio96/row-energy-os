@@ -1,15 +1,30 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getLeads, crearLead, actualizarLead, eliminarLead, getUsuarios, getClientes } from './supabase'
 import { COLORS, ETAPAS_LEAD, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
 export default function Leads({ usuario }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Deep-link desde Centro de Alertas: ?lead=X
+  const deepLinkRef = useRef({ leadId: searchParams.get('lead'), aplicado: false })
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const [dragLead, setDragLead] = useState(null)
+  const [leadSel, setLeadSel] = useState(null)
 
   const cargar = async () => { setLoading(true); setLeads(await getLeads()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  useEffect(() => {
+    if (deepLinkRef.current.aplicado) return
+    if (leads.length === 0) return
+    const { leadId } = deepLinkRef.current
+    const lead = leadId ? leads.find(l => l.id === leadId) : null
+    if (lead) setLeadSel(lead)
+    deepLinkRef.current.aplicado = true
+    if (searchParams.get('lead')) setSearchParams({}, { replace: true })
+  }, [leads, searchParams, setSearchParams])
 
   const cambiarEtapa = async (leadId, nuevaEtapa) => {
     await actualizarLead(leadId, { etapa: nuevaEtapa, ultima_actividad: new Date().toISOString() })
@@ -21,6 +36,7 @@ export default function Leads({ usuario }) {
   return (
     <div>
       {modal && <ModalNuevoLead usuario={usuario} onClose={() => setModal(false)} onCreado={() => { setModal(false); cargar() }}/>}
+      {leadSel && <PanelLead lead={leadSel} onClose={() => setLeadSel(null)} onCambio={() => { cargar(); setLeadSel(null) }}/>}
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
@@ -48,7 +64,7 @@ export default function Leads({ usuario }) {
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                   {leadsEtapa.map(l => (
-                    <div key={l.id} draggable onDragStart={() => setDragLead(l.id)} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${etapa.color}`, borderRadius:8, padding:12, cursor:'grab', transition:'box-shadow 0.15s' }}
+                    <div key={l.id} draggable onDragStart={() => setDragLead(l.id)} onClick={() => setLeadSel(l)} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${etapa.color}`, borderRadius:8, padding:12, cursor:'pointer', transition:'box-shadow 0.15s' }}
                       onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(10,37,64,0.08)'}
                       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
                       <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, marginBottom:4 }}>{l.razon_social}</div>
@@ -111,6 +127,110 @@ function ModalNuevoLead({ usuario, onClose, onCreado }) {
         <div style={{ padding:'16px 28px', borderTop:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'flex-end', gap:10 }}>
           <button onClick={onClose} style={{ padding:'10px 18px', background:'transparent', border:`1px solid ${COLORS.slate200}`, borderRadius:8, fontSize:13, cursor:'pointer' }}>Cancelar</button>
           <button onClick={crear} style={{ padding:'10px 22px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>Crear lead</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function PanelLead({ lead, onClose, onCambio }) {
+  const [etapa, setEtapa] = useState(lead.etapa)
+  const [notas, setNotas] = useState(lead.notas || '')
+  const [monto, setMonto] = useState(lead.monto_estimado || '')
+  const [probabilidad, setProbabilidad] = useState(lead.probabilidad || 0)
+  const [guardando, setGuardando] = useState(false)
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await actualizarLead(lead.id, {
+        etapa,
+        notas,
+        monto_estimado: Number(monto) || 0,
+        probabilidad: Number(probabilidad),
+        ultima_actividad: new Date().toISOString(),
+      })
+      onCambio()
+    } catch (e) {
+      alert('Error: ' + e.message)
+      setGuardando(false)
+    }
+  }
+
+  const eliminar = async () => {
+    if (!confirm(`¿Eliminar lead "${lead.razon_social}"? Esta acción no se puede deshacer.`)) return
+    setGuardando(true)
+    try { await eliminarLead(lead.id); onCambio() }
+    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  const fmtFecha = (iso) => iso ? new Date(iso).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }) : '—'
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
+      <div style={{ position:'fixed', top:'5%', left:'50%', transform:'translateX(-50%)', width:560, maxHeight:'90vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1000 }}>
+        <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <h2 style={{ fontSize:20, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>{lead.razon_social}</h2>
+            {lead.contacto_nombre && <p style={{ fontSize:12, color:COLORS.slate500, margin:'4px 0 0' }}>{lead.contacto_nombre}</p>}
+          </div>
+          <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
+        </div>
+
+        <div style={{ padding:24 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+            <div style={{ padding:12, background:COLORS.slate50, borderRadius:8 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Owner</div>
+              <div style={{ fontSize:13, color:COLORS.ink, display:'flex', alignItems:'center', gap:6 }}>
+                {lead.owner?.nombre ? <><Avatar nombre={lead.owner.nombre} size={18}/>{lead.owner.nombre}</> : '—'}
+              </div>
+            </div>
+            <div style={{ padding:12, background:COLORS.slate50, borderRadius:8 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Última actividad</div>
+              <div style={{ fontSize:13, color:COLORS.ink }}>{fmtFecha(lead.ultima_actividad || lead.updated_at || lead.created_at)}</div>
+            </div>
+          </div>
+
+          {(lead.contacto_email || lead.contacto_telefono) && (
+            <div style={{ marginBottom:16, fontSize:12, color:COLORS.slate600 }}>
+              {lead.contacto_email && <div>📧 {lead.contacto_email}</div>}
+              {lead.contacto_telefono && <div>📞 {lead.contacto_telefono}</div>}
+            </div>
+          )}
+
+          {(lead.tipo_proyecto || lead.capacidad_mw || lead.fuente) && (
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:16 }}>
+              {lead.tipo_proyecto && <span style={{ fontSize:11, padding:'4px 10px', background:COLORS.slate50, borderRadius:12, color:COLORS.slate600 }}>{lead.tipo_proyecto}</span>}
+              {lead.capacidad_mw && <span style={{ fontSize:11, padding:'4px 10px', background:COLORS.slate50, borderRadius:12, color:COLORS.slate600 }}>{lead.capacidad_mw} MW</span>}
+              {lead.fuente && <span style={{ fontSize:11, padding:'4px 10px', background:COLORS.slate50, borderRadius:12, color:COLORS.slate600 }}>Fuente: {lead.fuente}</span>}
+            </div>
+          )}
+
+          <div style={{ marginBottom:12 }}>
+            <label style={labelStyle}>Etapa</label>
+            <select value={etapa} onChange={e=>setEtapa(e.target.value)} style={selectStyle}>
+              {ETAPAS_LEAD.map(et => <option key={et.key} value={et.key}>{et.key}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
+            <div><label style={labelStyle}>Monto estimado (MXN)</label><input type="number" value={monto} onChange={e=>setMonto(e.target.value)} style={inputStyle}/></div>
+            <div><label style={labelStyle}>Probabilidad (%)</label><input type="number" min={0} max={100} value={probabilidad} onChange={e=>setProbabilidad(e.target.value)} style={inputStyle}/></div>
+          </div>
+
+          <div style={{ marginBottom:8 }}>
+            <label style={labelStyle}>Notas</label>
+            <textarea value={notas} onChange={e=>setNotas(e.target.value)} rows={4} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}}/>
+          </div>
+        </div>
+
+        <div style={{ padding:'16px 28px', borderTop:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', gap:10 }}>
+          <button onClick={eliminar} disabled={guardando} style={{ padding:'10px 18px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:8, fontSize:13, cursor:'pointer' }}>Eliminar</button>
+          <div style={{ display:'flex', gap:10 }}>
+            <button onClick={onClose} disabled={guardando} style={{ padding:'10px 18px', background:'transparent', border:`1px solid ${COLORS.slate200}`, borderRadius:8, fontSize:13, cursor:'pointer' }}>Cancelar</button>
+            <button onClick={guardar} disabled={guardando} style={{ padding:'10px 22px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+          </div>
         </div>
       </div>
     </>

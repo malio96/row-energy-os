@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom'
 import { supabase } from './supabase'
 import { COLORS, useIsMobile } from './helpers'
-import { puede } from './permisos'  // v12.5.6
+import { puede } from './permisos'
 import Sidebar from './Sidebar'
 import Proyectos from './Proyectos'
 import Cotizaciones from './Cotizaciones'
@@ -16,9 +16,10 @@ import Postventa from './Postventa'
 import Configuracion from './Configuracion'
 import Dashboard from './Dashboard'
 import CommandPalette from './CommandPalette'
+import CentroAlertas from './CentroAlertas'  // v12.5.9c
 
 // ============================================================
-// v12.5.3: Rutas centralizadas
+// v12.5.9c: agregada ruta /alertas (Centro de Alertas)
 // ============================================================
 const RUTAS_POR_SECCION = {
   dashboard: '/',
@@ -33,6 +34,7 @@ const RUTAS_POR_SECCION = {
   postventa: '/postventa',
   config: '/config',
   clientes: '/config',
+  alertas: '/alertas',  // v12.5.9c
 }
 
 const inputStyle = {
@@ -100,10 +102,6 @@ function Login({ onLogin }) {
   )
 }
 
-// ============================================================
-// v12.5.6: RUTA PROTEGIDA
-// Si el usuario no tiene permiso para este módulo, redirige a Dashboard
-// ============================================================
 function RutaProtegida({ usuario, modulo, children }) {
   if (!puede(usuario, modulo)) {
     return <Navigate to="/" replace/>
@@ -111,30 +109,24 @@ function RutaProtegida({ usuario, modulo, children }) {
   return children
 }
 
-// ============================================================
-// DASHBOARD WRAPPER
-// ============================================================
 function DashboardWrapper({ usuario }) {
   const navigate = useNavigate()
   const goTo = (seccion) => { if (RUTAS_POR_SECCION[seccion]) navigate(RUTAS_POR_SECCION[seccion]) }
   return <Dashboard usuario={usuario} onNavigate={goTo}/>
 }
 
-// ============================================================
-// COMMAND PALETTE WRAPPER
-// ============================================================
 function CommandPaletteWrapper({ open, onClose }) {
   const navigate = useNavigate()
   const goTo = (seccion) => { if (RUTAS_POR_SECCION[seccion]) navigate(RUTAS_POR_SECCION[seccion]) }
   return <CommandPalette open={open} onClose={onClose} onNavigate={goTo}/>
 }
 
-// ============================================================
-// LAYOUT
-// ============================================================
 function Layout({ usuario, onLogout, children }) {
   const [cmdOpen, setCmdOpen] = useState(false)
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
+
+  const goTo = (seccion) => { if (RUTAS_POR_SECCION[seccion]) navigate(RUTAS_POR_SECCION[seccion]) }
 
   useEffect(() => {
     const handler = () => setCmdOpen(true)
@@ -149,7 +141,7 @@ function Layout({ usuario, onLogout, children }) {
       background: COLORS.bgKlar,
       flexDirection: isMobile ? 'column' : 'row',
     }}>
-      <Sidebar usuario={usuario} onLogout={onLogout}/>
+      <Sidebar usuario={usuario} onLogout={onLogout} onNavigate={goTo}/>
       <main style={{
         flex:1,
         minWidth:0,
@@ -171,9 +163,6 @@ function Layout({ usuario, onLogout, children }) {
   )
 }
 
-// ============================================================
-// APP — v12.5.6: rutas protegidas por permiso
-// ============================================================
 export default function App() {
   const [usuario, setUsuario] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -226,10 +215,11 @@ export default function App() {
     <BrowserRouter>
       <Layout usuario={usuario} onLogout={handleLogout}>
         <Routes>
-          {/* Dashboard siempre accesible (todos los roles lo tienen) */}
           <Route path="/" element={<DashboardWrapper usuario={usuario}/>}/>
 
-          {/* v12.5.6: rutas protegidas por permiso */}
+          {/* v12.5.9c: Centro de Alertas — accesible para todos */}
+          <Route path="/alertas" element={<CentroAlertas usuario={usuario}/>}/>
+
           <Route path="/proyectos" element={
             <RutaProtegida usuario={usuario} modulo="proyectos">
               <Proyectos usuario={usuario}/>

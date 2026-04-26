@@ -1,14 +1,33 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getCompras, crearCompra, actualizarCompra, getProyectos, getUsuarios } from './supabase'
 import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
 export default function Compras({ usuario }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Deep-link desde Centro de Alertas: ?cxp=X → scroll + highlight
+  const deepLinkRef = useRef({ cxpId: searchParams.get('cxp'), aplicado: false })
+  const [highlightId, setHighlightId] = useState(null)
+  const rowRefs = useRef({})
   const [compras, setCompras] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
 
   const cargar = async () => { setLoading(true); setCompras(await getCompras()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  useEffect(() => {
+    if (deepLinkRef.current.aplicado) return
+    if (compras.length === 0) return
+    const { cxpId } = deepLinkRef.current
+    if (cxpId && compras.some(c => c.id === cxpId)) {
+      setHighlightId(cxpId)
+      setTimeout(() => rowRefs.current[cxpId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+      setTimeout(() => setHighlightId(null), 3000)
+    }
+    deepLinkRef.current.aplicado = true
+    if (searchParams.get('cxp')) setSearchParams({}, { replace: true })
+  }, [compras, searchParams, setSearchParams])
 
   const total = compras.reduce((s,c) => s + Number(c.monto), 0)
   const pendientes = compras.filter(c => c.estado === 'Solicitada').reduce((s,c) => s + Number(c.monto), 0)
@@ -49,7 +68,7 @@ export default function Compras({ usuario }) {
           {compras.map(c => {
             const puedeAprobar = c.estado === 'Solicitada' && (usuario.rol === 'direccion' || (usuario.rol === 'admin' && Number(c.monto) < 50000))
             return (
-              <div key={c.id} style={{ display:'grid', gridTemplateColumns:'100px 180px 1fr 140px 120px 130px 140px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12 }}>
+              <div key={c.id} ref={el => { if (el) rowRefs.current[c.id] = el }} style={{ display:'grid', gridTemplateColumns:'100px 180px 1fr 140px 120px 130px 140px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12, background: highlightId === c.id ? '#FEF3C7' : 'transparent', transition:'background 0.5s' }}>
                 <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
                 <div style={{ fontWeight:500, color:COLORS.ink }}>{c.proveedor}</div>
                 <div style={{ color:COLORS.slate600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.descripcion || '—'}</div>

@@ -1,14 +1,37 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getFacturas, crearFactura, actualizarFactura, getHitos, getClientes } from './supabase'
 import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
 export default function Facturacion() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Deep-link desde Centro de Alertas: ?factura=X → scroll + highlight
+  const deepLinkRef = useRef({ facturaId: searchParams.get('factura'), aplicado: false })
+  const [highlightId, setHighlightId] = useState(null)
+  const rowRefs = useRef({})
   const [facturas, setFacturas] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
 
   const cargar = async () => { setLoading(true); setFacturas(await getFacturas()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  useEffect(() => {
+    if (deepLinkRef.current.aplicado) return
+    if (facturas.length === 0) return
+    const { facturaId } = deepLinkRef.current
+    if (facturaId && facturas.some(f => f.id === facturaId)) {
+      setHighlightId(facturaId)
+      // Scroll después del próximo render
+      setTimeout(() => {
+        rowRefs.current[facturaId]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+      // Apagar el highlight a los 3s
+      setTimeout(() => setHighlightId(null), 3000)
+    }
+    deepLinkRef.current.aplicado = true
+    if (searchParams.get('factura')) setSearchParams({}, { replace: true })
+  }, [facturas, searchParams, setSearchParams])
 
   const total = facturas.reduce((s,f) => s + Number(f.total), 0)
   const pagadas = facturas.filter(f => f.estado === 'Pagada').reduce((s,f) => s + Number(f.total), 0)
@@ -47,7 +70,7 @@ export default function Facturacion() {
             <div>Folio</div><div>Proyecto</div><div>Cliente</div><div>Total</div><div>Emisión</div><div>Estado</div>
           </div>
           {facturas.map(f => (
-            <div key={f.id} style={{ display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12 }}>
+            <div key={f.id} ref={el => { if (el) rowRefs.current[f.id] = el }} style={{ display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12, background: highlightId === f.id ? '#FEF3C7' : 'transparent', transition:'background 0.5s' }}>
               <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{f.folio}</span>
               <div>
                 <div style={{ fontWeight:500, color:COLORS.ink }}>{f.proyecto?.nombre || '—'}</div>
