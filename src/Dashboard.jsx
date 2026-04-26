@@ -258,10 +258,19 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       carga: cargaColaboradores,
     })
   }, [alertasConfig, usuario, facturas, actividades, proyectos, cxp, leads, cotizaciones, cargaColaboradores])
+
+  // v15.1: cuellos de botella destacados
+  const cuellos = useMemo(() => identificarCuellosBotella(actividades || []), [actividades])
+
   return (
     <>
       {/* v12.5.9: Banner unificado de alertas */}
       <BannerAlertas alertas={alertas} onNavigate={onNavigate}/>
+
+      {/* v15.1: Cuellos de botella (solo si hay) */}
+      {cuellos.porEtapa.length > 0 && (
+        <CuellosBotellaWidget cuellos={cuellos} isMobile={isMobile}/>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
@@ -355,6 +364,117 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
         </div>
       </div>
     </>
+  )
+}
+
+// ============================================================
+// v15.1: WIDGET CUELLOS DE BOTELLA — Dashboard Ejecutivo
+// Promueve identificarCuellosBotella desde VistaPersonas con drill-down
+// por etapa-cuello → lista de proyectos afectados → "Abrir →" reusa el
+// drill-down existente (/proyectos?proyecto=X&actividad=Y).
+// ============================================================
+function CuellosBotellaWidget({ cuellos, isMobile }) {
+  const navigate = useNavigate()
+  const [expandido, setExpandido] = useState(null)
+  const { retrasadas, porEtapa } = cuellos
+
+  // Para cada etapa, las actividades retrasadas que tienen ese nombre
+  const actividadesPorEtapa = useMemo(() => {
+    const map = {}
+    porEtapa.forEach(e => {
+      map[e.nombre] = retrasadas
+        .filter(a => (a.nombre || 'Sin nombre') === e.nombre)
+        .sort((a, b) => b.diasRetraso - a.diasRetraso)
+    })
+    return map
+  }, [porEtapa, retrasadas])
+
+  const abrir = (a) => {
+    if (a.proyecto?.id) navigate(`/proyectos?proyecto=${a.proyecto.id}&actividad=${a.id}`)
+  }
+
+  return (
+    <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`4px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:20 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-serif)' }}>
+          🚨 Cuellos de botella detectados
+        </h3>
+        <span style={{ fontSize:11, color:COLORS.slate500 }}>
+          {retrasadas.length} actividad(es) retrasadas · {porEtapa.length} etapa(s) recurrente(s)
+        </span>
+      </div>
+
+      <div style={{ display:'grid', gap:8 }}>
+        {porEtapa.map((e, i) => {
+          const promDias = Math.round(e.totalDias / e.count)
+          const isOpen = expandido === e.nombre
+          const acts = actividadesPorEtapa[e.nombre] || []
+          return (
+            <div key={i} style={{ border:`1px solid ${isOpen ? '#FECACA' : COLORS.slate100}`, borderRadius:8, overflow:'hidden', background: isOpen ? '#FEF2F2' : 'white' }}>
+              <button
+                onClick={() => setExpandido(isOpen ? null : e.nombre)}
+                style={{
+                  width:'100%', display:'flex', alignItems:'center', gap:12,
+                  padding:'10px 14px', border:'none', background:'transparent',
+                  cursor:'pointer', fontFamily:'inherit', textAlign:'left',
+                }}
+              >
+                <span style={{ fontSize:11, fontWeight:700, color: isOpen ? COLORS.red : COLORS.slate400 }}>
+                  {isOpen ? '▴' : '▾'}
+                </span>
+                <div style={{ flex:1, minWidth:0, fontSize:13, color:COLORS.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {e.nombre}
+                </div>
+                <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:COLORS.red, color:'white' }}>
+                  {e.count} actividad(es)
+                </span>
+                <span style={{ fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color:COLORS.red, minWidth:80, textAlign:'right' }}>
+                  +{promDias}d promedio
+                </span>
+              </button>
+
+              {isOpen && (
+                <div style={{ borderTop:`1px solid #FECACA`, padding:'10px 14px', display:'grid', gap:6, background:'white' }}>
+                  {acts.map(a => (
+                    <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:COLORS.slate50, borderRadius:6 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>
+                          {a.proyecto?.codigo || ''}{a.proyecto?.nombre ? ` · ${a.proyecto.nombre}` : ''}
+                        </div>
+                        <div style={{ fontSize:11, color:COLORS.slate600, marginTop:2 }}>
+                          Fin esperado: {a.fin || '—'}
+                        </div>
+                      </div>
+                      <span style={{ fontSize:10, fontWeight:700, color:COLORS.red, fontFamily:'var(--font-mono)' }}>
+                        +{a.diasRetraso}d
+                      </span>
+                      <button
+                        onClick={() => abrir(a)}
+                        disabled={!a.proyecto?.id}
+                        style={{
+                          padding:'5px 10px',
+                          background: a.proyecto?.id ? COLORS.navy : COLORS.slate200,
+                          color:'white', border:'none', borderRadius:6,
+                          fontSize:10, fontWeight:600,
+                          cursor: a.proyecto?.id ? 'pointer' : 'not-allowed',
+                          flexShrink:0,
+                        }}
+                      >
+                        Abrir →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ fontSize:10, color:COLORS.slate500, marginTop:10, fontStyle:'italic', textAlign:'center' }}>
+        Tip: una etapa repetida = posible problema de proceso o asignación. Abre cualquier actividad para reasignar o desbloquear.
+      </div>
+    </div>
   )
 }
 
