@@ -4,6 +4,7 @@ import {
   actualizarUsuario, eliminarUsuario,
   desactivarUsuario, activarUsuario, cambiarRolUsuario,
   invitarUsuarioViaEdge,  // v12.5.8
+  getAlertasConfig, actualizarAlertasConfig, resetearAlertasConfig,  // v12.5.9e
 } from './supabase'
 import { COLORS, Avatar, Icon } from './helpers'
 import { useModal } from './Modal'
@@ -11,6 +12,7 @@ import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
   puedeGestionarUsuarios, labelRol, descripcionRol,
 } from './permisos'
+import { ETIQUETAS_ALERTAS, ICONOS_ALERTAS } from './alertas'
 
 // ============================================================
 // v12.5.6: Configuración con gestión de usuarios (solo direccion)
@@ -41,6 +43,7 @@ export default function Configuracion({ usuario }) {
   const tabs = [
     ...(puedeGestionar ? [{ k:'usuarios', l:'Usuarios' }] : []),
     { k:'clientes', l:'Clientes' },
+    { k:'alertas', l:'Mis alertas' },
     { k:'sistema', l:'Sistema' },
   ]
 
@@ -70,6 +73,7 @@ export default function Configuracion({ usuario }) {
       )}
 
       {tab === 'clientes' && <TabClientes clientes={clientes}/>}
+      {tab === 'alertas' && <TabMisAlertas usuario={usuario} modal={modal}/>}
       {tab === 'sistema' && <TabSistema usuario={usuario}/>}
     </div>
   )
@@ -421,4 +425,186 @@ function botonIcon() {
     display:'flex', alignItems:'center', justifyContent:'center',
     transition:'all 0.15s',
   }
+}
+
+// ============================================================
+// TAB MIS ALERTAS — v12.5.9e
+// Toggles personales para activar/desactivar cada categoría de alerta.
+// Email diario queda fuera de scope (Commit E).
+// ============================================================
+const GRUPOS_ALERTAS = [
+  {
+    severidad: 'critica',
+    label: 'Críticas',
+    color: COLORS.red,
+    bg: '#FEF2F2',
+    descripcion: 'Requieren acción inmediata',
+    categorias: ['facturas_vencidas', 'cxp_autorizacion_pendiente'],
+  },
+  {
+    severidad: 'importante',
+    label: 'Importantes',
+    color: COLORS.amber,
+    bg: '#FEF3C7',
+    descripcion: 'Conviene revisar pronto',
+    categorias: ['actividades_retrasadas', 'actividades_bloqueadas', 'proyectos_cierre_proximo', 'colaborador_sobrecargado'],
+  },
+  {
+    severidad: 'info',
+    label: 'Informativas',
+    color: COLORS.navy,
+    bg: '#EFF6FF',
+    descripcion: 'Buenas para tener en el radar',
+    categorias: ['leads_sin_actividad', 'cotizaciones_sin_respuesta'],
+  },
+]
+
+function TabMisAlertas({ usuario, modal }) {
+  const [config, setConfig] = useState(null)
+  const [original, setOriginal] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!usuario?.id) return
+    setLoading(true)
+    getAlertasConfig(usuario.id)
+      .then(c => { setConfig(c); setOriginal(c) })
+      .catch(err => console.warn('getAlertasConfig:', err))
+      .finally(() => setLoading(false))
+  }, [usuario?.id])
+
+  const dirty = config && original && GRUPOS_ALERTAS.some(g =>
+    g.categorias.some(k => Boolean(config[k]) !== Boolean(original[k]))
+  )
+
+  const toggle = (key) => setConfig(c => ({ ...c, [key]: !c[key] }))
+
+  const guardar = async () => {
+    if (!config || !dirty) return
+    setSaving(true)
+    try {
+      const cambios = {}
+      GRUPOS_ALERTAS.forEach(g => g.categorias.forEach(k => { cambios[k] = Boolean(config[k]) }))
+      const actualizada = await actualizarAlertasConfig(usuario.id, cambios)
+      setConfig(actualizada)
+      setOriginal(actualizada)
+      await modal.alert({ titulo: 'Preferencias guardadas', mensaje: 'Tus alertas se actualizarán la próxima vez que abras el Dashboard o el Centro de Alertas.', icono: 'Check' })
+    } catch (e) {
+      await modal.alert({ titulo: 'Error al guardar', mensaje: e.message || String(e), icono: 'Alert' })
+    } finally { setSaving(false) }
+  }
+
+  const cancelar = () => setConfig(original)
+
+  const restaurarDefaults = async () => {
+    const ok = await modal.confirm({
+      titulo: 'Restaurar valores por defecto',
+      mensaje: `Esto reemplazará tus preferencias con los defaults sugeridos para tu rol (${labelRol(usuario.rol) || usuario.rol}). ¿Continuar?`,
+      destructivo: true,
+    })
+    if (!ok) return
+    setSaving(true)
+    try {
+      const nueva = await resetearAlertasConfig(usuario.id)
+      setConfig(nueva)
+      setOriginal(nueva)
+      await modal.alert({ titulo: 'Defaults aplicados', mensaje: 'Se restauraron las preferencias por defecto de tu rol.', icono: 'Check' })
+    } catch (e) {
+      await modal.alert({ titulo: 'Error', mensaje: e.message || String(e), icono: 'Alert' })
+    } finally { setSaving(false) }
+  }
+
+  if (loading) return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Cargando preferencias...</div>
+  if (!config) return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>No se pudo cargar la configuración.</div>
+
+  return (
+    <div>
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:6 }}>Preferencias de alertas</h3>
+        <p style={{ fontSize:12, color:COLORS.slate500, margin:0 }}>
+          Activa o desactiva las categorías que quieres ver en el banner del Dashboard, en la campana del Sidebar y en el Centro de Alertas. Estos toggles solo afectan a tu cuenta.
+        </p>
+      </div>
+
+      {GRUPOS_ALERTAS.map(grupo => (
+        <div key={grupo.severidad} style={{ marginBottom:16 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+            <span style={{ width:8, height:8, borderRadius:'50%', background:grupo.color }}/>
+            <span style={{ fontSize:12, fontWeight:700, color:COLORS.ink, textTransform:'uppercase', letterSpacing:'0.06em' }}>{grupo.label}</span>
+            <span style={{ fontSize:11, color:COLORS.slate500 }}>· {grupo.descripcion}</span>
+          </div>
+          <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+            {grupo.categorias.map((k, i) => {
+              const meta = ETIQUETAS_ALERTAS[k]
+              const activo = Boolean(config[k])
+              return (
+                <div key={k} style={{
+                  display:'flex', alignItems:'center', gap:14,
+                  padding:'14px 18px',
+                  borderTop: i === 0 ? 'none' : `1px solid ${COLORS.slate100}`,
+                }}>
+                  <span style={{ fontSize:20, width:28, textAlign:'center', flexShrink:0 }}>{ICONOS_ALERTAS[k] || '•'}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{meta?.label || k}</div>
+                    <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2 }}>{meta?.descripcion || ''}</div>
+                  </div>
+                  <ToggleSwitch checked={activo} onChange={() => toggle(k)} disabled={saving} color={grupo.color}/>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:24, gap:12, flexWrap:'wrap' }}>
+        <button onClick={restaurarDefaults} disabled={saving} style={{
+          padding:'10px 16px', background:'transparent', border:`1px solid ${COLORS.slate200}`,
+          color:COLORS.slate600, borderRadius:8, fontSize:12, fontWeight:500, cursor: saving ? 'wait' : 'pointer',
+        }}>Restaurar defaults del rol</button>
+        <div style={{ display:'flex', gap:10 }}>
+          {dirty && (
+            <button onClick={cancelar} disabled={saving} style={{
+              padding:'10px 18px', background:'transparent', border:`1px solid ${COLORS.slate200}`,
+              borderRadius:8, fontSize:13, cursor: saving ? 'wait' : 'pointer',
+            }}>Cancelar</button>
+          )}
+          <button onClick={guardar} disabled={!dirty || saving} style={{
+            padding:'10px 22px',
+            background: dirty ? COLORS.navy : COLORS.slate200,
+            color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600,
+            cursor: (!dirty || saving) ? 'not-allowed' : 'pointer',
+          }}>{saving ? 'Guardando...' : 'Guardar cambios'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ToggleSwitch({ checked, onChange, disabled, color }) {
+  const onColor = color || COLORS.teal
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      disabled={disabled}
+      style={{
+        width:42, height:24, minWidth:42,
+        background: checked ? onColor : COLORS.slate200,
+        border:'none', borderRadius:999,
+        position:'relative', cursor: disabled ? 'wait' : 'pointer',
+        transition:'background 0.18s', flexShrink:0, padding:0,
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span style={{
+        position:'absolute', top:2, left: checked ? 20 : 2,
+        width:20, height:20, borderRadius:'50%',
+        background:'white', boxShadow:'0 1px 3px rgba(0,0,0,0.2)',
+        transition:'left 0.18s',
+      }}/>
+    </button>
+  )
 }
