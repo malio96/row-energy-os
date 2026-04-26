@@ -206,7 +206,20 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
             <button onClick={() => cambiarEstado('Enviada')} style={{ width:'100%', padding:'12px', background:COLORS.teal, color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginBottom:8 }}>{Icon('Send')} Enviar al cliente</button>
           )}
           {cot.estado === 'Enviada' && (
-            <button onClick={() => cambiarEstado('Aprobada')} style={{ width:'100%', padding:'12px', background:COLORS.teal, color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer' }}>✓ Marcar como aprobada</button>
+            <button onClick={() => cambiarEstado('Aprobada')} style={{ width:'100%', padding:'12px', background:COLORS.teal, color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', marginBottom:8 }}>✓ Marcar como aprobada</button>
+          )}
+          {/* v15.3: descargar PDF — disponible en cualquier estado salvo si no hay items */}
+          {cot.items.length > 0 && (
+            <button
+              onClick={async () => {
+                const m = await import('./exportCotizacion')
+                m.exportarCotizacionPDF(cot)
+              }}
+              style={{ width:'100%', padding:'12px', background:'white', color:COLORS.navy, border:`1px solid ${COLORS.navy}`, borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              Descargar PDF
+            </button>
           )}
 
           {cot.notas && <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:16, marginTop:12 }}>
