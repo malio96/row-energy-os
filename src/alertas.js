@@ -348,7 +348,7 @@ export function generarAlertasDetalladas(params) {
           detalle: `${c.porcentaje || 0}% de carga · ${c.horasSemana || 0}h asignadas`,
           contexto: `${c.asignadas || 0} actividad(es) esta semana`,
           modulo: 'dashboard',
-          modulo_ruta: '/',
+          modulo_ruta: `/?colaborador=${u.id}`,
           entidad_id: u.id,
           fecha_relevante: null,
         })

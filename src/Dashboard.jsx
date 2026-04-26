@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getProyectos, getCotizaciones, getLeads, getHitos, getFacturas, getCompras, getPostventaTickets, getClientes, getUsuarios } from './supabase'
 // v12: helpers para vista Personas
 import { calcularCargaPorColaborador, identificarCuellosBotella } from './supabase'
@@ -38,12 +39,27 @@ const CLIENTES_WATCHLIST = [
 // MAIN DASHBOARD
 // ============================================================
 export default function Dashboard({ usuario, onNavigate }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Deep-link desde Centro de Alertas: ?colaborador=X → vista personas + auto-expand de la card
+  const deepLinkRef = useRef({ colaboradorId: searchParams.get('colaborador'), aplicado: false })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState(loadPref('dash_vista', 'ejecutivo'))
+  const [colaboradorInicialId, setColaboradorInicialId] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)  // v12.5.4: trigger para recargar datos
   const [alertasConfig, setAlertasConfig] = useState(null)  // v12.5.9
   const isMobile = useIsMobile()
+
+  useEffect(() => {
+    if (deepLinkRef.current.aplicado) return
+    const { colaboradorId } = deepLinkRef.current
+    if (colaboradorId) {
+      setVista('personas')
+      setColaboradorInicialId(colaboradorId)
+    }
+    deepLinkRef.current.aplicado = true
+    if (searchParams.get('colaborador')) setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     const cargar = async () => {
@@ -131,7 +147,7 @@ export default function Dashboard({ usuario, onNavigate }) {
       {vista === 'marketing'      && <VistaMarketing     data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'compras'        && <VistaCompras       data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'cobranza'       && <VistaCobranza      data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
-      {vista === 'personas'       && <VistaPersonas      data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
+      {vista === 'personas'       && <VistaPersonas      data={data} onNavigate={onNavigate} isMobile={isMobile} colaboradorInicialId={colaboradorInicialId}/>}
     </div>
   )
 }
@@ -1326,8 +1342,9 @@ function NotaRecordatorio({ titulo, items }) {
 // ============================================================
 // VISTA PERSONAS
 // ============================================================
-function VistaPersonas({ data, onNavigate, isMobile }) {
+function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
   const { actividades, usuarios } = data
+  const cardRefs = useRef({})
 
   const carga = useMemo(
     () => calcularCargaPorColaborador(actividades || [], usuarios || []),
@@ -1338,6 +1355,27 @@ function VistaPersonas({ data, onNavigate, isMobile }) {
     if (a.sobrecargado !== b.sobrecargado) return a.sobrecargado ? -1 : 1
     return b.porcentaje - a.porcentaje
   })
+
+  // Scroll a la card del colaborador inicial cuando llega por deep-link
+  useEffect(() => {
+    if (!colaboradorInicialId) return
+    setTimeout(() => {
+      cardRefs.current[colaboradorInicialId]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 150)
+  }, [colaboradorInicialId])
+
+  // Actividades activas de cada usuario (mismo criterio que calcularCargaPorColaborador)
+  const actividadesPorUsuario = useMemo(() => {
+    const map = {}
+    ;(actividades || []).forEach(a => {
+      if (['Completada', 'Cancelada'].includes(a.estado)) return
+      const respId = a.responsable_id || a.asignado_id
+      if (!respId) return
+      if (!map[respId]) map[respId] = []
+      map[respId].push(a)
+    })
+    return map
+  }, [actividades])
 
   const sobrecargados = carga.filter(c => c.sobrecargado).length
   const subutilizados = carga.filter(c => c.subutilizado).length
@@ -1391,7 +1429,16 @@ function VistaPersonas({ data, onNavigate, isMobile }) {
           <div style={{ padding:30, textAlign:'center', color:COLORS.slate400, fontSize:12 }}>Sin colaboradores cargados</div>
         )}
         <div style={{ display:'grid', gap:10 }}>
-          {ordenada.map(c => <PersonaCard key={c.usuario.id} carga={c} isMobile={isMobile}/>)}
+          {ordenada.map(c => (
+            <PersonaCard
+              key={c.usuario.id}
+              carga={c}
+              actividades={actividadesPorUsuario[c.usuario.id] || []}
+              expandidoInicial={c.usuario.id === colaboradorInicialId}
+              cardRef={el => { if (el) cardRefs.current[c.usuario.id] = el }}
+              isMobile={isMobile}
+            />
+          ))}
         </div>
       </div>
 
@@ -1413,18 +1460,29 @@ function VistaPersonas({ data, onNavigate, isMobile }) {
   )
 }
 
-function PersonaCard({ carga, isMobile }) {
+function PersonaCard({ carga, actividades = [], expandidoInicial = false, cardRef, isMobile }) {
   const { usuario, asignadas, horasSemana, capacidad, porcentaje, sobrecargado, subutilizado, tiempoPromedioDias, desviacionPct, completadas } = carga
   const color = sobrecargado ? COLORS.red : porcentaje >= 70 ? COLORS.teal : subutilizado ? COLORS.amber : COLORS.slate500
   const pctVisible = Math.min(100, porcentaje)
+  const [expandido, setExpandido] = useState(expandidoInicial)
+  const navigate = useNavigate()
+
+  // Si llega expandidoInicial true (deep-link), reflejarlo
+  useEffect(() => { if (expandidoInicial) setExpandido(true) }, [expandidoInicial])
+
+  const abrirActividad = (e, a) => {
+    e.stopPropagation()
+    if (a.proyecto?.id) navigate(`/proyectos?proyecto=${a.proyecto.id}&actividad=${a.id}`)
+  }
 
   return (
-    <div style={{
+    <div ref={cardRef} onClick={() => setExpandido(v => !v)} style={{
       padding:14,
       background: sobrecargado ? '#FEF2F2' : subutilizado ? '#FEF3C7' : 'white',
       border: `1px solid ${sobrecargado ? '#FECACA' : subutilizado ? '#FDE68A' : COLORS.slate100}`,
       borderLeft: `3px solid ${color}`,
       borderRadius: 10,
+      cursor: 'pointer',
     }}>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10, flexWrap:'wrap' }}>
         <div style={{
@@ -1474,6 +1532,47 @@ function PersonaCard({ carga, isMobile }) {
               {desviacionPct > 0 ? '+' : ''}{desviacionPct}%
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Indicador expand + lista de actividades activas */}
+      <div style={{ marginTop:10, fontSize:10, fontWeight:600, color:COLORS.slate400, textAlign:'center', textTransform:'uppercase', letterSpacing:'0.06em' }}>
+        {expandido ? '▴ Ocultar actividades' : `▾ Ver ${actividades.length} actividad(es)`}
+      </div>
+
+      {expandido && actividades.length > 0 && (
+        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${sobrecargado ? '#FECACA' : COLORS.slate100}`, display:'grid', gap:6 }}>
+          {actividades.map(a => {
+            const hoy = new Date(); hoy.setHours(0,0,0,0)
+            const fin = a.fin ? new Date(a.fin) : null
+            const retrasada = fin && fin < hoy
+            return (
+              <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${retrasada ? COLORS.red : COLORS.slate200}`, borderRadius:6 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.nombre || 'Sin nombre'}</div>
+                  <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2, fontFamily:'var(--font-mono)' }}>
+                    {a.proyecto?.codigo || ''}{a.proyecto?.nombre ? ` · ${a.proyecto.nombre}` : ''}
+                  </div>
+                </div>
+                <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color: retrasada ? COLORS.red : COLORS.slate500, fontWeight:retrasada ? 700 : 500, minWidth:80, textAlign:'right' }}>
+                  {a.fin ? fmtDate(a.fin) : '—'}
+                  {retrasada && <div style={{ fontSize:9, fontWeight:700 }}>RETRASADA</div>}
+                </div>
+                <button onClick={(e) => abrirActividad(e, a)} disabled={!a.proyecto?.id} style={{ padding:'5px 10px', background: a.proyecto?.id ? COLORS.navy : COLORS.slate200, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor: a.proyecto?.id ? 'pointer' : 'not-allowed', flexShrink:0 }}>
+                  Abrir →
+                </button>
+              </div>
+            )
+          })}
+          <div style={{ fontSize:10, color:COLORS.slate500, textAlign:'center', marginTop:6, fontStyle:'italic' }}>
+            Tip: abre cualquier actividad y reasígnala desde su panel para reducir la carga.
+          </div>
+        </div>
+      )}
+
+      {expandido && actividades.length === 0 && (
+        <div style={{ marginTop:10, padding:'10px 0', fontSize:11, color:COLORS.slate400, textAlign:'center', borderTop:`1px solid ${COLORS.slate100}` }}>
+          Sin actividades activas registradas para esta semana.
         </div>
       )}
     </div>

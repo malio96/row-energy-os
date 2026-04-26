@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   getProyectos, getFacturas, getCuentasPorPagar, getLeads,
   getCotizaciones, getUsuarios, getAlertasConfig,
@@ -25,6 +26,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
   const [loading, setLoading] = useState(true)
   const [refreshTick, setRefreshTick] = useState(0)
   const containerRef = useRef(null)
+  const navigate = useNavigate()
   const isMobile = useIsMobile()
 
   // Carga + refresh cada 5 min
@@ -110,15 +112,13 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
 
   const handleItemClick = (item) => {
     setOpen(false)
-    if (item.modulo_ruta && onNavigate) {
-      // onNavigate espera el nombre de sección (de RUTAS_POR_SECCION)
-      onNavigate(item.modulo)
-    }
+    // Usar navigate con la ruta completa para preservar URL params (drill-down)
+    if (item.modulo_ruta) navigate(item.modulo_ruta)
   }
 
   const handleVerTodas = () => {
     setOpen(false)
-    if (onNavigate) onNavigate('alertas')
+    navigate('/alertas')
   }
 
   return (
