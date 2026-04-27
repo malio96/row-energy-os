@@ -1,7 +1,15 @@
 // ============================================================
-// exportCotizacion.js — v15.5.0
-// PDF de cotización replicando el template templates/COTIZACIÓN BASE CC.docx
-// con sus 3 imágenes oficiales: hero portada, mapa presencia, alcance stats.
+// exportCotizacion.js — v15.8.2
+// PDF de cotización refactorizado 1:1 con templates/COTIZACION_REFERENCIA.pdf
+// (la versión PDF del Word real de Malio).
+//
+// Estructura:
+//   Página 1 — Portada full-bleed con imagen hero
+//   Página 2+ — Header constante (logo + folio + lugar/fecha) +
+//               Footer constante (dirección + tel + url + página + banner turbinas)
+//   Contenido: ¿Quiénes somos? → Presencia → Alcance → Propuesta Técnica
+//              (cada servicio numerado con bullets verdes) → T&C doble columna
+//              → Atentamente + firma Malio
 // ============================================================
 import pdfMake from 'pdfmake/build/pdfmake'
 import * as pdfFonts from 'pdfmake/build/vfs_fonts'
@@ -9,20 +17,30 @@ import * as pdfFonts from 'pdfmake/build/vfs_fonts'
 pdfMake.vfs = pdfFonts.pdfMake?.vfs || pdfFonts.vfs || pdfFonts.default?.pdfMake?.vfs
 
 // ============================================================
-// COLORES
+// COLORES — verde Row Energy en lugar de navy para títulos
 // ============================================================
 const NAVY = '#0a2540'
 const SLATE = '#475569'
+const TEAL = '#0F6E56'         // verde Row Energy para títulos y bullets
 const LIGHT = '#f1f5f9'
+
+// Datos de la empresa para header/footer
+const EMPRESA = {
+  nombre: 'ROW Energy',
+  direccion: 'Av. México 3040, piso 10, oficina 1003/1004, Residencial Juan Manuel, Gdl, Jalisco.',
+  telefono: 'Tel: 33 1119 5553',
+  web: 'https://www.ROW-Energy-com.mx',
+  ciudad: 'Guadalajara, Jalisco',
+}
 
 // ============================================================
 // TEXTO FIJO DEL TEMPLATE
 // ============================================================
 const TEXTO_QUIENES_SOMOS =
-  'ROW Energy es una empresa especializada en ofrecer soluciones integrales para el ahorro y gestión de la energía. Entre sus servicios se encuentra el desarrollo de proyectos de generación y la consultoría y gestoría con los órganos operadores y reguladores del sector energético en México para la interconexión y conexión de Centrales Eléctricas y Centros de Carga a las Redes Generales de Distribución y Red Nacional de Transmisión.'
+  'ROW Energy es una empresa especializada en ofrecer soluciones integrales para el ahorro y gestión de la energía, entre sus servicios se encuentra el desarrollo de proyectos de generación y la consultoría y gestoría con los órganos operadores y reguladores del sector energético en México para la interconexión y conexión de Centrales Eléctricas y Centros de Carga a las Redes Generales de Distribución y Red Nacional de Transmisión.'
 
 const TEXTO_EQUIPO =
-  'Contamos con un equipo de profesionistas especializados en la industria eléctrica mexicana, con los conocimientos y la formación necesaria para realizar con eficacia y eficiencia las actividades necesarias para cumplir con el objetivo general de los proyectos.'
+  'Contamos con un equipo de profesionistas especializados en la industria eléctrica mexicana, con los conocimientos y la formación necesaria para realizar con eficacia y eficiencia las actividades necesarias para cumplir eficazmente con el objetivo general de los proyectos.'
 
 const TC_CLAUSULAS = [
   { titulo: 'Literalidad', texto: 'Las actividades mencionadas en la cotización son indicativas mas no limitativas.' },
@@ -37,6 +55,8 @@ const TC_CLAUSULAS = [
   { titulo: 'Fuerza mayor', texto: 'Las partes no serán responsables por los retrasos o incumplimientos de sus obligaciones (excluyendo las obligaciones de pago) cuando se deban a causas que escapen a su control, entre las que se incluyen sin ánimo de exhaustividad el dictado de normas estatales, los paros laborales, los fallos en el transporte o de proveedores, los incendios, casos de desobediencia civil, embargos, guerras, revueltas, ataques terroristas, terremotos, huelgas, epidemias, inundaciones, sucesos atmosféricos y otros eventos de similares características que, si se producen, ampliarán el plazo de que disponen las partes para ejecutar una OC.' },
 ]
 
+const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -45,17 +65,22 @@ function fmtMoney(n, moneda = 'MXN') {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda || 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 }
 
+function fmtFechaTextoLargo(iso) {
+  const d = iso ? new Date(iso) : new Date()
+  return `${EMPRESA.ciudad} a ${d.getDate()} de ${MESES_ES[d.getMonth()]} de ${d.getFullYear()}`
+}
+
+function fmtFechaCortaSlash(iso) {
+  const d = iso ? new Date(iso) : new Date()
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${d.getFullYear()}`
+}
+
 function fmtFecha(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
   return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-
-function fmtFechaCorta(iso) {
-  const d = iso ? new Date(iso) : new Date()
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${dd} / ${mm} / ${d.getFullYear()}`
 }
 
 function nombreArchivo(cot) {
@@ -79,15 +104,29 @@ async function loadImage(url) {
   } catch { return null }
 }
 
-function descripcionABullets(texto) {
-  if (!texto || typeof texto !== 'string') return null
+// Renderiza la descripción de un servicio: si trae líneas con "- " o "• " las
+// convierte en bullets verdes; si no, párrafo plano.
+function descripcionAContenido(texto) {
+  if (!texto || typeof texto !== 'string') return []
   const lineas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-  if (lineas.length === 0) return null
+  if (lineas.length === 0) return []
   const sonBullets = lineas.length > 1 && lineas.every(l => /^[-•·*]\s+/.test(l))
   if (sonBullets) {
-    return { ul: lineas.map(l => l.replace(/^[-•·*]\s+/, '')), fontSize: 9, color: SLATE, margin: [12, 4, 0, 0] }
+    return lineas.map(l => bulletVerde(l.replace(/^[-•·*]\s+/, '')))
   }
-  return { text: texto, fontSize: 9, color: SLATE, margin: [0, 4, 0, 0], lineHeight: 1.35 }
+  return [{ text: texto, fontSize: 10, color: '#374151', lineHeight: 1.4, alignment: 'justify', margin: [0, 4, 0, 0] }]
+}
+
+// Bullet con marcador verde (mejor visual que ul plano)
+function bulletVerde(texto) {
+  return {
+    columns: [
+      { width: 18, text: '•', color: TEAL, alignment: 'center', fontSize: 14, lineHeight: 1 },
+      { text: texto, fontSize: 10, color: '#374151', lineHeight: 1.4, alignment: 'justify' },
+    ],
+    columnGap: 0,
+    margin: [0, 3, 0, 3],
+  }
 }
 
 // ============================================================
@@ -108,113 +147,81 @@ export async function exportarCotizacionPDF(cot) {
     Number(it.porcentaje_finalizacion) === Number(primero.porcentaje_finalizacion)
   )
 
-  // Cargar las 4 imágenes del template en paralelo
-  const [logo, hero, mapa, alcance, firma] = await Promise.all([
+  // Cargar todas las imágenes en paralelo
+  const [logo, hero, mapa, alcance, banner, firma] = await Promise.all([
     loadImage('/templates/row-logo.png'),
     loadImage('/templates/cot-hero.jpeg'),
     loadImage('/templates/cot-mapa.png'),
     loadImage('/templates/cot-alcance.png'),
+    loadImage('/templates/banner-turbinas.jpeg'),
     loadImage('/templates/firma-malio.png'),
   ])
 
   // ============================================================
-  // PORTADA — logo + hero + título + cliente + vendedor
+  // PORTADA — imagen hero full-bleed + textos abajo
   // ============================================================
   const portada = [
-    // Header con logo y folio
+    // Imagen full-bleed: margen negativo para extender más allá del pageMargins
+    // (pageMargins top = 100 para acomodar header; aquí -100 lo cancela y la imagen llega a y=0)
+    ...(hero ? [{
+      image: hero,
+      width: 612,
+      margin: [-50, -100, -50, 18],
+    }] : []),
+
+    // Línea de "ROW Energy" + fecha
     {
       columns: [
-        logo
-          ? { image: logo, width: 110, alignment: 'left' }
-          : { text: 'ROW ENERGY', fontSize: 18, bold: true, color: NAVY, characterSpacing: 1 },
-        {
-          alignment: 'right',
-          stack: [
-            { text: 'COTIZACIÓN', fontSize: 12, bold: true, color: NAVY, characterSpacing: 2 },
-            { text: cot?.codigo || '—', fontSize: 11, color: SLATE, margin: [0, 4, 0, 0] },
-            { text: fmtFechaCorta(cot?.fecha_emision), fontSize: 9, color: SLATE, margin: [0, 4, 0, 0] },
-          ],
-        },
+        { text: 'ROW Energy', fontSize: 16, bold: true, color: '#1f2937' },
+        { text: fmtFechaCortaSlash(cot?.fecha_emision), fontSize: 10, color: SLATE, alignment: 'right' },
       ],
-      margin: [0, 0, 0, 30],
+      margin: [0, 0, 0, 8],
     },
-
-    // Imagen hero (acuarela de torres) — full width usable
-    ...(hero ? [{ image: hero, width: 510, alignment: 'center', margin: [0, 0, 0, 24] }] : []),
-
-    // Título de propuesta
-    { text: 'Propuesta Técnica – Económica', fontSize: 24, bold: true, color: NAVY, alignment: 'center', margin: [0, 0, 0, 10] },
-    { text: cot?.nombre_proyecto || '', fontSize: 14, color: SLATE, alignment: 'center', margin: [0, 0, 0, 30] },
-
-    // Bloque cliente
+    // "Dirigida a:" en una línea
     {
-      table: {
-        widths: ['*'],
-        body: [[{
-          stack: [
-            { text: 'DIRIGIDA A', fontSize: 9, bold: true, color: NAVY, characterSpacing: 1.5 },
-            { text: cot?.cliente?.razon_social || 'Cliente', fontSize: 16, bold: true, color: NAVY, margin: [0, 6, 0, 4] },
-            ...(cot?.cliente?.rfc ? [{ text: `RFC: ${cot.cliente.rfc}`, fontSize: 10, color: SLATE }] : []),
-            ...(cot?.cliente?.industria ? [{ text: cot.cliente.industria, fontSize: 10, color: SLATE }] : []),
-          ],
-        }]],
-      },
-      layout: {
-        hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => LIGHT,
-        paddingLeft: () => 18, paddingRight: () => 18, paddingTop: () => 14, paddingBottom: () => 14,
-      },
-      margin: [0, 0, 0, 16],
+      text: [
+        { text: 'Dirigida a: ', fontSize: 11, bold: true, color: '#1f2937' },
+        { text: cot?.cliente?.razon_social || '—', fontSize: 11, color: '#1f2937' },
+      ],
     },
 
     { text: '', pageBreak: 'after' },
   ]
 
   // ============================================================
-  // ¿QUIÉNES SOMOS? + EQUIPO
+  // ¿QUIÉNES SOMOS? + EQUIPO + MAPA "Presencia en el país"
   // ============================================================
   const acercaDe = [
-    { text: '¿Quiénes somos?', style: 'h1' },
-    { text: TEXTO_QUIENES_SOMOS, style: 'parrafo' },
-    { text: 'Nuestro equipo', style: 'h1', margin: [0, 22, 0, 8] },
+    { text: '¿Quiénes somos?', style: 'h2' },
+    { text: TEXTO_QUIENES_SOMOS, style: 'parrafo', margin: [0, 4, 0, 8] },
     { text: TEXTO_EQUIPO, style: 'parrafo' },
+    ...(mapa ? [{ image: mapa, width: 360, alignment: 'center', margin: [0, 18, 0, 0] }] : []),
   ]
 
   // ============================================================
-  // PRESENCIA EN EL PAÍS + ALCANCE
-  // ============================================================
-  const presenciaAlcance = []
-  if (mapa || alcance) {
-    presenciaAlcance.push({ text: 'Presencia y alcance', style: 'h1', margin: [0, 24, 0, 10] })
-    if (mapa) {
-      presenciaAlcance.push({ image: mapa, width: 360, alignment: 'center', margin: [0, 8, 0, 16] })
-    }
-    if (alcance) {
-      presenciaAlcance.push({ image: alcance, width: 460, alignment: 'center', margin: [0, 0, 0, 8] })
-    }
-  }
-
-  // ============================================================
-  // PROPUESTA TÉCNICA — descripción de servicios
+  // PROPUESTA TÉCNICA con imagen "Alcance" arriba
   // ============================================================
   const propuestaTecnica = [
-    { text: 'Propuesta Técnica', style: 'h1' },
-    { text: 'Alcance de los servicios cotizados:', style: 'parrafo', margin: [0, 0, 0, 14] },
+    ...(alcance ? [{ image: alcance, width: 480, alignment: 'center', margin: [0, 0, 0, 18], pageBreak: 'before' }] : [{ text: '', pageBreak: 'before' }]),
+    { text: 'Propuesta Técnica', style: 'h2', margin: [0, 4, 0, 4] },
     ...items.flatMap((it, i) => {
-      const descripcionNode = descripcionABullets(it.descripcion)
+      const descripcionContent = descripcionAContenido(it.descripcion)
       return [
         {
-          stack: [
-            { text: `${i + 1}. ${it.servicio || ''}`, fontSize: 12, bold: true, color: NAVY, margin: [0, i === 0 ? 0 : 12, 0, 0] },
-            ...(descripcionNode ? [descripcionNode] : []),
-          ],
+          text: `${i + 1}. ${it.servicio || ''}`,
+          fontSize: 13,
+          bold: true,
+          color: '#1f2937',
+          margin: [0, i === 0 ? 8 : 14, 0, 6],
         },
+        ...descripcionContent,
       ]
     }),
     ...(items.length === 0 ? [{ text: 'Sin servicios cotizados.', color: SLATE, italics: true }] : []),
   ]
 
   // ============================================================
-  // PROPUESTA ECONÓMICA
+  // PROPUESTA ECONÓMICA — tabla + totales + condiciones de pago
   // ============================================================
   const itemsTable = {
     table: {
@@ -241,7 +248,7 @@ export async function exportarCotizacionPDF(cot) {
       hLineColor: () => '#e2e8f0', vLineColor: () => '#e2e8f0',
       hLineWidth: (i) => (i === 0 || i === 1 ? 1 : 0.5),
       vLineWidth: () => 0.5,
-      fillColor: (rowIndex) => (rowIndex === 0 ? NAVY : null),
+      fillColor: (rowIndex) => (rowIndex === 0 ? TEAL : null),
       paddingTop: () => 7, paddingBottom: () => 7,
     },
   }
@@ -251,12 +258,11 @@ export async function exportarCotizacionPDF(cot) {
     condicionesBlock = { text: 'Sin servicios cotizados.', color: SLATE, fontSize: 10 }
   } else if (condicionesUniformes) {
     condicionesBlock = {
-      ul: [
-        `${primero.porcentaje_anticipo}% de anticipo a la firma del contrato.`,
-        `${primero.porcentaje_avance}% contra avance acordado.`,
-        `${primero.porcentaje_finalizacion}% al concluir y entregar el servicio.`,
+      stack: [
+        bulletVerde(`${primero.porcentaje_anticipo}% de anticipo a la firma del contrato.`),
+        bulletVerde(`${primero.porcentaje_avance}% contra avance acordado.`),
+        bulletVerde(`${primero.porcentaje_finalizacion}% al concluir y entregar el servicio.`),
       ],
-      fontSize: 10,
     }
   } else {
     condicionesBlock = {
@@ -283,7 +289,7 @@ export async function exportarCotizacionPDF(cot) {
           layout: {
             hLineColor: () => '#e2e8f0', vLineColor: () => '#e2e8f0',
             hLineWidth: () => 0.5, vLineWidth: () => 0.5,
-            fillColor: (rowIndex) => (rowIndex === 0 ? NAVY : null),
+            fillColor: (rowIndex) => (rowIndex === 0 ? TEAL : null),
           },
         },
       ],
@@ -291,32 +297,8 @@ export async function exportarCotizacionPDF(cot) {
   }
 
   const propuestaEconomica = [
-    { text: 'Propuesta Económica', style: 'h1', margin: [0, 24, 0, 10] },
-
-    // Banner del proyecto (sin Cliente — ya está en portada)
-    {
-      table: {
-        widths: ['*', '*'],
-        body: [[
-          { stack: [
-            { text: 'Capacidad', fontSize: 8, color: SLATE, characterSpacing: 1 },
-            { text: cot?.capacidad_mw ? `${cot.capacidad_mw} MW` : '—', fontSize: 10, bold: true, color: NAVY, margin: [0, 2, 0, 0] },
-          ]},
-          { stack: [
-            { text: 'Ubicación', fontSize: 8, color: SLATE, characterSpacing: 1 },
-            { text: cot?.ubicacion || '—', fontSize: 10, bold: true, color: NAVY, margin: [0, 2, 0, 0] },
-          ]},
-        ]],
-      },
-      layout: {
-        hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => LIGHT,
-        paddingLeft: () => 12, paddingRight: () => 12, paddingTop: () => 10, paddingBottom: () => 10,
-      },
-      margin: [0, 0, 0, 16],
-    },
-
+    { text: 'Propuesta Económica', style: 'h2', margin: [0, 24, 0, 12] },
     itemsTable,
-
     {
       columns: [
         { width: '*', text: '' },
@@ -327,51 +309,59 @@ export async function exportarCotizacionPDF(cot) {
             body: [
               [{ text: 'Subtotal', alignment: 'right', color: SLATE }, { text: fmtMoney(subtotal, moneda), alignment: 'right' }],
               [{ text: 'IVA 16%', alignment: 'right', color: SLATE }, { text: fmtMoney(iva, moneda), alignment: 'right' }],
-              [{ text: 'TOTAL', alignment: 'right', bold: true, fontSize: 12, color: NAVY }, { text: `${fmtMoney(total, moneda)} ${moneda}`, alignment: 'right', bold: true, fontSize: 12, color: NAVY }],
+              [{ text: 'TOTAL', alignment: 'right', bold: true, fontSize: 12, color: TEAL }, { text: `${fmtMoney(total, moneda)} ${moneda}`, alignment: 'right', bold: true, fontSize: 12, color: TEAL }],
             ],
           },
           layout: {
             hLineWidth: (i, node) => (i === node.table.body.length - 1 || i === node.table.body.length ? 1 : 0),
-            vLineWidth: () => 0, hLineColor: () => NAVY,
+            vLineWidth: () => 0, hLineColor: () => TEAL,
             paddingTop: () => 5, paddingBottom: () => 5,
           },
         },
       ],
-      margin: [0, 0, 0, 22],
+      margin: [0, 0, 0, 18],
     },
-
-    { text: 'Condiciones de pago', style: 'h2' },
+    { text: 'Condiciones de pago', style: 'h3' },
     condicionesBlock,
     {
-      margin: [0, 14, 0, 0],
+      margin: [0, 12, 0, 0],
       text: [
         { text: 'Vigencia de la cotización: ', bold: true, fontSize: 10 },
         { text: cot?.fecha_vigencia ? fmtFecha(cot.fecha_vigencia) : '—', fontSize: 10 },
       ],
     },
-
     ...(cot?.notas ? [
-      { text: 'Observaciones', style: 'h2', margin: [0, 22, 0, 6] },
+      { text: 'Observaciones', style: 'h3', margin: [0, 18, 0, 4] },
       { text: cot.notas, fontSize: 10, color: '#374151', lineHeight: 1.4 },
     ] : []),
   ]
 
   // ============================================================
-  // TÉRMINOS Y CONDICIONES — doble columna (legal compacto)
+  // T&C en doble columna (continúa numeración después de los items técnicos)
+  // El template original numera las cláusulas a partir de un offset.
+  // Mantengo numeración propia 1-10 para simplicidad.
   // ============================================================
   const tcMitad = Math.ceil(TC_CLAUSULAS.length / 2)
   const tcCol1 = TC_CLAUSULAS.slice(0, tcMitad)
   const tcCol2 = TC_CLAUSULAS.slice(tcMitad)
   const renderClausulas = (arr, offset) => arr.flatMap((c, i) => [
-    { text: `${offset + i + 1}. ${c.titulo}`, fontSize: 9, bold: true, color: NAVY, margin: [0, i === 0 ? 0 : 8, 0, 3] },
-    { text: c.texto, fontSize: 8, color: '#374151', lineHeight: 1.35, alignment: 'justify' },
+    {
+      text: [
+        { text: `${offset + i + 1}. ${c.titulo}. `, bold: true, color: '#1f2937' },
+        { text: c.texto, color: '#374151' },
+      ],
+      fontSize: 9,
+      lineHeight: 1.35,
+      alignment: 'justify',
+      margin: [0, i === 0 ? 0 : 8, 0, 0],
+    },
   ])
   const terminos = [
-    { text: 'Términos y Condiciones', style: 'h1', pageBreak: 'before', margin: [0, 0, 0, 12] },
+    { text: 'Términos y Condiciones', style: 'h2', pageBreak: 'before', margin: [0, 4, 0, 12] },
     {
       columns: [
         { width: '*', stack: renderClausulas(tcCol1, 0) },
-        { width: 16, text: '' },
+        { width: 18, text: '' },
         { width: '*', stack: renderClausulas(tcCol2, tcMitad) },
       ],
       columnGap: 0,
@@ -379,24 +369,74 @@ export async function exportarCotizacionPDF(cot) {
   ]
 
   // ============================================================
-  // FIRMA / CIERRE
+  // CIERRE — Atentamente + firma centrada
   // ============================================================
   const cierre = [
-    { text: 'Atentamente,', fontSize: 11, color: NAVY, margin: [0, 60, 0, 30] },
-    ...(firma ? [{ image: firma, width: 110, margin: [0, 0, 0, 4] }] : []),
-    { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.7, lineColor: NAVY }] },
-    { text: 'Malio Martínez Mariscal', fontSize: 11, bold: true, color: NAVY, margin: [0, 6, 0, 0] },
-    { text: 'Representante Legal', fontSize: 9, color: SLATE },
-    { text: 'ROW Energy México', fontSize: 9, color: SLATE },
+    { text: 'Atentamente', fontSize: 18, bold: true, alignment: 'center', color: '#1f2937', margin: [0, 36, 0, 18] },
+    ...(firma ? [{ image: firma, width: 110, alignment: 'center', margin: [0, 0, 0, 4] }] : []),
+    { canvas: [{ type: 'line', x1: 175, y1: 0, x2: 345, y2: 0, lineWidth: 0.7, lineColor: '#1f2937' }] },
+    { text: 'Malio Martínez Mariscal', fontSize: 11, bold: true, color: '#1f2937', alignment: 'center', margin: [0, 6, 0, 0] },
+    { text: 'Representante Legal', fontSize: 10, color: SLATE, alignment: 'center' },
+    { text: 'ROW Energy', fontSize: 10, color: SLATE, alignment: 'center' },
   ]
+
+  // ============================================================
+  // HEADER (todas las páginas excepto la portada)
+  // ============================================================
+  const header = (currentPage) => {
+    if (currentPage === 1) return null
+    return {
+      margin: [50, 28, 50, 0],
+      columns: [
+        logo
+          ? { image: logo, width: 90, alignment: 'left' }
+          : { text: 'ROW ENERGY', bold: true, fontSize: 12, color: '#1f2937' },
+        {
+          alignment: 'right',
+          stack: [
+            { text: EMPRESA.nombre, fontSize: 11, bold: true, color: '#1f2937' },
+            { text: cot?.codigo || '—', fontSize: 10, color: '#1f2937' },
+            { text: fmtFechaTextoLargo(cot?.fecha_emision), fontSize: 10, color: '#1f2937' },
+          ],
+        },
+      ],
+    }
+  }
+
+  // ============================================================
+  // FOOTER (todas las páginas excepto la portada)
+  // Dirección + tel + url centrado, número de página a la derecha,
+  // banner turbinas decorativo abajo.
+  // ============================================================
+  const footer = (currentPage, pageCount) => {
+    if (currentPage === 1) return null
+    return {
+      stack: [
+        {
+          margin: [50, 0, 50, 4],
+          columns: [
+            {
+              width: '*',
+              stack: [
+                { text: EMPRESA.direccion, fontSize: 8, color: SLATE, alignment: 'center' },
+                { text: `${EMPRESA.telefono}    ${EMPRESA.web}`, fontSize: 8, color: SLATE, alignment: 'center' },
+              ],
+            },
+            { text: String(currentPage - 1), fontSize: 9, color: SLATE, alignment: 'right', width: 30 },
+          ],
+        },
+        ...(banner ? [{ image: banner, width: 612, margin: [0, 4, 0, 0] }] : []),
+      ],
+    }
+  }
 
   // ============================================================
   // DOC DEFINITION
   // ============================================================
   const docDefinition = {
     pageSize: 'LETTER',
-    pageMargins: [50, 50, 50, 60],
-    defaultStyle: { font: 'Roboto', fontSize: 10, color: '#1f2937', lineHeight: 1.3 },
+    pageMargins: [50, 100, 50, 70],  // top mayor para dejar espacio al header
+    defaultStyle: { font: 'Roboto', fontSize: 10, color: '#1f2937', lineHeight: 1.35 },
     info: {
       title: `Cotización ${cot?.codigo || ''}`,
       author: 'Row Energy México',
@@ -405,7 +445,6 @@ export async function exportarCotizacionPDF(cot) {
     content: [
       ...portada,
       ...acercaDe,
-      ...presenciaAlcance,
       ...propuestaTecnica,
       ...propuestaEconomica,
       ...terminos,
@@ -413,19 +452,12 @@ export async function exportarCotizacionPDF(cot) {
     ],
     styles: {
       th: { color: 'white', bold: true, fontSize: 9, characterSpacing: 0.5 },
-      h1: { fontSize: 16, bold: true, color: NAVY, margin: [0, 0, 0, 10] },
-      h2: { fontSize: 12, bold: true, color: NAVY, margin: [0, 0, 0, 8] },
+      h2: { fontSize: 15, bold: true, color: TEAL, margin: [0, 0, 0, 6] },
+      h3: { fontSize: 12, bold: true, color: TEAL, margin: [0, 0, 0, 6] },
       parrafo: { fontSize: 10.5, color: '#374151', lineHeight: 1.5, alignment: 'justify' },
     },
-    footer: (currentPage, pageCount) => {
-      if (currentPage === 1) return null
-      return {
-        columns: [
-          { text: `${cot?.codigo || ''} · Row Energy México`, fontSize: 8, color: SLATE, alignment: 'left', margin: [50, 16, 0, 0] },
-          { text: `${currentPage} / ${pageCount}`, fontSize: 8, color: SLATE, alignment: 'right', margin: [0, 16, 50, 0] },
-        ],
-      }
-    },
+    header,
+    footer,
   }
 
   pdfMake.createPdf(docDefinition).download(nombreArchivo(cot))
