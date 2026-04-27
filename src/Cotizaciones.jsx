@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, getClientes, getUsuarios, getPlantillas } from './supabase'
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 
 export default function Cotizaciones({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -266,7 +267,16 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
 
 function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
   const [form, setForm] = useState({ servicio:'', descripcion:'', cantidad:1, precio_unitario:'', porcentaje_anticipo:50, porcentaje_avance:40, porcentaje_finalizacion:10 })
+  const [catalogoSel, setCatalogoSel] = useState('')  // v15.6.0
   const suma = Number(form.porcentaje_anticipo) + Number(form.porcentaje_avance) + Number(form.porcentaje_finalizacion)
+
+  // v15.6.0: al elegir un servicio del catálogo, autocompletar nombre + descripcion
+  const elegirCatalogo = (id) => {
+    setCatalogoSel(id)
+    if (!id) return // "Particular custom" → no toca form
+    const s = SERVICIOS_CATALOGO.find(x => x.id === id)
+    if (s) setForm(f => ({ ...f, servicio: s.nombre, descripcion: s.descripcion }))
+  }
 
   const agregar = async () => {
     if (!form.servicio || !form.precio_unitario) { alert('Completa servicio y precio'); return }
@@ -279,14 +289,28 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
   return (
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:1001 }}/>
-      <div style={{ position:'fixed', top:'10%', left:'50%', transform:'translateX(-50%)', width:560, background:'white', borderRadius:16, zIndex:1002 }}>
+      <div style={{ position:'fixed', top:'5%', left:'50%', transform:'translateX(-50%)', width:560, maxHeight:'90vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1002 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
           <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Agregar servicio</h2>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>
+          {/* v15.6.0: Selector del catálogo (acelera y mantiene wording oficial) */}
+          <div style={{ marginBottom:12, padding:12, background:COLORS.slate50, borderRadius:8 }}>
+            <label style={labelStyle}>Servicio del catálogo (opcional)</label>
+            <select value={catalogoSel} onChange={e => elegirCatalogo(e.target.value)} style={selectStyle}>
+              <option value="">— Servicio particular (custom) —</option>
+              {SERVICIOS_CATALOGO.map(s => (
+                <option key={s.id} value={s.id}>{s.nombre}{s.tipo !== 'AMBOS' ? ` · ${s.tipo}` : ''}</option>
+              ))}
+            </select>
+            <div style={{ fontSize:10, color:COLORS.slate500, marginTop:6, fontStyle:'italic' }}>
+              Selecciona uno y autocompleta el nombre y la descripción técnica oficial. Puedes editar después.
+            </div>
+          </div>
+
           <div style={{ marginBottom:12 }}><label style={labelStyle}>Servicio *</label><input value={form.servicio} onChange={e=>setForm({...form, servicio:e.target.value})} placeholder="Ej: Estudio de Impacto" style={inputStyle}/></div>
-          <div style={{ marginBottom:12 }}><label style={labelStyle}>Descripción</label><textarea value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} rows={2} style={{...inputStyle, resize:'vertical'}}/></div>
+          <div style={{ marginBottom:12 }}><label style={labelStyle}>Descripción</label><textarea value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} rows={6} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}} placeholder="Bullets que aparecerán en el PDF (cada línea con '- ' al inicio se renderiza como lista)"/></div>
           <div style={{ display:'grid', gridTemplateColumns:'80px 1fr', gap:12, marginBottom:12 }}>
             <div><label style={labelStyle}>Cantidad</label><input type="number" value={form.cantidad} onChange={e=>setForm({...form, cantidad:e.target.value})} style={inputStyle}/></div>
             <div><label style={labelStyle}>Precio unitario (MXN) *</label><input type="number" value={form.precio_unitario} onChange={e=>setForm({...form, precio_unitario:e.target.value})} placeholder="450000" style={inputStyle}/></div>
