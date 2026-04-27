@@ -1,9 +1,7 @@
 // ============================================================
-// exportCotizacion.js — v15.3c
-// PDF de cotización con formato Row Energy: portada con logo,
-// ¿Quiénes somos?, propuesta técnica con bullets descriptivos,
-// términos y condiciones, firma escaneada de Malio.
-// Refleja el template templates/COTIZACIÓN BASE CC (1).docx
+// exportCotizacion.js — v15.5.0
+// PDF de cotización replicando el template templates/COTIZACIÓN BASE CC.docx
+// con sus 3 imágenes oficiales: hero portada, mapa presencia, alcance stats.
 // ============================================================
 import pdfMake from 'pdfmake/build/pdfmake'
 import * as pdfFonts from 'pdfmake/build/vfs_fonts'
@@ -16,7 +14,6 @@ pdfMake.vfs = pdfFonts.pdfMake?.vfs || pdfFonts.vfs || pdfFonts.default?.pdfMake
 const NAVY = '#0a2540'
 const SLATE = '#475569'
 const LIGHT = '#f1f5f9'
-const ACCENT = '#0F6E56'
 
 // ============================================================
 // TEXTO FIJO DEL TEMPLATE
@@ -28,46 +25,16 @@ const TEXTO_EQUIPO =
   'Contamos con un equipo de profesionistas especializados en la industria eléctrica mexicana, con los conocimientos y la formación necesaria para realizar con eficacia y eficiencia las actividades necesarias para cumplir con el objetivo general de los proyectos.'
 
 const TC_CLAUSULAS = [
-  {
-    titulo: 'Literalidad',
-    texto: 'Las actividades mencionadas en la cotización son indicativas mas no limitativas.',
-  },
-  {
-    titulo: 'Servicios profesionales',
-    texto: 'ROW Energy prestará los servicios en el lugar, plazo y fecha (o fechas) acordadas por las partes, y que están expresamente designados en la presente Propuesta Técnica – Económica, Orden de Compra o cualquier otro documento debidamente firmado por representantes de ambas partes (en lo sucesivo se hará referencia como "OC" a cualquier documento de dicha naturaleza en que se describan las condiciones del Servicio).',
-  },
-  {
-    titulo: 'Tarifas de servicio y condiciones de pago',
-    texto: 'El Cliente se compromete a abonar las tarifas que aparecen en la Propuesta Técnica – Económica y en las facturas presentadas por ROW Energy. Si una factura que no haya sido rechazada por el Cliente permanece impagada durante más de treinta (30) días, ROW Energy podrá suspender cualquier prestación de Servicios hasta el pago completo de la suma adeudada.',
-  },
-  {
-    titulo: 'Impuestos',
-    texto: 'Salvo que se añada como cláusula por separado o que se acuerde lo contrario por escrito, las tarifas y cantidades mencionadas no incluyen impuestos, los cuales deberán ser incluidos por el cliente en el pago por el servicio ofertado.',
-  },
-  {
-    titulo: 'Moneda',
-    texto: 'Los cobros mencionados en esta oferta están en pesos mexicanos.',
-  },
-  {
-    titulo: 'Gastos',
-    texto: 'Los gastos en que se incurra para la prestación de los servicios ofertados se encuentran incluidos en el precio pactado. En caso hubiese gastos no contemplados en la propuesta y sean por alguna responsabilidad del cliente, ROW Energy valorizará dichos gastos añadiendo un 10% por gastos administrativos, para su posterior aprobación del cliente y facturación de éste.',
-  },
-  {
-    titulo: 'Confidencialidad',
-    texto: 'Las Partes y sus empleados se abstendrán de divulgar, publicar o comunicar, directa o indirectamente a terceros la información, documentos o fotografías relacionada con los negocios y operaciones de cada una de ellas, subordinadas o matrices, o de sus contratistas, que conozcan en virtud del negocio jurídico que se esté desarrollando y de la ejecución de los servicios o por cualquier otra causa. Para estos efectos, las Partes convienen que divulgar o transmitir cualquier información que reciban de la otra Parte (Información Confidencial) puede lesionar sus negocios o su reputación, inclusive será causal de terminación del acuerdo y de indemnización de los daños y perjuicios sufridos.',
-  },
-  {
-    titulo: 'Garantía',
-    texto: 'ROW Energy garantiza que la prestación de Servicios se llevará a cabo de manera eficiente y profesional. ROW Energy se compromete a prestar de nuevo el Servicio, sin costo alguno, en caso de que las fallas que reportasen los equipos a intervenir no sean por causas de mala operación por parte del cliente o factores externos a ROW Energy.',
-  },
-  {
-    titulo: 'Autorizaciones legales',
-    texto: 'El Cliente deberá obtener cualquier autorización necesaria y cumplir todas las leyes, reglamentos y la normativa estatal y/o local en relación con todos los servicios, así como con la utilización de los servicios. Se incluyen a estos efectos, sin ánimo de exhaustividad, las leyes y reglamentos tales como la legislación laboral, medioambiental y de protección a consumidores y usuarios.',
-  },
-  {
-    titulo: 'Fuerza mayor',
-    texto: 'Las partes no serán responsables por los retrasos o incumplimientos de sus obligaciones (excluyendo las obligaciones de pago) cuando se deban a causas que escapen a su control, entre las que se incluyen sin ánimo de exhaustividad el dictado de normas estatales, los paros laborales, los fallos en el transporte o de proveedores, los incendios, casos de desobediencia civil, embargos, guerras, revueltas, ataques terroristas, terremotos, huelgas, epidemias, inundaciones, sucesos atmosféricos y otros eventos de similares características que, si se producen, ampliarán el plazo de que disponen las partes para ejecutar una OC.',
-  },
+  { titulo: 'Literalidad', texto: 'Las actividades mencionadas en la cotización son indicativas mas no limitativas.' },
+  { titulo: 'Servicios profesionales', texto: 'ROW Energy prestará los servicios en el lugar, plazo y fecha (o fechas) acordadas por las partes, y que están expresamente designados en la presente Propuesta Técnica – Económica, Orden de Compra o cualquier otro documento debidamente firmado por representantes de ambas partes (en lo sucesivo se hará referencia como "OC" a cualquier documento de dicha naturaleza en que se describan las condiciones del Servicio).' },
+  { titulo: 'Tarifas de servicio y condiciones de pago', texto: 'El Cliente se compromete a abonar las tarifas que aparecen en la Propuesta Técnica – Económica y en las facturas presentadas por ROW Energy. Si una factura que no haya sido rechazada por el Cliente permanece impagada durante más de treinta (30) días, ROW Energy podrá suspender cualquier prestación de Servicios hasta el pago completo de la suma adeudada.' },
+  { titulo: 'Impuestos', texto: 'Salvo que se añada como cláusula por separado o que se acuerde lo contrario por escrito, las tarifas y cantidades mencionadas no incluyen impuestos, los cuales deberán ser incluidos por el cliente en el pago por el servicio ofertado.' },
+  { titulo: 'Moneda', texto: 'Los cobros mencionados en esta oferta están en pesos mexicanos.' },
+  { titulo: 'Gastos', texto: 'Los gastos en que se incurra para la prestación de los servicios ofertados se encuentran incluidos en el precio pactado. En caso hubiese gastos no contemplados en la propuesta y sean por alguna responsabilidad del cliente, ROW Energy valorizará dichos gastos añadiendo un 10% por gastos administrativos, para su posterior aprobación del cliente y facturación de éste.' },
+  { titulo: 'Confidencialidad', texto: 'Las Partes y sus empleados se abstendrán de divulgar, publicar o comunicar, directa o indirectamente a terceros la información, documentos o fotografías relacionada con los negocios y operaciones de cada una de ellas, subordinadas o matrices, o de sus contratistas, que conozcan en virtud del negocio jurídico que se esté desarrollando y de la ejecución de los servicios o por cualquier otra causa. Para estos efectos, las Partes convienen que divulgar o transmitir cualquier información que reciban de la otra Parte (Información Confidencial) puede lesionar sus negocios o su reputación, inclusive será causal de terminación del acuerdo y de indemnización de los daños y perjuicios sufridos.' },
+  { titulo: 'Garantía', texto: 'ROW Energy garantiza que la prestación de Servicios se llevará a cabo de manera eficiente y profesional. ROW Energy se compromete a prestar de nuevo el Servicio, sin costo alguno, en caso de que las fallas que reportasen los equipos a intervenir no sean por causas de mala operación por parte del cliente o factores externos a ROW Energy.' },
+  { titulo: 'Autorizaciones legales', texto: 'El Cliente deberá obtener cualquier autorización necesaria y cumplir todas las leyes, reglamentos y la normativa estatal y/o local en relación con todos los servicios, así como con la utilización de los servicios. Se incluyen a estos efectos, sin ánimo de exhaustividad, las leyes y reglamentos tales como la legislación laboral, medioambiental y de protección a consumidores y usuarios.' },
+  { titulo: 'Fuerza mayor', texto: 'Las partes no serán responsables por los retrasos o incumplimientos de sus obligaciones (excluyendo las obligaciones de pago) cuando se deban a causas que escapen a su control, entre las que se incluyen sin ánimo de exhaustividad el dictado de normas estatales, los paros laborales, los fallos en el transporte o de proveedores, los incendios, casos de desobediencia civil, embargos, guerras, revueltas, ataques terroristas, terremotos, huelgas, epidemias, inundaciones, sucesos atmosféricos y otros eventos de similares características que, si se producen, ampliarán el plazo de que disponen las partes para ejecutar una OC.' },
 ]
 
 // ============================================================
@@ -75,10 +42,7 @@ const TC_CLAUSULAS = [
 // ============================================================
 function fmtMoney(n, moneda = 'MXN') {
   const v = Number(n || 0)
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency', currency: moneda || 'MXN',
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(v)
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda || 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 }
 
 function fmtFecha(iso) {
@@ -88,8 +52,7 @@ function fmtFecha(iso) {
 }
 
 function fmtFechaCorta(iso) {
-  if (!iso) return new Date().toLocaleDateString('es-MX')
-  const d = new Date(iso)
+  const d = iso ? new Date(iso) : new Date()
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   return `${dd} / ${mm} / ${d.getFullYear()}`
@@ -102,7 +65,6 @@ function nombreArchivo(cot) {
   return `${codigo}${cliente ? '_' + cliente : ''}_${fecha}.pdf`
 }
 
-// Convierte una URL de imagen (en /public) a base64 para pdfmake
 async function loadImage(url) {
   try {
     const res = await fetch(url)
@@ -117,20 +79,13 @@ async function loadImage(url) {
   } catch { return null }
 }
 
-// Detecta si una descripción tiene formato de bullets (líneas que empiezan con - o •)
-// Devuelve un nodo pdfmake apropiado.
 function descripcionABullets(texto) {
   if (!texto || typeof texto !== 'string') return null
   const lineas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
   if (lineas.length === 0) return null
   const sonBullets = lineas.length > 1 && lineas.every(l => /^[-•·*]\s+/.test(l))
   if (sonBullets) {
-    return {
-      ul: lineas.map(l => l.replace(/^[-•·*]\s+/, '')),
-      fontSize: 9,
-      color: SLATE,
-      margin: [12, 4, 0, 0],
-    }
+    return { ul: lineas.map(l => l.replace(/^[-•·*]\s+/, '')), fontSize: 9, color: SLATE, margin: [12, 4, 0, 0] }
   }
   return { text: texto, fontSize: 9, color: SLATE, margin: [0, 4, 0, 0], lineHeight: 1.35 }
 }
@@ -153,25 +108,29 @@ export async function exportarCotizacionPDF(cot) {
     Number(it.porcentaje_finalizacion) === Number(primero.porcentaje_finalizacion)
   )
 
-  // Cargar imágenes (logo + firma) en paralelo
-  const [logo, firma] = await Promise.all([
+  // Cargar las 4 imágenes del template en paralelo
+  const [logo, hero, mapa, alcance, firma] = await Promise.all([
     loadImage('/templates/row-logo.png'),
+    loadImage('/templates/cot-hero.jpeg'),
+    loadImage('/templates/cot-mapa.png'),
+    loadImage('/templates/cot-alcance.png'),
     loadImage('/templates/firma-malio.png'),
   ])
 
   // ============================================================
-  // PORTADA
+  // PORTADA — logo + hero + título + cliente + vendedor
   // ============================================================
   const portada = [
+    // Header con logo y folio
     {
       columns: [
         logo
-          ? { image: logo, width: 130, alignment: 'left' }
+          ? { image: logo, width: 110, alignment: 'left' }
           : { text: 'ROW ENERGY', fontSize: 18, bold: true, color: NAVY, characterSpacing: 1 },
         {
           alignment: 'right',
           stack: [
-            { text: 'COTIZACIÓN', fontSize: 14, bold: true, color: NAVY, characterSpacing: 2 },
+            { text: 'COTIZACIÓN', fontSize: 12, bold: true, color: NAVY, characterSpacing: 2 },
             { text: cot?.codigo || '—', fontSize: 11, color: SLATE, margin: [0, 4, 0, 0] },
             { text: fmtFechaCorta(cot?.fecha_emision), fontSize: 9, color: SLATE, margin: [0, 4, 0, 0] },
           ],
@@ -180,10 +139,14 @@ export async function exportarCotizacionPDF(cot) {
       margin: [0, 0, 0, 30],
     },
 
-    // Título de propuesta
-    { text: 'Propuesta Técnica – Económica', fontSize: 22, bold: true, color: NAVY, font: 'Roboto', margin: [0, 60, 0, 12] },
-    { text: cot?.nombre_proyecto || '', fontSize: 14, color: SLATE, margin: [0, 0, 0, 60] },
+    // Imagen hero (acuarela de torres) — full width usable
+    ...(hero ? [{ image: hero, width: 510, alignment: 'center', margin: [0, 0, 0, 24] }] : []),
 
+    // Título de propuesta
+    { text: 'Propuesta Técnica – Económica', fontSize: 24, bold: true, color: NAVY, alignment: 'center', margin: [0, 0, 0, 10] },
+    { text: cot?.nombre_proyecto || '', fontSize: 14, color: SLATE, alignment: 'center', margin: [0, 0, 0, 30] },
+
+    // Bloque cliente
     {
       table: {
         widths: ['*'],
@@ -198,35 +161,37 @@ export async function exportarCotizacionPDF(cot) {
       },
       layout: {
         hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => LIGHT,
-        paddingLeft: () => 18, paddingRight: () => 18,
-        paddingTop: () => 14, paddingBottom: () => 14,
+        paddingLeft: () => 18, paddingRight: () => 18, paddingTop: () => 14, paddingBottom: () => 14,
       },
-    },
-
-    // Footer de portada con vendedor responsable
-    {
-      absolutePosition: { x: 50, y: 720 },
-      stack: [
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.7, lineColor: NAVY }] },
-        { text: 'Responsable comercial', fontSize: 8, color: SLATE, characterSpacing: 1, margin: [0, 4, 0, 0] },
-        { text: cot?.vendedor?.nombre || '—', fontSize: 11, bold: true, color: NAVY, margin: [0, 2, 0, 0] },
-        ...(cot?.vendedor?.email ? [{ text: cot.vendedor.email, fontSize: 9, color: SLATE }] : []),
-      ],
+      margin: [0, 0, 0, 16],
     },
 
     { text: '', pageBreak: 'after' },
   ]
 
   // ============================================================
-  // QUIÉNES SOMOS + EQUIPO
+  // ¿QUIÉNES SOMOS? + EQUIPO
   // ============================================================
   const acercaDe = [
     { text: '¿Quiénes somos?', style: 'h1' },
     { text: TEXTO_QUIENES_SOMOS, style: 'parrafo' },
     { text: 'Nuestro equipo', style: 'h1', margin: [0, 22, 0, 8] },
     { text: TEXTO_EQUIPO, style: 'parrafo' },
-    { text: '', pageBreak: 'after' },
   ]
+
+  // ============================================================
+  // PRESENCIA EN EL PAÍS + ALCANCE
+  // ============================================================
+  const presenciaAlcance = []
+  if (mapa || alcance) {
+    presenciaAlcance.push({ text: 'Presencia y alcance', style: 'h1', margin: [0, 24, 0, 10] })
+    if (mapa) {
+      presenciaAlcance.push({ image: mapa, width: 360, alignment: 'center', margin: [0, 8, 0, 16] })
+    }
+    if (alcance) {
+      presenciaAlcance.push({ image: alcance, width: 460, alignment: 'center', margin: [0, 0, 0, 8] })
+    }
+  }
 
   // ============================================================
   // PROPUESTA TÉCNICA — descripción de servicios
@@ -249,7 +214,7 @@ export async function exportarCotizacionPDF(cot) {
   ]
 
   // ============================================================
-  // PROPUESTA ECONÓMICA — tabla + totales + condiciones
+  // PROPUESTA ECONÓMICA
   // ============================================================
   const itemsTable = {
     table: {
@@ -273,8 +238,7 @@ export async function exportarCotizacionPDF(cot) {
       ],
     },
     layout: {
-      hLineColor: () => '#e2e8f0',
-      vLineColor: () => '#e2e8f0',
+      hLineColor: () => '#e2e8f0', vLineColor: () => '#e2e8f0',
       hLineWidth: (i) => (i === 0 || i === 1 ? 1 : 0.5),
       vLineWidth: () => 0.5,
       fillColor: (rowIndex) => (rowIndex === 0 ? NAVY : null),
@@ -327,17 +291,13 @@ export async function exportarCotizacionPDF(cot) {
   }
 
   const propuestaEconomica = [
-    { text: 'Propuesta Económica', style: 'h1', pageBreak: 'before' },
+    { text: 'Propuesta Económica', style: 'h1', margin: [0, 24, 0, 10] },
 
-    // Datos del proyecto
+    // Banner del proyecto (sin Cliente — ya está en portada)
     {
       table: {
-        widths: ['*', '*', '*'],
+        widths: ['*', '*'],
         body: [[
-          { stack: [
-            { text: 'Cliente', fontSize: 8, color: SLATE, characterSpacing: 1 },
-            { text: cot?.cliente?.razon_social || '—', fontSize: 10, bold: true, color: NAVY, margin: [0, 2, 0, 0] },
-          ]},
           { stack: [
             { text: 'Capacidad', fontSize: 8, color: SLATE, characterSpacing: 1 },
             { text: cot?.capacidad_mw ? `${cot.capacidad_mw} MW` : '—', fontSize: 10, bold: true, color: NAVY, margin: [0, 2, 0, 0] },
@@ -357,7 +317,6 @@ export async function exportarCotizacionPDF(cot) {
 
     itemsTable,
 
-    // Totales
     {
       columns: [
         { width: '*', text: '' },
@@ -381,7 +340,6 @@ export async function exportarCotizacionPDF(cot) {
       margin: [0, 0, 0, 22],
     },
 
-    // Condiciones de pago + vigencia
     { text: 'Condiciones de pago', style: 'h2' },
     condicionesBlock,
     {
@@ -399,14 +357,25 @@ export async function exportarCotizacionPDF(cot) {
   ]
 
   // ============================================================
-  // TÉRMINOS Y CONDICIONES
+  // TÉRMINOS Y CONDICIONES — doble columna (legal compacto)
   // ============================================================
+  const tcMitad = Math.ceil(TC_CLAUSULAS.length / 2)
+  const tcCol1 = TC_CLAUSULAS.slice(0, tcMitad)
+  const tcCol2 = TC_CLAUSULAS.slice(tcMitad)
+  const renderClausulas = (arr, offset) => arr.flatMap((c, i) => [
+    { text: `${offset + i + 1}. ${c.titulo}`, fontSize: 9, bold: true, color: NAVY, margin: [0, i === 0 ? 0 : 8, 0, 3] },
+    { text: c.texto, fontSize: 8, color: '#374151', lineHeight: 1.35, alignment: 'justify' },
+  ])
   const terminos = [
-    { text: 'Términos y Condiciones', style: 'h1', pageBreak: 'before' },
-    ...TC_CLAUSULAS.flatMap((c, i) => [
-      { text: `${i + 1}. ${c.titulo}`, fontSize: 11, bold: true, color: NAVY, margin: [0, i === 0 ? 0 : 10, 0, 4] },
-      { text: c.texto, fontSize: 9.5, color: '#374151', lineHeight: 1.4, alignment: 'justify' },
-    ]),
+    { text: 'Términos y Condiciones', style: 'h1', pageBreak: 'before', margin: [0, 0, 0, 12] },
+    {
+      columns: [
+        { width: '*', stack: renderClausulas(tcCol1, 0) },
+        { width: 16, text: '' },
+        { width: '*', stack: renderClausulas(tcCol2, tcMitad) },
+      ],
+      columnGap: 0,
+    },
   ]
 
   // ============================================================
@@ -436,6 +405,7 @@ export async function exportarCotizacionPDF(cot) {
     content: [
       ...portada,
       ...acercaDe,
+      ...presenciaAlcance,
       ...propuestaTecnica,
       ...propuestaEconomica,
       ...terminos,
@@ -448,7 +418,6 @@ export async function exportarCotizacionPDF(cot) {
       parrafo: { fontSize: 10.5, color: '#374151', lineHeight: 1.5, alignment: 'justify' },
     },
     footer: (currentPage, pageCount) => {
-      // No mostrar footer en la portada
       if (currentPage === 1) return null
       return {
         columns: [
