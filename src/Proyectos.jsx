@@ -16,6 +16,8 @@ import {
   duplicarProyecto, calcularAvancePonderado, validarSumaPesos, marcarCobrable,
   // v15.7: workflow SIM
   ETAPAS_SIM, ESTADOS_SIM, getProyectoSimEtapas, upsertEtapaSim,
+  // v15.8: plantas eléctricas
+  getPlantas,
 } from './supabase'
 
 // v14.1: helpers para persistir preferencias simples en localStorage
@@ -802,9 +804,14 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
 function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
   const [loc, setLoc] = useState(proyecto)
   const [guardando, setGuardando] = useState(false)
+  const [plantas, setPlantas] = useState([])  // v15.8.0
   const isMobile = useIsMobile()
 
   useEffect(() => { setLoc(proyecto) }, [proyecto])
+  useEffect(() => {
+    // v15.8.0: cargar plantas para selector (silencioso si la tabla no existe aún)
+    getPlantas().then(p => setPlantas(p || [])).catch(() => setPlantas([]))
+  }, [])
 
   const guardar = async (cambios) => {
     setLoc(prev => ({ ...prev, ...cambios }))
@@ -907,6 +914,28 @@ function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
                 style={inputStyle}/>
             </div>
           </div>
+          {/* v15.8.0: vinculación con planta eléctrica del catálogo */}
+          {plantas.length > 0 && (
+            <div style={{ marginBottom:16 }}>
+              <label style={miniLabel}>Planta eléctrica vinculada</label>
+              <select
+                value={loc.planta_id || ''}
+                onChange={e => { const v = e.target.value || null; setLoc(prev => ({ ...prev, planta_id: v })); guardar({ planta_id: v }) }}
+                style={selectStyle}
+              >
+                <option value="">— Sin planta vinculada —</option>
+                {plantas.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.codigo} · {p.nombre}{p.capacidad_mw ? ` (${Number(p.capacidad_mw).toFixed(1)} MW)` : ''}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize:10, color:COLORS.slate500, marginTop:4, fontStyle:'italic' }}>
+                Asocia este proyecto con una planta del catálogo (opcional). Útil para agrupar proyectos por central.
+              </div>
+            </div>
+          )}
+
           <div style={{ marginBottom:16 }}>
             <label style={miniLabel}>Descripción</label>
             <textarea
