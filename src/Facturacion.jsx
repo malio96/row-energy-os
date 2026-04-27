@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getFacturas, crearFactura, actualizarFactura, eliminarFactura, getHitos, getClientes } from './supabase'
-import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
 export default function Facturacion({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -12,6 +12,7 @@ export default function Facturacion({ usuario }) {
   const [facturas, setFacturas] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
+  const [facturaSel, setFacturaSel] = useState(null)  // v15.8.4
 
   const cargar = async () => { setLoading(true); setFacturas(await getFacturas()); setLoading(false) }
   useEffect(() => { cargar() }, [])
@@ -42,6 +43,7 @@ export default function Facturacion({ usuario }) {
   return (
     <div>
       {modal && <ModalNuevaFactura onClose={() => setModal(false)} onCreada={() => { setModal(false); cargar() }}/>}
+      {facturaSel && <PanelFactura factura={facturaSel} usuario={usuario} onClose={() => setFacturaSel(null)} onCambio={() => { setFacturaSel(null); cargar() }}/>}
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
         <div>
@@ -70,7 +72,21 @@ export default function Facturacion({ usuario }) {
             <div>Folio</div><div>Proyecto</div><div>Cliente</div><div>Total</div><div>Emisión</div><div>Estado</div>
           </div>
           {facturas.map(f => (
-            <div key={f.id} ref={el => { if (el) rowRefs.current[f.id] = el }} style={{ display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12, background: highlightId === f.id ? '#FEF3C7' : 'transparent', transition:'background 0.5s' }}>
+            <div
+              key={f.id}
+              ref={el => { if (el) rowRefs.current[f.id] = el }}
+              onClick={() => setFacturaSel(f)}
+              title="Click para ver detalle"
+              style={{
+                display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px',
+                padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`,
+                alignItems:'center', fontSize:12,
+                background: highlightId === f.id ? '#FEF3C7' : 'transparent',
+                transition:'background 0.3s', cursor:'pointer',
+              }}
+              onMouseEnter={e => { if (highlightId !== f.id) e.currentTarget.style.background = COLORS.slate50 }}
+              onMouseLeave={e => { if (highlightId !== f.id) e.currentTarget.style.background = 'transparent' }}
+            >
               <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{f.folio}</span>
               <div>
                 <div style={{ fontWeight:500, color:COLORS.ink }}>{f.proyecto?.nombre || '—'}</div>
@@ -79,11 +95,12 @@ export default function Facturacion({ usuario }) {
               <div style={{ color:COLORS.slate600 }}>{f.cliente?.razon_social || '—'}</div>
               <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(f.total)}</div>
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>{f.fecha_emision}</div>
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>
                 <select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select>
                 {usuario?.rol === 'direccion' && (
                   <button
-                    onClick={async () => {
+                    onClick={async (ev) => {
+                      ev.stopPropagation()
                       if (!confirm(`¿Eliminar factura ${f.folio}? Esta acción no se puede deshacer.`)) return
                       try { await eliminarFactura(f.id); cargar() }
                       catch (e) { alert('Error: ' + e.message) }
@@ -152,5 +169,130 @@ function ModalNuevaFactura({ onClose, onCreada }) {
         </div>
       </div>
     </>
+  )
+}
+
+// ============================================================
+// v15.8.4: PanelFactura — modal con detalle completo de la factura
+// ============================================================
+function PanelFactura({ factura: f, usuario, onClose, onCambio }) {
+  const navigate = useNavigate()
+  const [estado, setEstado] = useState(f.estado)
+  const [fechaPago, setFechaPago] = useState(f.fecha_pago || '')
+  const [uuid, setUuid] = useState(f.uuid_sat || '')
+  const [guardando, setGuardando] = useState(false)
+  const puedeBorrar = usuario?.rol === 'direccion'
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await actualizarFactura(f.id, { estado, fecha_pago: fechaPago || null, uuid_sat: uuid || null })
+      onCambio()
+    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  const borrar = async () => {
+    if (!confirm(`¿Eliminar factura ${f.folio}? Esta acción no se puede deshacer.`)) return
+    setGuardando(true)
+    try { await eliminarFactura(f.id); onCambio() }
+    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  const irAProyecto = () => {
+    if (f.proyecto?.id) navigate(`/proyectos?proyecto=${f.proyecto.id}`)
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
+      <div style={{ position:'fixed', top:'5%', left:'50%', transform:'translateX(-50%)', width:560, maxHeight:'90vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1000 }}>
+        <div style={{ padding:'18px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:700, marginBottom:3 }}>FOLIO {f.folio || '—'}</div>
+            <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Factura</h2>
+            <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+              <Badge texto={f.estado} mapa={ESTADOS_FACTURA}/>
+              <span style={{ fontSize:18, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(Number(f.total || 0))}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
+        </div>
+
+        <div style={{ padding:24 }}>
+          {/* Cliente + Proyecto */}
+          <div style={{ background:COLORS.slate50, borderRadius:10, padding:14, marginBottom:16 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Cliente y proyecto</div>
+            {f.cliente?.razon_social && (
+              <div style={{ fontSize:13, fontWeight:600, color:COLORS.ink, marginBottom:4 }}>{f.cliente.razon_social}</div>
+            )}
+            {f.proyecto?.id ? (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:4 }}>
+                  <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:700 }}>{f.proyecto.codigo || ''}</span>
+                  <span style={{ fontSize:12, color:COLORS.slate600 }}>{f.proyecto.nombre}</span>
+                </div>
+                <button onClick={irAProyecto} style={{ marginTop:10, padding:'6px 12px', background:COLORS.navy, color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                  Abrir proyecto →
+                </button>
+              </>
+            ) : (
+              <div style={{ fontSize:11, color:COLORS.slate500, fontStyle:'italic', marginTop:4 }}>Sin proyecto vinculado.</div>
+            )}
+          </div>
+
+          {/* Datos económicos */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10, marginBottom:14 }}>
+            <DataRow label="Subtotal" valor={fmtMoney(Number(f.subtotal || 0))} mono/>
+            <DataRow label="IVA" valor={fmtMoney(Number(f.iva || 0))} mono/>
+            <DataRow label="Total" valor={fmtMoney(Number(f.total || 0))} mono bold/>
+          </div>
+
+          {/* Fechas */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+            <DataRow label="Fecha emisión" valor={f.fecha_emision ? fmtDate(f.fecha_emision) : '—'}/>
+            <DataRow label="Fecha vencimiento" valor={f.fecha_vencimiento ? fmtDate(f.fecha_vencimiento) : '—'}/>
+          </div>
+
+          {/* Edición */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div>
+              <label style={labelStyle}>Estado</label>
+              <select value={estado} onChange={e=>setEstado(e.target.value)} style={selectStyle}>
+                {Object.keys(ESTADOS_FACTURA).map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Fecha pago (si pagada)</label>
+              <input type="date" value={fechaPago} onChange={e=>setFechaPago(e.target.value)} style={inputStyle}/>
+            </div>
+          </div>
+          <div style={{ marginBottom:8 }}>
+            <label style={labelStyle}>UUID SAT</label>
+            <input value={uuid} onChange={e=>setUuid(e.target.value)} placeholder="UUID del CFDI emitido" style={{...inputStyle, fontFamily:'var(--font-mono)', fontSize:11}}/>
+          </div>
+        </div>
+
+        <div style={{ padding:'14px 24px', borderTop:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', gap:8 }}>
+          {puedeBorrar ? (
+            <button onClick={borrar} disabled={guardando} style={{ padding:'9px 14px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:7, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+              {Icon('Trash')} Eliminar
+            </button>
+          ) : <span/>}
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={onClose} disabled={guardando} style={{ padding:'9px 16px', background:'transparent', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:12, cursor:'pointer' }}>Cancelar</button>
+            <button onClick={guardar} disabled={guardando} style={{ padding:'9px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:7, fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function DataRow({ label, valor, mono, bold }) {
+  return (
+    <div>
+      <div style={{ fontSize:9, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:3 }}>{label}</div>
+      <div style={{ fontSize: bold ? 14 : 12, fontWeight: bold ? 600 : 500, color: bold ? COLORS.navy : COLORS.ink, fontFamily: mono ? 'var(--font-mono)' : 'var(--font-sans)' }}>{valor}</div>
+    </div>
   )
 }

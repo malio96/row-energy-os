@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getHitos, actualizarHito } from './supabase'
+import { useNavigate } from 'react-router-dom'
+import { getHitos, actualizarHito, eliminarHito } from './supabase'
 import { COLORS, ESTADOS_HITO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
 
 // ============================================================
@@ -23,6 +24,7 @@ export default function Cobranza({ usuario }) {
   const [filtro, setFiltro] = useState(loadPref('cob_filtro', 'Todos'))
   const [busqueda, setBusqueda] = useState('')
   const [clienteSel, setClienteSel] = useState(null)
+  const [hitoSel, setHitoSel] = useState(null)  // v15.8.4
   const isMobile = useIsMobile()
 
   const cargar = async () => { setLoading(true); setHitos(await getHitos()); setLoading(false) }
@@ -67,6 +69,8 @@ export default function Cobranza({ usuario }) {
 
   return (
     <div>
+      {hitoSel && <PanelHito hito={hitoSel} usuario={usuario} onClose={() => setHitoSel(null)} onCambio={() => { setHitoSel(null); cargar() }}/>}
+
       {/* Header */}
       <div style={{ marginBottom:16 }}>
         <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Cobranza</h1>
@@ -113,6 +117,7 @@ export default function Cobranza({ usuario }) {
           filtro={filtro} setFiltro={setFiltro}
           busqueda={busqueda} setBusqueda={setBusqueda}
           cambiarEstado={cambiarEstado}
+          onSelectHito={setHitoSel}
           kpis={kpis}
           isMobile={isMobile}
         />
@@ -130,6 +135,7 @@ export default function Cobranza({ usuario }) {
           enriquecidos={enriquecidos}
           onVolver={() => setClienteSel(null)}
           cambiarEstado={cambiarEstado}
+          onSelectHito={setHitoSel}
           isMobile={isMobile}
         />
       )}
@@ -142,7 +148,7 @@ export default function Cobranza({ usuario }) {
 // ============================================================
 // VISTA HITOS (la que ya existía - preservada 100%)
 // ============================================================
-function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, cambiarEstado, kpis, isMobile }) {
+function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, cambiarEstado, onSelectHito, kpis, isMobile }) {
   const filtrados = useMemo(() => {
     let r = enriquecidos
     if (filtro === 'Por cobrar') r = r.filter(h => ['Pendiente', 'Facturado'].includes(h.estado))
@@ -226,24 +232,32 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
       {filtrados.length === 0 && <EmptyState titulo="Sin hitos" descripcion="No hay hitos con esos filtros."/>}
       {filtrados.length > 0 && (
         <div style={{ display:'grid', gap:8 }}>
-          {filtrados.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} isMobile={isMobile}/>)}
+          {filtrados.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile}/>)}
         </div>
       )}
     </>
   )
 }
 
-function HitoRow({ hito, onCambiar, isMobile }) {
+function HitoRow({ hito, onCambiar, onClick, isMobile }) {
   const proyNombre = hito.proyecto?.nombre || 'Sin proyecto'
   const clienteNombre = hito.proyecto?.cliente?.razon_social || ''
   const color = hito.esVencido ? COLORS.red : (ESTADOS_HITO[hito.estado]?.color || COLORS.slate500)
 
   return (
-    <div style={{
-      background:'white', border:`1px solid ${COLORS.slate100}`,
-      borderLeft:`3px solid ${color}`, borderRadius:10, padding:14,
-      display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'
-    }}>
+    <div
+      onClick={onClick ? () => onClick(hito) : undefined}
+      title={onClick ? 'Click para ver detalle' : ''}
+      style={{
+        background:'white', border:`1px solid ${COLORS.slate100}`,
+        borderLeft:`3px solid ${color}`, borderRadius:10, padding:14,
+        display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
+        cursor: onClick ? 'pointer' : 'default',
+        transition:'background 0.12s',
+      }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = COLORS.slate50 }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+    >
       <div style={{ flex:1, minWidth:200 }}>
         <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:2 }}>
           {hito.proyecto?.codigo || ''} · {clienteNombre}
@@ -272,6 +286,7 @@ function HitoRow({ hito, onCambiar, isMobile }) {
         <select
           value={hito.estado}
           onChange={e => onCambiar(hito.id, e.target.value)}
+          onClick={e => e.stopPropagation()}
           style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor:'pointer', fontFamily:'inherit' }}
         >
           {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
@@ -404,7 +419,7 @@ function ClienteRow({ cliente, onClick, isMobile, destacado }) {
   )
 }
 
-function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, isMobile }) {
+function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, onSelectHito, isMobile }) {
   const hitosCli = enriquecidos.filter(h => (h.proyecto?.cliente?.id || 'null') === cliente.id)
     .sort((a,b) => {
       // Primero vencidos, luego por fecha esperada
@@ -435,7 +450,7 @@ function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, isMobi
 
       {hitosCli.length === 0 && <EmptyState titulo="Sin hitos" descripcion="Este cliente no tiene hitos registrados."/>}
       <div style={{ display:'grid', gap:8 }}>
-        {hitosCli.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} isMobile={isMobile}/>)}
+        {hitosCli.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile}/>)}
       </div>
     </>
   )
@@ -736,4 +751,123 @@ function niceMax(v) {
   if (n <= 2) return 2 * mag
   if (n <= 5) return 5 * mag
   return 10 * mag
+}
+
+// ============================================================
+// v15.8.4: PanelHito — modal con detalle completo del hito
+// ============================================================
+function PanelHito({ hito, usuario, onClose, onCambio }) {
+  const navigate = useNavigate()
+  const [estado, setEstado] = useState(hito.estado)
+  const [fechaCobro, setFechaCobro] = useState(hito.fecha_cobro || '')
+  const [fechaFacturacion, setFechaFacturacion] = useState(hito.fecha_facturacion || '')
+  const [notas, setNotas] = useState(hito.notas || '')
+  const [guardando, setGuardando] = useState(false)
+  const puedeBorrar = usuario?.rol === 'direccion'
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await actualizarHito(hito.id, {
+        estado,
+        fecha_cobro: fechaCobro || null,
+        fecha_facturacion: fechaFacturacion || null,
+        notas: notas || null,
+      })
+      onCambio()
+    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  const borrar = async () => {
+    if (!confirm(`¿Eliminar el hito "${hito.nombre}"? No se puede deshacer.`)) return
+    setGuardando(true)
+    try { await eliminarHito(hito.id); onCambio() }
+    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  const irAProyecto = () => {
+    if (hito.proyecto?.id) navigate(`/proyectos?proyecto=${hito.proyecto.id}`)
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
+      <div style={{ position:'fixed', top:'5%', left:'50%', transform:'translateX(-50%)', width:560, maxHeight:'90vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1000 }}>
+        <div style={{ padding:'18px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{hito.nombre || 'Hito de cobro'}</h2>
+            <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+              <Badge texto={hito.estado} mapa={ESTADOS_HITO}/>
+              <span style={{ fontSize:18, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(Number(hito.monto || 0), true)}</span>
+              {hito.esVencido && <span style={{ fontSize:11, fontWeight:700, color:COLORS.red, padding:'3px 8px', background:'#FEF2F2', borderRadius:4 }}>{hito.diasVencido}d vencido</span>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
+        </div>
+
+        <div style={{ padding:24 }}>
+          {/* Proyecto asociado */}
+          <div style={{ background:COLORS.slate50, borderRadius:10, padding:14, marginBottom:16 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Proyecto asociado</div>
+            {hito.proyecto?.id ? (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+                  <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:700 }}>{hito.proyecto.codigo}</span>
+                  <span style={{ fontSize:14, fontWeight:600, color:COLORS.ink }}>{hito.proyecto.nombre}</span>
+                </div>
+                {hito.proyecto.cliente?.razon_social && (
+                  <div style={{ fontSize:12, color:COLORS.slate600 }}>Cliente: <strong>{hito.proyecto.cliente.razon_social}</strong></div>
+                )}
+                <button onClick={irAProyecto} style={{ marginTop:10, padding:'6px 12px', background:COLORS.navy, color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                  Abrir proyecto →
+                </button>
+              </>
+            ) : (
+              <div style={{ fontSize:12, color:COLORS.slate500 }}>Hito sin proyecto vinculado.</div>
+            )}
+          </div>
+
+          {/* Datos editables */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div>
+              <label style={labelStyle}>Estado</label>
+              <select value={estado} onChange={e=>setEstado(e.target.value)} style={selectStyle}>
+                {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Fecha esperada</label>
+              <input type="date" value={hito.fecha_esperada || ''} disabled style={{...inputStyle, opacity:0.6, cursor:'not-allowed'}}/>
+            </div>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div>
+              <label style={labelStyle}>Fecha facturación</label>
+              <input type="date" value={fechaFacturacion} onChange={e=>setFechaFacturacion(e.target.value)} style={inputStyle}/>
+            </div>
+            <div>
+              <label style={labelStyle}>Fecha cobro</label>
+              <input type="date" value={fechaCobro} onChange={e=>setFechaCobro(e.target.value)} style={inputStyle}/>
+            </div>
+          </div>
+          <div style={{ marginBottom:8 }}>
+            <label style={labelStyle}>Notas</label>
+            <textarea value={notas} onChange={e=>setNotas(e.target.value)} rows={3} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}} placeholder="Acuerdos, fechas tentativas de pago, contacto del cliente..."/>
+          </div>
+        </div>
+
+        <div style={{ padding:'14px 24px', borderTop:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', gap:8 }}>
+          {puedeBorrar ? (
+            <button onClick={borrar} disabled={guardando} style={{ padding:'9px 14px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:7, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+              {Icon('Trash')} Eliminar
+            </button>
+          ) : <span/>}
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={onClose} disabled={guardando} style={{ padding:'9px 16px', background:'transparent', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:12, cursor:'pointer' }}>Cancelar</button>
+            <button onClick={guardar} disabled={guardando} style={{ padding:'9px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:7, fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
 }
