@@ -1580,3 +1580,69 @@ export async function resetearAlertasConfig(usuarioId) {
 
   return data
 }
+
+// ============================================================
+// v15.7.0 — Workflow SIM (Declaración Operación Comercial)
+// ============================================================
+
+export const ETAPAS_SIM = [
+  { key: 'estudios',     label: 'Estudios',                  descripcion: 'Estudios de Impacto e Instalaciones ante CENACE.' },
+  { key: 'contrato',     label: 'Contrato',                  descripcion: 'Contrato de Conexión / Interconexión y garantías financieras.' },
+  { key: 'poc',          label: 'POC',                       descripcion: 'Puesta en Servicio: gestión SAPPSE, ingeniería básica.' },
+  { key: 'anexo',        label: 'Anexo II',                  descripcion: 'Anexos del POC: parámetros de equipos, validación de modelos.' },
+  { key: 'energizacion', label: 'Energización',              descripcion: 'Primera energización con CENACE y CFE.' },
+  { key: 'doc',          label: 'DOC',                       descripcion: 'Declaración de Operación Comercial — alta como Participante del Mercado.' },
+]
+
+export const ESTADOS_SIM = {
+  pendiente:   { label: 'Pendiente',   color: '#64748B', bg: '#F1F5F9' },
+  en_curso:    { label: 'En curso',    color: '#0F6E56', bg: '#E1F5EE' },
+  completada:  { label: 'Completada',  color: '#15803D', bg: '#DCFCE7' },
+  bloqueada:   { label: 'Bloqueada',   color: '#DC2626', bg: '#FEF2F2' },
+}
+
+// Devuelve las 6 etapas del proyecto. Si una etapa no tiene fila, se rellena con default 'pendiente'.
+// Devuelve null si la tabla no existe (Malio aún no aplicó la migration).
+export async function getProyectoSimEtapas(proyectoId) {
+  if (!proyectoId) throw new Error('proyectoId requerido')
+
+  const { data, error } = await supabase
+    .from('proyecto_sim_etapas')
+    .select('*, responsable:usuarios!responsable_id(id, nombre)')
+    .eq('proyecto_id', proyectoId)
+
+  if (error) {
+    // Si la tabla no existe, devolver null para que la UI muestre mensaje
+    if (error.code === '42P01') return null
+    console.error('getProyectoSimEtapas:', error)
+    throw error
+  }
+
+  // Rellenar las 6 etapas, marcando las faltantes como 'pendiente'
+  const porEtapa = {}
+  ;(data || []).forEach(row => { porEtapa[row.etapa] = row })
+  return ETAPAS_SIM.map(e => porEtapa[e.key] || {
+    proyecto_id: proyectoId,
+    etapa: e.key,
+    estado: 'pendiente',
+    fecha_inicio: null,
+    fecha_fin: null,
+    notas: null,
+    responsable_id: null,
+    responsable: null,
+  })
+}
+
+// UPSERT (insert or update) de una etapa específica.
+// cambios = subset de columnas a setear. Devuelve la fila actualizada.
+export async function upsertEtapaSim(proyectoId, etapaKey, cambios) {
+  if (!proyectoId || !etapaKey) throw new Error('proyectoId y etapaKey requeridos')
+  const payload = { proyecto_id: proyectoId, etapa: etapaKey, ...cambios }
+  const { data, error } = await supabase
+    .from('proyecto_sim_etapas')
+    .upsert(payload, { onConflict: 'proyecto_id,etapa' })
+    .select('*, responsable:usuarios!responsable_id(id, nombre)')
+    .single()
+  if (error) throw error
+  return data
+}

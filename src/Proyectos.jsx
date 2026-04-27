@@ -14,6 +14,8 @@ import {
   duplicarActividad, eliminarActividad, cambiarImportancia,
   // v12: helpers nuevos
   duplicarProyecto, calcularAvancePonderado, validarSumaPesos, marcarCobrable,
+  // v15.7: workflow SIM
+  ETAPAS_SIM, ESTADOS_SIM, getProyectoSimEtapas, upsertEtapaSim,
 } from './supabase'
 
 // v14.1: helpers para persistir preferencias simples en localStorage
@@ -3094,6 +3096,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     { k:'gantt', l:'Gantt', icon:<Icon.Calendar/> },
     { k:'kanban', l:'Kanban', icon:<Icon.Kanban/> },
     { k:'personas', l:'Por Persona', icon:<Icon.Users/> },
+    { k:'sim', l:'SIM', icon:<Icon.Check/> },  // v15.7: workflow Declaración Operación Comercial
     { k:'documentos', l:'Documentos', icon:<Icon.Folder/> },
     { k:'notas', l:'Notas' },
   ]
@@ -3178,9 +3181,216 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
       {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt}/>}
       {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion}/>}
       {tab === 'personas' && <TabPorPersona actividades={actividades} usuarios={usuarios} numeracion={numeracion} onAbrirInfo={setPanelAct}/>}
+      {tab === 'sim' && <TabSIM proyectoId={proyectoId} usuarios={usuarios} usuarioActual={usuarioActual}/>}
       {tab === 'documentos' && <TabDocumentos proyecto={proyecto}/>}
       {tab === 'notas' && <TabNotas proyectoId={proyectoId} usuarios={usuarios}/>}
       {tab === 'financiero' && <TabFinanciero proyecto={proyecto} hitos={hitos} puedeVerFinanciero={puedeVerFinanciero}/>}
+    </div>
+  )
+}
+
+// ============================================================
+// v15.7.0 — TAB SIM (Workflow Declaración Operación Comercial)
+// Stepper vertical de 6 etapas con estado, fechas, responsable y notas.
+// Edición restringida a direccion / director_proyectos / admin.
+// ============================================================
+function TabSIM({ proyectoId, usuarios, usuarioActual }) {
+  const [etapas, setEtapas] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [tablaNoExiste, setTablaNoExiste] = useState(false)
+  const [editandoKey, setEditandoKey] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+
+  const puedeEditar = ['direccion', 'director_proyectos', 'admin'].includes(usuarioActual?.rol)
+
+  const cargar = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await getProyectoSimEtapas(proyectoId)
+      if (data === null) { setTablaNoExiste(true); setEtapas([]) }
+      else { setEtapas(data); setTablaNoExiste(false) }
+    } catch (e) { alert('Error cargando etapas SIM: ' + e.message) }
+    setLoading(false)
+  }, [proyectoId])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const guardar = async (etapaKey, cambios) => {
+    setGuardando(true)
+    try {
+      await upsertEtapaSim(proyectoId, etapaKey, cambios)
+      await cargar()
+      setEditandoKey(null)
+    } catch (e) {
+      alert('Error guardando: ' + e.message)
+    } finally { setGuardando(false) }
+  }
+
+  const cambiarEstado = (etapa, nuevoEstado) => {
+    const cambios = { estado: nuevoEstado }
+    if (nuevoEstado === 'en_curso' && !etapa.fecha_inicio) cambios.fecha_inicio = new Date().toISOString().slice(0, 10)
+    if (nuevoEstado === 'completada' && !etapa.fecha_fin) cambios.fecha_fin = new Date().toISOString().slice(0, 10)
+    guardar(etapa.etapa, cambios)
+  }
+
+  if (loading) return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Cargando workflow SIM...</div>
+
+  if (tablaNoExiste) {
+    return (
+      <div style={{ background:'#FEF3C7', border:`1px solid #FDE68A`, borderRadius:12, padding:18 }}>
+        <h3 style={{ fontSize:13, fontWeight:600, color:'#92400E', margin:0, marginBottom:8 }}>Tabla SIM no configurada</h3>
+        <p style={{ fontSize:12, color:'#92400E', margin:0, lineHeight:1.5 }}>
+          Aplica el SQL en <strong>supabase/migrations/v15.7.0_proyecto_sim_etapas.sql</strong> en el SQL Editor de tu dashboard de Supabase. Una vez ejecutado, recarga esta vista.
+        </p>
+      </div>
+    )
+  }
+
+  const completadas = etapas.filter(e => e.estado === 'completada').length
+  const total = etapas.length
+  const pct = total > 0 ? Math.round((completadas / total) * 100) : 0
+
+  return (
+    <div>
+      {/* Header con progreso global */}
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0 }}>Workflow SIM · Declaración Operación Comercial</h3>
+          <span style={{ fontSize:12, color:COLORS.slate500 }}>{completadas} / {total} etapas · <strong style={{ color:pct === 100 ? COLORS.teal : COLORS.navy }}>{pct}%</strong></span>
+        </div>
+        <div style={{ height:8, background:COLORS.slate50, borderRadius:4, overflow:'hidden' }}>
+          <div style={{ width:`${pct}%`, height:'100%', background: pct === 100 ? COLORS.teal : COLORS.navy, borderRadius:4, transition:'width 0.3s' }}/>
+        </div>
+        {!puedeEditar && (
+          <div style={{ fontSize:10, color:COLORS.slate500, marginTop:8, fontStyle:'italic' }}>
+            Solo dirección / director de proyectos pueden editar las etapas. Tienes acceso de lectura.
+          </div>
+        )}
+      </div>
+
+      {/* Stepper vertical */}
+      <div style={{ display:'grid', gap:0 }}>
+        {etapas.map((et, i) => {
+          const meta = ETAPAS_SIM.find(m => m.key === et.etapa)
+          const colors = ESTADOS_SIM[et.estado] || ESTADOS_SIM.pendiente
+          const isLast = i === etapas.length - 1
+          const isEditing = editandoKey === et.etapa
+          const responsableNombre = et.responsable?.nombre || (et.responsable_id ? usuarios.find(u => u.id === et.responsable_id)?.nombre : null)
+
+          return (
+            <div key={et.etapa} style={{ display:'flex', gap:14 }}>
+              {/* Columna izquierda: numero + línea conectora */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', flexShrink:0 }}>
+                <div style={{
+                  width:36, height:36, borderRadius:'50%',
+                  background: colors.bg, color: colors.color,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:14, fontWeight:700, fontFamily:'var(--font-mono)',
+                  border:`2px solid ${colors.color}`,
+                }}>{i + 1}</div>
+                {!isLast && <div style={{ flex:1, width:2, background: et.estado === 'completada' ? COLORS.teal : COLORS.slate100, minHeight:60, marginTop:4, marginBottom:4 }}/>}
+              </div>
+
+              {/* Card de la etapa */}
+              <div style={{
+                flex:1, marginBottom: isLast ? 0 : 12,
+                background:'white', border:`1px solid ${COLORS.slate100}`,
+                borderLeft:`3px solid ${colors.color}`, borderRadius:10, padding:14,
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
+                  <div style={{ flex:1, minWidth:200 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+                      <span style={{ fontSize:13, fontWeight:600, color:COLORS.ink }}>{meta?.label || et.etapa}</span>
+                      <Badge texto={colors.label} mapa={ESTADOS_SIM} tamano={10}/>
+                    </div>
+                    <div style={{ fontSize:11, color:COLORS.slate500, lineHeight:1.4 }}>{meta?.descripcion}</div>
+                    {(et.fecha_inicio || et.fecha_fin || responsableNombre) && (
+                      <div style={{ fontSize:11, color:COLORS.slate600, marginTop:6, display:'flex', flexWrap:'wrap', gap:10 }}>
+                        {et.fecha_inicio && <span><strong>Inicio:</strong> {et.fecha_inicio}</span>}
+                        {et.fecha_fin && <span><strong>Fin:</strong> {et.fecha_fin}</span>}
+                        {responsableNombre && <span><strong>Responsable:</strong> {responsableNombre}</span>}
+                      </div>
+                    )}
+                    {et.notas && <div style={{ fontSize:11, color:COLORS.slate600, marginTop:6, padding:'6px 10px', background:COLORS.slate50, borderRadius:6, lineHeight:1.4 }}>{et.notas}</div>}
+                  </div>
+                  {puedeEditar && !isEditing && (
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                      {et.estado === 'pendiente' && <button onClick={() => cambiarEstado(et, 'en_curso')} disabled={guardando} style={{ padding:'5px 10px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>Iniciar</button>}
+                      {et.estado === 'en_curso' && <button onClick={() => cambiarEstado(et, 'completada')} disabled={guardando} style={{ padding:'5px 10px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>Completar</button>}
+                      {et.estado !== 'completada' && et.estado !== 'bloqueada' && <button onClick={() => cambiarEstado(et, 'bloqueada')} disabled={guardando} style={{ padding:'5px 10px', background:'transparent', color:COLORS.red, border:`1px solid ${COLORS.red}`, borderRadius:6, fontSize:10, fontWeight:500, cursor:'pointer' }}>Bloquear</button>}
+                      {et.estado === 'bloqueada' && <button onClick={() => cambiarEstado(et, 'en_curso')} disabled={guardando} style={{ padding:'5px 10px', background:COLORS.amber, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>Desbloquear</button>}
+                      {et.estado === 'completada' && <button onClick={() => cambiarEstado(et, 'en_curso')} disabled={guardando} style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:500, cursor:'pointer' }}>Reabrir</button>}
+                      <button onClick={() => setEditandoKey(et.etapa)} disabled={guardando} style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:500, cursor:'pointer' }}>Editar detalles</button>
+                    </div>
+                  )}
+                </div>
+
+                {isEditing && (
+                  <FormEditarEtapaSim
+                    etapa={et}
+                    usuarios={usuarios}
+                    guardando={guardando}
+                    onCancelar={() => setEditandoKey(null)}
+                    onGuardar={(cambios) => guardar(et.etapa, cambios)}
+                  />
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function FormEditarEtapaSim({ etapa, usuarios, guardando, onCancelar, onGuardar }) {
+  const [form, setForm] = useState({
+    estado: etapa.estado || 'pendiente',
+    fecha_inicio: etapa.fecha_inicio || '',
+    fecha_fin: etapa.fecha_fin || '',
+    responsable_id: etapa.responsable_id || '',
+    notas: etapa.notas || '',
+  })
+
+  const submit = () => {
+    onGuardar({
+      estado: form.estado,
+      fecha_inicio: form.fecha_inicio || null,
+      fecha_fin: form.fecha_fin || null,
+      responsable_id: form.responsable_id || null,
+      notas: form.notas || null,
+    })
+  }
+
+  return (
+    <div style={{ marginTop:12, padding:12, background:COLORS.slate50, borderRadius:8 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+        <div>
+          <label style={labelStyle}>Estado</label>
+          <select value={form.estado} onChange={e=>setForm({...form, estado:e.target.value})} style={selectStyle}>
+            {Object.entries(ESTADOS_SIM).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Responsable</label>
+          <select value={form.responsable_id} onChange={e=>setForm({...form, responsable_id:e.target.value})} style={selectStyle}>
+            <option value="">— Sin responsable —</option>
+            {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+        <div><label style={labelStyle}>Fecha inicio</label><input type="date" value={form.fecha_inicio} onChange={e=>setForm({...form, fecha_inicio:e.target.value})} style={inputStyle}/></div>
+        <div><label style={labelStyle}>Fecha fin</label><input type="date" value={form.fecha_fin} onChange={e=>setForm({...form, fecha_fin:e.target.value})} style={inputStyle}/></div>
+      </div>
+      <div style={{ marginBottom:8 }}>
+        <label style={labelStyle}>Notas</label>
+        <textarea value={form.notas} onChange={e=>setForm({...form, notas:e.target.value})} rows={3} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}} placeholder="Acuerdos con CENACE, observaciones, próximos pasos..."/>
+      </div>
+      <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+        <button onClick={onCancelar} disabled={guardando} style={{ padding:'7px 14px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, cursor:'pointer' }}>Cancelar</button>
+        <button onClick={submit} disabled={guardando} style={{ padding:'7px 16px', background:COLORS.navy, color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+      </div>
     </div>
   )
 }
