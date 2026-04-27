@@ -1646,3 +1646,124 @@ export async function upsertEtapaSim(proyectoId, etapaKey, cambios) {
   if (error) throw error
   return data
 }
+
+// ============================================================
+// v15.8.0 — Catálogo de Plantas Eléctricas
+// ============================================================
+
+export const TIPOS_TECNOLOGIA_PLANTA = [
+  'Fotovoltaica', 'Eolica', 'Termoelectrica', 'Hidroelectrica',
+  'Cogeneracion', 'Biomasa', 'Geotermica', 'Ciclo combinado',
+  'Almacenamiento BESS', 'Hibrido', 'Otra',
+]
+
+export const ESTADOS_PLANTA = {
+  'Planeacion':       { label: 'Planeación',      color: '#64748B', bg: '#F1F5F9' },
+  'En construccion':  { label: 'En construcción', color: '#D97706', bg: '#FEF3C7' },
+  'En operacion':     { label: 'En operación',    color: '#0F6E56', bg: '#E1F5EE' },
+  'Mantenimiento':    { label: 'Mantenimiento',   color: '#1B3A6B', bg: '#E0E7FF' },
+  'Retirada':         { label: 'Retirada',        color: '#94A3B8', bg: '#F1F5F9' },
+}
+
+// Devuelve el path del template DOCX según capacidad MW (para botón "descargar template")
+export function templateCotizacionPorCapacidad(capacidadMw) {
+  if (!capacidadMw) return null
+  const mw = Number(capacidadMw)
+  if (mw <= 10) return 'BASE CENTRAL ELÉCTRICA 0.5 A 10 MW (1).docx'
+  if (mw <= 1000) return 'BASE CENTRAL ELÉCTRICA 10.1 A 1000 MW (1).docx'
+  return null
+}
+
+export async function getPlantas() {
+  const { data, error } = await supabase
+    .from('plantas_electricas')
+    .select('*, cliente:clientes(id, razon_social)')
+    .order('created_at', { ascending: false })
+  if (error) {
+    if (error.code === '42P01') return null  // tabla no existe aún
+    console.error('getPlantas:', error)
+    throw error
+  }
+  return data
+}
+
+export async function getPlanta(id) {
+  if (!id) throw new Error('id requerido')
+  const { data, error } = await supabase
+    .from('plantas_electricas')
+    .select('*, cliente:clientes(id, razon_social, rfc, industria)')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+
+  // Cargar proyectos asociados
+  const { data: proyectos } = await supabase
+    .from('proyectos')
+    .select('id, codigo, nombre, estado, director:usuarios!director_id(id, nombre)')
+    .eq('planta_id', id)
+    .order('created_at', { ascending: false })
+
+  return { ...data, proyectos: proyectos || [] }
+}
+
+// Genera el siguiente código PLT-NNNN
+async function siguienteCodigoPlanta() {
+  const { data } = await supabase
+    .from('plantas_electricas')
+    .select('codigo')
+    .ilike('codigo', 'PLT-%')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const ultimo = data?.[0]?.codigo || 'PLT-0000'
+  const num = parseInt(ultimo.replace('PLT-', ''), 10) || 0
+  return `PLT-${String(num + 1).padStart(4, '0')}`
+}
+
+export async function crearPlanta(payload) {
+  if (!payload?.nombre) throw new Error('nombre requerido')
+  const codigo = payload.codigo || await siguienteCodigoPlanta()
+  const limpio = {
+    codigo,
+    nombre: payload.nombre,
+    cliente_id: payload.cliente_id || null,
+    capacidad_mw: payload.capacidad_mw === '' || payload.capacidad_mw == null ? null : Number(payload.capacidad_mw),
+    tipo_tecnologia: payload.tipo_tecnologia || null,
+    ubicacion: payload.ubicacion || null,
+    estado_geo: payload.estado_geo || null,
+    coordenadas: payload.coordenadas || null,
+    estado: payload.estado || 'Planeacion',
+    fecha_operacion_comercial: payload.fecha_operacion_comercial || null,
+    punto_interconexion: payload.punto_interconexion || null,
+    voltaje_kv: payload.voltaje_kv === '' || payload.voltaje_kv == null ? null : Number(payload.voltaje_kv),
+    notas: payload.notas || null,
+  }
+  const { data, error } = await supabase
+    .from('plantas_electricas')
+    .insert(limpio)
+    .select('*, cliente:clientes(id, razon_social)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function actualizarPlanta(id, cambios) {
+  if (!id) throw new Error('id requerido')
+  // Limpiar valores vacíos a null donde aplique (numéricos)
+  const limpio = { ...cambios }
+  if ('capacidad_mw' in limpio) limpio.capacidad_mw = limpio.capacidad_mw === '' || limpio.capacidad_mw == null ? null : Number(limpio.capacidad_mw)
+  if ('voltaje_kv' in limpio) limpio.voltaje_kv = limpio.voltaje_kv === '' || limpio.voltaje_kv == null ? null : Number(limpio.voltaje_kv)
+  const { data, error } = await supabase
+    .from('plantas_electricas')
+    .update(limpio)
+    .eq('id', id)
+    .select('*, cliente:clientes(id, razon_social)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function eliminarPlanta(id) {
+  if (!id) throw new Error('id requerido')
+  const { error } = await supabase.from('plantas_electricas').delete().eq('id', id)
+  if (error) throw error
+}

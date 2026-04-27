@@ -17,6 +17,7 @@ import Configuracion from './Configuracion'
 import Dashboard from './Dashboard'
 import CommandPalette from './CommandPalette'
 import CentroAlertas from './CentroAlertas'  // v12.5.9c
+import Plantas from './Plantas'  // v15.8.0
 
 // ============================================================
 // v12.5.9c: agregada ruta /alertas (Centro de Alertas)
@@ -35,6 +36,7 @@ const RUTAS_POR_SECCION = {
   config: '/config',
   clientes: '/config',
   alertas: '/alertas',  // v12.5.9c
+  plantas: '/plantas',  // v15.8.0
 }
 
 const inputStyle = {
@@ -263,6 +265,11 @@ export default function App() {
           <Route path="/postventa" element={
             <RutaProtegida usuario={usuario} modulo="postventa">
               <Postventa usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/plantas" element={
+            <RutaProtegida usuario={usuario} modulo="plantas">
+              <Plantas usuario={usuario}/>
             </RutaProtegida>
           }/>
           <Route path="/config" element={

@@ -18,7 +18,9 @@ export const PERMISOS_POR_ROL = {
     descripcion: 'Acceso total a todo el sistema',
     modulos: [
       'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
-      'cobranza', 'facturacion', 'compras', 'cierre', 'postventa', 'config'
+      'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
+      'plantas',  // v15.8.0
+      'config'
     ],
     puedeEliminar: true,
     puedeGestionarUsuarios: true,
@@ -28,7 +30,8 @@ export const PERMISOS_POR_ROL = {
     descripcion: 'Acceso a todo excepto configuración; no puede eliminar registros',
     modulos: [
       'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
-      'cobranza', 'facturacion', 'compras', 'cierre', 'postventa'
+      'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
+      'plantas',  // v15.8.0
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
@@ -38,7 +41,8 @@ export const PERMISOS_POR_ROL = {
     descripcion: 'Operaciones completas: proyectos, cotizaciones, contratos, compras, cierre, postventa',
     modulos: [
       'dashboard', 'proyectos', 'cotizaciones', 'contratos',
-      'compras', 'cierre', 'postventa'
+      'compras', 'cierre', 'postventa',
+      'plantas',  // v15.8.0 — el director necesita el catálogo de plantas
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,

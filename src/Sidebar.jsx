@@ -31,6 +31,9 @@ const modulos = [
     { id:'contratos', label:'Contratos', path:'/contratos',
       icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
     },
+    { id:'plantas', label:'Plantas', path:'/plantas',
+      icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M2 22h20M8 22V11l4-3 4 3v11"/><path d="M5 22V14M19 22V14"/></svg>
+    },
   ]},
   { seccion: 'CRM', items: [
     { id:'leads', label:'Leads / CRM', path:'/leads', mobileNav:true,
