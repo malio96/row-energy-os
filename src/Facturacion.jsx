@@ -45,7 +45,7 @@ export default function Facturacion() {
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
         <div>
-          <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Facturación</h1>
+          <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Facturación</h1>
           <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{facturas.length} facturas · Total: <strong>{fmtMoney(total)}</strong></p>
         </div>
         <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva factura</button>
@@ -55,7 +55,7 @@ export default function Facturacion() {
         {[{ l:'Pagadas', v:fmtMoney(pagadas), c:COLORS.teal }, { l:'Pendientes', v:fmtMoney(pendientes), c:COLORS.amber }].map(k => (
           <div key={k.l} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:16 }}>
             <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>{k.l}</div>
-            <div style={{ fontSize:22, fontWeight:500, color:k.c, fontFamily:'var(--font-serif)' }}>{k.v}</div>
+            <div style={{ fontSize:22, fontWeight:500, color:k.c, fontFamily:'var(--font-sans)' }}>{k.v}</div>
           </div>
         ))}
       </div>
@@ -79,7 +79,7 @@ export default function Facturacion() {
               <div style={{ color:COLORS.slate600 }}>{f.cliente?.razon_social || '—'}</div>
               <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(f.total)}</div>
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>{f.fecha_emision}</div>
-              <div><select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select></div>
+              <div><select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select></div>
             </div>
           ))}
         </div>
@@ -115,7 +115,7 @@ function ModalNuevaFactura({ onClose, onCreada }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
       <div style={{ position:'fixed', top:'10%', left:'50%', transform:'translateX(-50%)', width:560, background:'white', borderRadius:16, zIndex:1000 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:20, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Nueva factura</h2>
+          <h2 style={{ fontSize:20, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Nueva factura</h2>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>

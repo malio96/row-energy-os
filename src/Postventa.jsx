@@ -50,7 +50,7 @@ export default function Postventa({ usuario }) {
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <div>
-          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Postventa</h1>
+          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Postventa</h1>
           <p style={{ color:COLORS.slate500, fontSize:12, marginTop:4 }}>{tickets.length} tickets</p>
         </div>
         <button onClick={() => setModal(true)} style={btnPrimary}>{Icon('Plus')} {isMobile ? 'Nuevo' : 'Nuevo ticket'}</button>
@@ -96,7 +96,7 @@ export default function Postventa({ usuario }) {
                     {t.proyecto?.codigo || '—'} · {t.responsable?.nombre || 'Sin asignar'} · {relativeTime(t.created_at)}
                   </div>
                 </div>
-                <select value={t.estado} onChange={e => cambiarEstado(t.id, e.target.value)} style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, cursor:'pointer', background:'white' }}>
+                <select value={t.estado} onChange={e => cambiarEstado(t.id, e.target.value)} style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, cursor:'pointer', background:'white', fontFamily:'inherit' }}>
                   {Object.keys(ESTADOS_TICKET).map(e => <option key={e}>{e}</option>)}
                 </select>
               </div>
@@ -112,7 +112,7 @@ function KpiCard({ label, valor, color }) {
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:14 }}>
       <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>{label}</div>
-      <div style={{ fontSize:20, fontWeight:500, color, fontFamily:'var(--font-serif)', lineHeight:1 }}>{valor}</div>
+      <div style={{ fontSize:20, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1 }}>{valor}</div>
     </div>
   )
 }
@@ -136,7 +136,7 @@ function ModalNuevoTicket({ usuario, onClose, onCreado }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
       <div style={{ position:'fixed', top: isMobile ? 0 : '10%', left:'50%', transform:'translateX(-50%)', width: isMobile ? '100%' : 520, maxHeight: isMobile ? '100vh' : '85vh', background:'white', borderRadius: isMobile ? 0 : 16, zIndex:1000, overflow:'auto' }}>
         <div style={{ padding:'18px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Nuevo ticket</h2>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Nuevo ticket</h2>
           <button onClick={onClose} style={{ border:'none', background:COLORS.slate50, width:32, height:32, borderRadius:8, cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:20 }}>

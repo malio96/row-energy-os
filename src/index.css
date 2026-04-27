@@ -24,8 +24,8 @@
   --ink: #1C2128;
   
   --font-sans: 'Geist', system-ui, -apple-system, sans-serif;
-  --font-serif: 'Instrument Serif', Georgia, serif;
   --font-mono: 'Geist Mono', ui-monospace, monospace;
+  /* v15.4.1: --font-serif eliminado, todo unifica a sans (decisión de Malio) */
 }
 
 html, body {

@@ -52,7 +52,7 @@ export default function Configuracion({ usuario }) {
       <modal.Render/>
 
       <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Configuración</h1>
+        <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Configuración</h1>
         <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>Gestión de usuarios, clientes y parámetros del sistema</p>
       </div>
 

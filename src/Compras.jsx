@@ -44,7 +44,7 @@ export default function Compras({ usuario }) {
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
         <div>
-          <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Compras</h1>
+          <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Compras</h1>
           <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{compras.length} solicitudes · Total: <strong>{fmtMoney(total)}</strong></p>
         </div>
         <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva solicitud</button>
@@ -77,7 +77,7 @@ export default function Compras({ usuario }) {
                 <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_solicitud}</div>
                 <div>
                   {puedeAprobar ? (
-                    <select value={c.estado} onChange={e => cambiarEstado(c.id, e.target.value)} style={{ border:'none', background:ESTADOS_COMPRA[c.estado]?.bg, color:ESTADOS_COMPRA[c.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer' }}>
+                    <select value={c.estado} onChange={e => cambiarEstado(c.id, e.target.value)} style={{ border:'none', background:ESTADOS_COMPRA[c.estado]?.bg, color:ESTADOS_COMPRA[c.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
                       {Object.keys(ESTADOS_COMPRA).map(e => <option key={e}>{e}</option>)}
                     </select>
                   ) : <Badge texto={c.estado} mapa={ESTADOS_COMPRA}/>}
@@ -107,7 +107,7 @@ function ModalNuevaCompra({ usuario, onClose, onCreada }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
       <div style={{ position:'fixed', top:'10%', left:'50%', transform:'translateX(-50%)', width:560, background:'white', borderRadius:16, zIndex:1000 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:20, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Nueva solicitud de compra</h2>
+          <h2 style={{ fontSize:20, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Nueva solicitud de compra</h2>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>

@@ -32,7 +32,7 @@ export default function Cotizaciones({ usuario }) {
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:28 }}>
         <div>
-          <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Cotizaciones</h1>
+          <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Cotizaciones</h1>
           <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{cots.length} cotización{cots.length!==1?'es':''}</p>
         </div>
         <button onClick={() => setModalNuevo(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
@@ -104,7 +104,7 @@ function ModalNuevaCotizacion({ usuario, onClose, onCreada }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
       <div style={{ position:'fixed', top:'10%', left:'50%', transform:'translateX(-50%)', width:'min(560px, 95vw)', background:'white', borderRadius:16, boxShadow:'0 20px 60px rgba(10,37,64,0.2)', zIndex:1000 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <h2 style={{ fontSize:20, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)', margin:0 }}>Nueva cotización</h2>
+          <h2 style={{ fontSize:20, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)', margin:0 }}>Nueva cotización</h2>
           <button onClick={onClose} style={{ width:30, height:30, border:'none', background:COLORS.slate50, borderRadius:8, cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>
@@ -164,7 +164,7 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
             <Badge texto={cot.estado} mapa={ESTADOS_COT}/>
             {cot.cliente && <span style={{ fontSize:12, color:COLORS.slate500 }}>· {cot.cliente.razon_social}</span>}
           </div>
-          <h1 style={{ fontSize:26, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-serif)', letterSpacing:'-0.02em' }}>{cot.nombre_proyecto}</h1>
+          <h1 style={{ fontSize:26, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-sans)', letterSpacing:'-0.02em' }}>{cot.nombre_proyecto}</h1>
           <p style={{ fontSize:12, color:COLORS.slate500, margin:'4px 0 0' }}>Vendedor: {cot.vendedor?.nombre || '—'} · Emitida: {cot.fecha_emision}</p>
         </div>
         <select value={cot.estado} onChange={e => cambiarEstado(e.target.value)} style={{ ...selectStyle, width:180, fontWeight:600 }}>
@@ -281,7 +281,7 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:1001 }}/>
       <div style={{ position:'fixed', top:'10%', left:'50%', transform:'translateX(-50%)', width:560, background:'white', borderRadius:16, zIndex:1002 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Agregar servicio</h2>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Agregar servicio</h2>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>
@@ -351,7 +351,7 @@ function ModalEditarItem({ item, onClose, onGuardado }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:1001 }}/>
       <div style={{ position:'fixed', top:'8%', left:'50%', transform:'translateX(-50%)', width:560, maxHeight:'90vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1002 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Editar servicio</h2>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Editar servicio</h2>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>
@@ -416,7 +416,7 @@ function ModalEditarInfo({ cot, onClose, onGuardado }) {
       <div style={{ position:'fixed', top:'8%', left:'50%', transform:'translateX(-50%)', width:560, maxHeight:'90vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1000 }}>
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
           <div>
-            <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Editar información</h2>
+            <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Editar información</h2>
             <p style={{ fontSize:11, color:COLORS.slate500, margin:'4px 0 0' }}>{cot.codigo} · {cot.cliente?.razon_social || ''}</p>
           </div>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>

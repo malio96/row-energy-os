@@ -109,7 +109,7 @@ export default function Dashboard({ usuario, onNavigate }) {
     <div>
       {/* HEADER */}
       <div style={{ marginBottom:20 }}>
-        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>
+        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>
           Hola, {usuario?.nombre?.split(' ')[0] || 'Malio'}
         </h1>
         <p style={{ color:COLORS.slate500, fontSize:13, marginTop:4 }}>
@@ -396,7 +396,7 @@ function CuellosBotellaWidget({ cuellos, isMobile }) {
   return (
     <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`4px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:20 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, flexWrap:'wrap', gap:8 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-serif)' }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-sans)' }}>
           🚨 Cuellos de botella detectados
         </h3>
         <span style={{ fontSize:11, color:COLORS.slate500 }}>
@@ -771,7 +771,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
       {/* Gráfico META vs REAL */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Avance de cobranza — META vs REAL</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Avance de cobranza — META vs REAL</h3>
           <div style={{ display:'flex', gap:14, fontSize:11 }}>
             <Leyenda color="#3B82F6" label="META"/>
             <Leyenda color="#6B7280" label="REAL"/>
@@ -784,7 +784,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Clientes nuevos con contrato / OC</h3>
+            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Clientes nuevos con contrato / OC</h3>
             <div style={{ display:'flex', gap:14, fontSize:11 }}>
               <Leyenda color={COLORS.teal} label="Con contrato"/>
               <Leyenda color={COLORS.slate400} label="Sin documento"/>
@@ -821,7 +821,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Cotizado del mes</h3>
+            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Cotizado del mes</h3>
             {cotizadoOverride && (
               <button onClick={() => setCotizadoOverride(null)} style={{ fontSize:10, border:'none', background:'transparent', color:COLORS.slate500, cursor:'pointer', textDecoration:'underline' }}>Reset (usar BD)</button>
             )}
@@ -831,7 +831,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
         </div>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Aceptado del mes</h3>
+            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Aceptado del mes</h3>
             {aceptadoOverride && (
               <button onClick={() => setAceptadoOverride(null)} style={{ fontSize:10, border:'none', background:'transparent', color:COLORS.slate500, cursor:'pointer', textDecoration:'underline' }}>Reset (usar BD)</button>
             )}
@@ -845,7 +845,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.4fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Gastos variables</h3>
+            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Gastos variables</h3>
             <span style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{fmtMoney(gastosTotal, true)}</span>
           </div>
           <div style={{ fontSize:10, color:COLORS.slate400, marginBottom:8 }}>{MESES_ES[mesIdx]} {anio}</div>
@@ -857,7 +857,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
         </div>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Gastos variables históricos</h3>
+            <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Gastos variables históricos</h3>
             <div style={{ display:'flex', gap:12, fontSize:11, flexWrap:'wrap' }}>
               {Object.keys(gastosHistoricos).sort().map(yr => (
                 <Leyenda key={yr} color={yr === String(anio) ? '#1F2937' : yr === String(anio-1) ? COLORS.navy : '#93C5FD'} label={yr}/>
@@ -874,7 +874,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
       {/* v12.5.5: Cuentas por pagar con botón Editar */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:20 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, flexWrap:'wrap', gap:10 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Cuentas por pagar</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Cuentas por pagar</h3>
           <div style={{ display:'flex', gap:14, fontSize:11 }}>
             <span style={{ color:COLORS.amber, fontWeight:600 }}>Pendientes: {fmtMoney(cxpPendientes, true)}</span>
             <span style={{ color:COLORS.teal, fontWeight:600 }}>Autorizadas: {fmtMoney(cxpAutorizadas, true)}</span>
@@ -976,7 +976,7 @@ function VistaVentas({ data, onNavigate, isMobile }) {
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-serif)' }}>Estado de cotizaciones</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-sans)' }}>Estado de cotizaciones</h3>
           <DonutCotizaciones cotizaciones={cotizaciones}/>
         </div>
 
@@ -1067,7 +1067,7 @@ function VistaCompras({ data, onNavigate, isMobile }) {
       </div>
 
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-serif)' }}>Top proveedores por monto</h3>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-sans)' }}>Top proveedores por monto</h3>
         {topProv.length === 0 && <EmptyMini texto="Sin compras registradas"/>}
         {topProv.map(p => {
           const max = Math.max(...topProv.map(x => x.monto), 1)
@@ -1138,7 +1138,7 @@ function VistaCobranza({ data, onNavigate, isMobile }) {
       </div>
 
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>Avance de cobranza {MESES_ES[hoy.getMonth()]} {hoy.getFullYear()}</h3>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>Avance de cobranza {MESES_ES[hoy.getMonth()]} {hoy.getFullYear()}</h3>
         <div style={{ position:'relative', height:28, background:COLORS.slate50, borderRadius:8, overflow:'hidden', marginBottom:8 }}>
           <div style={{ width:`${avancePct}%`, height:'100%', background: avancePct >= 90 ? COLORS.teal : avancePct >= 70 ? COLORS.amber : COLORS.red, transition:'width 0.5s', display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:10 }}>
             <span style={{ fontSize:11, fontWeight:700, color:'white', fontFamily:'var(--font-mono)' }}>{avancePct}%</span>
@@ -1184,7 +1184,7 @@ function KpiHero({ label, valor, sub, color, onClick }) {
       onMouseEnter={e => { if (onClick) e.currentTarget.style.boxShadow='0 4px 16px rgba(10,37,64,0.08)' }}
       onMouseLeave={e => { if (onClick) e.currentTarget.style.boxShadow='none' }}>
       <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{label}</div>
-      <div style={{ fontSize:26, fontWeight:500, color, fontFamily:'var(--font-serif)', lineHeight:1, marginBottom:4 }}>{valor}</div>
+      <div style={{ fontSize:26, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1, marginBottom:4 }}>{valor}</div>
       <div style={{ fontSize:11, color:COLORS.slate500 }}>{sub}</div>
     </div>
   )
@@ -1195,7 +1195,7 @@ function KpiConMeta({ label, valor, meta, sufijo, color }) {
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:16 }}>
       <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{label}</div>
-      <div style={{ fontSize:26, fontWeight:500, color, fontFamily:'var(--font-serif)', lineHeight:1, marginBottom:8 }}>{valor}{sufijo} <span style={{ fontSize:14, color:COLORS.slate400 }}>/ {meta}</span></div>
+      <div style={{ fontSize:26, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1, marginBottom:8 }}>{valor}{sufijo} <span style={{ fontSize:14, color:COLORS.slate400 }}>/ {meta}</span></div>
       <div style={{ height:6, background:COLORS.slate50, borderRadius:3, overflow:'hidden' }}>
         <div style={{ width:`${pct}%`, height:'100%', background:color, borderRadius:3, transition:'width 0.3s' }}/>
       </div>
@@ -1349,7 +1349,7 @@ function DonutCotizaciones({ cotizaciones }) {
           : paths
         }
         <circle cx={CX} cy={CY} r={42} fill="white"/>
-        <text x={CX} y={CY-4} textAnchor="middle" fontSize="22" fontWeight="500" fill={COLORS.navy} fontFamily="var(--font-serif)">{total}</text>
+        <text x={CX} y={CY-4} textAnchor="middle" fontSize="22" fontWeight="500" fill={COLORS.navy} fontFamily="var(--font-sans)">{total}</text>
         <text x={CX} y={CY+14} textAnchor="middle" fontSize="10" fill={COLORS.slate500}>total</text>
       </svg>
       <div style={{ flex:1, minWidth:140 }}>
@@ -1370,7 +1370,7 @@ function RedSocial({ titulo, color, metrics, data, onChange, isMobile }) {
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)', display:'flex', alignItems:'center', gap:8 }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ width:12, height:12, borderRadius:3, background:color }}/>
           {titulo}
         </h3>
@@ -1423,7 +1423,7 @@ function ListaEditable({ titulo, items, setItems, color }) {
 
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
-      <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-serif)', display:'flex', alignItems:'center', gap:8 }}>
+      <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
         <span style={{ width:3, height:14, background:color, borderRadius:2 }}/>
         {titulo}
       </h3>
@@ -1449,7 +1449,7 @@ function ListaEditable({ titulo, items, setItems, color }) {
 function NotaRecordatorio({ titulo, items }) {
   return (
     <div style={{ background:'linear-gradient(to right, #F0F9FF, white)', border:`1px solid #BFDBFE`, borderRadius:12, padding:18, marginTop:16 }}>
-      <h3 style={{ fontSize:13, fontWeight:700, color:'#1E3A8A', margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>{titulo}</h3>
+      <h3 style={{ fontSize:13, fontWeight:700, color:'#1E3A8A', margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>{titulo}</h3>
       {items.map((t, i) => (
         <div key={i} style={{ display:'flex', gap:8, padding:'4px 0', fontSize:12, color:'#1E40AF' }}>
           <span>•</span><span>{t}</span>
@@ -1519,7 +1519,7 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
 
       {cuellos.porEtapa.length > 0 && (
         <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`3px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:16 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>
             🚨 Cuellos de botella detectados
           </h3>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:12 }}>
@@ -1542,7 +1542,7 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
       )}
 
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-serif)' }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14, fontFamily:'var(--font-sans)' }}>
           Capacidad y KPIs por colaborador · esta semana
         </h3>
         {ordenada.length === 0 && (
@@ -1563,7 +1563,7 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
       </div>
 
       <div style={{ background:'linear-gradient(to right, #F0F9FF, white)', border:`1px solid #BFDBFE`, borderRadius:12, padding:18, marginTop:16 }}>
-        <h3 style={{ fontSize:13, fontWeight:700, color:'#1E3A8A', margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>Fórmulas (Luis)</h3>
+        <h3 style={{ fontSize:13, fontWeight:700, color:'#1E3A8A', margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>Fórmulas (Luis)</h3>
         {[
           'Capacidad = horas/semana configurables por colaborador (default 40h)',
           'Carga = Σ(días traslapados con esta semana × 8h) / capacidad',
@@ -1783,7 +1783,7 @@ function DonutGastos({ categorias, total, onEditar }) {
         }
         <circle cx={CX} cy={CY} r={50} fill="white"/>
         <text x={CX} y={CY-4} textAnchor="middle" fontSize="12" fill={COLORS.slate500}>TOTAL</text>
-        <text x={CX} y={CY+16} textAnchor="middle" fontSize="16" fontWeight="600" fill={COLORS.navy} fontFamily="var(--font-serif)">
+        <text x={CX} y={CY+16} textAnchor="middle" fontSize="16" fontWeight="600" fill={COLORS.navy} fontFamily="var(--font-sans)">
           {total >= 1000000 ? `$${(total/1000000).toFixed(2)}M` : total >= 1000 ? `$${(total/1000).toFixed(0)}k` : `$${total}`}
         </text>
       </svg>

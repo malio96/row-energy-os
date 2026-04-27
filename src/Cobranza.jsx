@@ -69,7 +69,7 @@ export default function Cobranza({ usuario }) {
     <div>
       {/* Header */}
       <div style={{ marginBottom:16 }}>
-        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Cobranza</h1>
+        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Cobranza</h1>
         <p style={{ color:COLORS.slate500, fontSize:12, marginTop:4 }}>
           {hitos.length} hitos · DSO: <strong style={{ color:COLORS.navy }}>{kpis.dso} días</strong>
         </p>
@@ -217,7 +217,7 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
           <input
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
             placeholder="Buscar hito, proyecto, cliente..."
-            style={{ width:'100%', padding:'9px 14px 9px 36px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, fontSize:12, outline:'none', boxSizing:'border-box' }}
+            style={{ width:'100%', padding:'9px 14px 9px 36px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, fontSize:12, outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}
           />
         </div>
       </div>
@@ -272,7 +272,7 @@ function HitoRow({ hito, onCambiar, isMobile }) {
         <select
           value={hito.estado}
           onChange={e => onCambiar(hito.id, e.target.value)}
-          style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor:'pointer' }}
+          style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor:'pointer', fontFamily:'inherit' }}
         >
           {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
@@ -420,7 +420,7 @@ function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, isMobi
       </button>
 
       <div style={{ background:'linear-gradient(to right, #F8FAFC, white)', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
-        <h2 style={{ fontSize:20, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-serif)' }}>{cliente.nombre}</h2>
+        <h2 style={{ fontSize:20, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-sans)' }}>{cliente.nombre}</h2>
         <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginTop:14 }}>
           <Mini label="Hitos"      valor={cliente.hitos.length} color={COLORS.slate600}/>
           <Mini label="Por cobrar" valor={fmtMoney(cliente.porCobrar, true)} color={COLORS.navy}/>
@@ -486,7 +486,7 @@ function VistaMetaReal({ enriquecidos, isMobile }) {
       {/* Barra grande mes actual */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>
             Avance de {MESES_ES[mesActual]} {anio}
           </h3>
           <span style={{ fontSize:12, fontWeight:700, color:mesColor }}>{mesPct}%</span>
@@ -508,7 +508,7 @@ function VistaMetaReal({ enriquecidos, isMobile }) {
       {/* Gráfico mensual estilo PDF */}
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-serif)' }}>Avance de cobranza {anio}</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, fontFamily:'var(--font-sans)' }}>Avance de cobranza {anio}</h3>
           <div style={{ display:'flex', gap:14, fontSize:11 }}>
             <Leyenda color="#3B82F6" label="META"/>
             <Leyenda color="#6B7280" label="REAL"/>
@@ -600,7 +600,7 @@ function VistaSemana({ enriquecidos, isMobile }) {
         <ListaEditable titulo="Objetivos de cobranza de la semana" items={objetivos} setItems={setObjetivos} color={COLORS.teal}/>
 
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-serif)', display:'flex', alignItems:'center', gap:8 }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
             <span style={{ width:3, height:14, background:COLORS.amber, borderRadius:2 }}/>
             Vencen esta semana ({prox7dias.length})
           </h3>
@@ -630,7 +630,7 @@ function VistaSemana({ enriquecidos, isMobile }) {
 
       {vencidosTop.length > 0 && (
         <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`3px solid ${COLORS.red}`, borderRadius:12, padding:18 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-serif)' }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>
             🚨 Top vencidos · requieren atención inmediata
           </h3>
           {vencidosTop.map(h => (
@@ -703,7 +703,7 @@ function ListaEditable({ titulo, items, setItems, color }) {
 
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
-      <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-serif)', display:'flex', alignItems:'center', gap:8 }}>
+      <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:12, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
         <span style={{ width:3, height:14, background:color, borderRadius:2 }}/>
         {titulo}
       </h3>

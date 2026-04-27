@@ -32,7 +32,7 @@ export default function Cierre({ usuario }) {
   return (
     <div>
       <div style={{ marginBottom:16 }}>
-        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Cierre Administrativo</h1>
+        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Cierre Administrativo</h1>
         <p style={{ color:COLORS.slate500, fontSize:12, marginTop:4 }}>Proyectos terminados o en proceso de cierre</p>
       </div>
 
@@ -94,7 +94,7 @@ function CierreDetalle({ proyectoId, onVolver, usuario }) {
 
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:20, marginBottom:14 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:10 }}>
-          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Checklist de cierre</h2>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Checklist de cierre</h2>
           <div style={{ fontSize:14, fontWeight:600, color: pct === 100 ? COLORS.teal : COLORS.navy, fontFamily:'var(--font-mono)' }}>{hechos}/{items.length} ({pct}%)</div>
         </div>
         <div style={{ height:8, background:COLORS.slate100, borderRadius:4, overflow:'hidden' }}>

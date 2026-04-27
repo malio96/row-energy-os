@@ -113,7 +113,7 @@ export default function CommandPalette({ open, onClose, onNavigate }) {
         {/* Input */}
         <div style={{ display:'flex', alignItems:'center', padding:'14px 18px', borderBottom:`1px solid ${COLORS.slate100}`, gap:10 }}>
           <div style={{ color:COLORS.slate400 }}>{Icon('Search')}</div>
-          <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelIdx(0) }} placeholder="Buscar proyectos, leads, cotizaciones, módulos..." style={{ flex:1, border:'none', outline:'none', fontSize:15, color:COLORS.ink, background:'transparent' }}/>
+          <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelIdx(0) }} placeholder="Buscar proyectos, leads, cotizaciones, módulos..." style={{ flex:1, border:'none', outline:'none', fontSize:15, color:COLORS.ink, background:'transparent', fontFamily:'inherit' }}/>
           <kbd style={{ fontSize:10, background:COLORS.slate50, color:COLORS.slate500, padding:'3px 6px', borderRadius:4, fontFamily:'var(--font-mono)' }}>ESC</kbd>
         </div>
 

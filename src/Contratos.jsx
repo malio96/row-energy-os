@@ -43,7 +43,7 @@ export default function Contratos({ usuario }) {
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <div>
-          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-serif)' }}>Contratos</h1>
+          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Contratos</h1>
           <p style={{ color:COLORS.slate500, fontSize:12, marginTop:4 }}>{contratos.length} contratos · {fmtMoney(kpis.total)}</p>
         </div>
         {puedeEditar && <button onClick={() => setModal(true)} style={btnPrimary}>{Icon('Plus')} {isMobile ? 'Nuevo' : 'Nuevo contrato'}</button>}
@@ -126,7 +126,7 @@ function KpiCard({ label, valor, color }) {
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:14 }}>
       <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>{label}</div>
-      <div style={{ fontSize:20, fontWeight:500, color, fontFamily:'var(--font-serif)', lineHeight:1 }}>{valor}</div>
+      <div style={{ fontSize:20, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1 }}>{valor}</div>
     </div>
   )
 }
@@ -149,7 +149,7 @@ function ModalNuevoContrato({ onClose, onCreado }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
       <div style={{ position:'fixed', top: isMobile ? 0 : '10%', left:'50%', transform:'translateX(-50%)', width: isMobile ? '100%' : 520, maxHeight: isMobile ? '100vh' : '85vh', background:'white', borderRadius: isMobile ? 0 : 16, zIndex:1000, overflow:'auto' }}>
         <div style={{ padding:'18px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>Nuevo contrato</h2>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Nuevo contrato</h2>
           <button onClick={onClose} style={{ border:'none', background:COLORS.slate50, width:32, height:32, borderRadius:8, cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:20 }}>

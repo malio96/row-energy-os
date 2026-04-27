@@ -3,6 +3,8 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { COLORS, useIsMobile, loadPref, savePref } from './helpers'
 import { puede } from './permisos'
 import CampanaAlertas from './CampanaAlertas'  // v12.5.9c
+import pkg from '../package.json'  // v15.4: versión dinámica desde package.json
+const APP_VERSION = pkg.version
 
 // ============================================================
 // v13 — Sidebar retráctil estilo Klar
@@ -99,9 +101,9 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
           display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px',
         }}>
           <button onClick={() => setMobileOpen(true)} style={{ width:40, height:40, border:'none', background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.navy} strokeWidth="2" strokeLinecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.navy} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
-          <div style={{ fontFamily:'var(--font-serif)', fontSize:16, fontWeight:500, color:COLORS.navy, letterSpacing:'-0.02em' }}>Row Energy</div>
+          <div style={{ fontFamily:'var(--font-sans)', fontSize:16, fontWeight:500, color:COLORS.navy, letterSpacing:'-0.02em' }}>Row Energy</div>
           {/* v12.5.9c: campana en mobile header */}
           <CampanaAlertas usuario={usuario} onNavigate={onNavigate} collapsed={false}/>
         </div>
@@ -116,11 +118,11 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
             }}>
               <div style={{ padding:'20px 20px 12px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <div>
-                  <div style={{ fontFamily:'var(--font-serif)', fontSize:18, color:COLORS.navy, fontWeight:500 }}>Row Energy</div>
-                  <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2, letterSpacing:'0.04em' }}>OS · v13</div>
+                  <div style={{ fontFamily:'var(--font-sans)', fontSize:18, color:COLORS.navy, fontWeight:500 }}>Row Energy</div>
+                  <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2, letterSpacing:'0.04em' }}>OS · v{APP_VERSION}</div>
                 </div>
                 <button onClick={() => setMobileOpen(false)} style={{ width:32, height:32, border:'none', background:COLORS.slate50, borderRadius:8, cursor:'pointer' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.slate600} strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.slate600} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
               <div style={{ flex:1, padding:'12px 8px', overflow:'auto' }}>
@@ -217,14 +219,14 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
         {!collapsed && (
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{
-              fontFamily: 'var(--font-serif)', fontSize: 18, color: COLORS.navy,
+              fontFamily: 'var(--font-sans)', fontSize: 18, color: COLORS.navy,
               fontWeight: 500, letterSpacing: '-0.02em',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
               Row Energy
             </div>
             <div style={{ fontSize: 10, color: COLORS.slate400, marginTop: 2, letterSpacing: '0.06em', fontWeight: 600 }}>
-              OS · v13
+              OS · v{APP_VERSION}
             </div>
           </div>
         )}
@@ -249,7 +251,7 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
             onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
             onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
               <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>

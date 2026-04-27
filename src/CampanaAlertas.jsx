@@ -141,7 +141,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
         onMouseEnter={e => { if (!open) { e.currentTarget.style.background = COLORS.slate50 } }}
         onMouseLeave={e => { if (!open) { e.currentTarget.style.background = 'white' } }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
           <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
         </svg>
@@ -193,7 +193,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink, fontFamily: 'var(--font-serif)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink, fontFamily: 'var(--font-sans)' }}>
                 Alertas
               </div>
               <div style={{ fontSize: 10, color: COLORS.slate500, marginTop: 2 }}>
@@ -213,7 +213,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
               onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.slate600 }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = COLORS.slate400 }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6 6 18M6 6l12 12"/>
               </svg>
             </button>
@@ -236,7 +236,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: COLORS.teal,
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M20 6 9 17l-5-5"/>
                 </svg>
               </div>
@@ -301,7 +301,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
                         </div>
                       )}
                     </div>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.slate400} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.slate400} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 4 }}>
                       <polyline points="9 18 15 12 9 6"/>
                     </svg>
                   </button>
@@ -349,7 +349,7 @@ export default function CampanaAlertas({ usuario, onNavigate, collapsed = false 
                     +{count - PREVIEW_COUNT}
                   </span>
                 )}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
               </button>

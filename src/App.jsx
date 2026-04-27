@@ -80,7 +80,7 @@ function Login({ onLogin }) {
       <div style={{ background:'white', padding:'40px 44px', borderRadius:16, boxShadow:'0 20px 60px rgba(10,37,64,0.08)', width:400 }}>
         <div style={{ textAlign:'center', marginBottom:32 }}>
           <img src="/logo-negro.png" alt="Row Energy" style={{ height:40, marginBottom:16 }} onError={(e)=>{e.target.style.display='none'}}/>
-          <h1 style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)', margin:0, letterSpacing:'-0.01em' }}>Row Energy OS</h1>
+          <h1 style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)', margin:0, letterSpacing:'-0.01em' }}>Row Energy OS</h1>
           <p style={{ fontSize:12, color:COLORS.slate500, marginTop:6 }}>Plataforma interna</p>
         </div>
         <form onSubmit={login}>

@@ -238,36 +238,38 @@ function calcularRutaCritica(actividades) {
   return cpm
 }
 
+// v15.4: Iconos locales estandarizados — stroke 1.8 + caps round (matching Sidebar)
+// Excepciones: Check (3.5 por tamaño chico), Diamond (filled, sin stroke)
 const Icon = {
-  Back:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6"/></svg>,
-  Plus:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>,
-  X:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>,
-  Check:()=><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><path d="M20 6 9 17l-5-5"/></svg>,
-  Search:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
+  Back:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>,
+  Plus:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>,
+  X:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>,
+  Check:()=><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>,
+  Search:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
   Diamond:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 22 12 12 22 2 12z"/></svg>,
-  Link:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
-  Trash:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>,
-  Scale:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>,
-  Info:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>,
-  Pencil:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>,
-  ChevronDown:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>,
-  ChevronRight:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>,
-  Calendar:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
-  User:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-  Lock:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
-  Warning:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
-  Folder:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
-  FileText:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
-  Upload:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
-  Send:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
-  Kanban:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="6" height="14" rx="1"/><rect x="10" y="3" width="6" height="10" rx="1"/><rect x="17" y="3" width="4" height="7" rx="1"/></svg>,
-  Users:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-  Dollar:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+  Link:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
+  Trash:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>,
+  Scale:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>,
+  Info:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>,
+  Pencil:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>,
+  ChevronDown:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>,
+  ChevronRight:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
+  Calendar:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+  User:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  Lock:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+  Warning:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+  Folder:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
+  FileText:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+  Upload:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+  Send:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
+  Kanban:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="6" height="14" rx="1"/><rect x="10" y="3" width="6" height="10" rx="1"/><rect x="17" y="3" width="4" height="7" rx="1"/></svg>,
+  Users:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+  Dollar:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
   // v8 — iconos menú contextual
-  Copy:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
-  Flag:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>,
-  Duplicate:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>,
-  Eye:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+  Copy:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
+  Flag:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>,
+  Duplicate:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>,
+  Eye:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
 }
 
 function Badge({ texto, mapa, tamano=11 }) {
@@ -594,7 +596,7 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
               Actividad {numeracion[actividad.id] || ''} {guardando && <span style={{ color:COLORS.teal, marginLeft:8 }}>Guardando...</span>}
             </div>
             <div>
-              <EditableText value={loc.nombre} onSave={v => guardar({ nombre: v })} style={{ fontSize:16, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-serif)' }}/>
+              <EditableText value={loc.nombre} onSave={v => guardar({ nombre: v })} style={{ fontSize:16, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)' }}/>
             </div>
           </div>
           <button onClick={onClose} style={{ border:'none', background:COLORS.slate50, width:32, height:32, borderRadius:8, cursor:'pointer', flexShrink:0 }}><Icon.X/></button>
@@ -829,7 +831,7 @@ function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
             <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:2 }}>
               {proyecto.codigo} {guardando && <span style={{ color:COLORS.teal, marginLeft:8 }}>Guardando...</span>}
             </div>
-            <EditableText value={loc.nombre} onSave={v => guardar({ nombre: v })} style={{ fontSize:16, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-serif)' }}/>
+            <EditableText value={loc.nombre} onSave={v => guardar({ nombre: v })} style={{ fontSize:16, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)' }}/>
           </div>
           <button onClick={onClose} style={{ border:'none', background:COLORS.slate50, width:32, height:32, borderRadius:8, cursor:'pointer' }}><Icon.X/></button>
         </div>
@@ -1367,7 +1369,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
           <div style={{ height:ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', alignItems:'center', padding:'0 12px', gap:6 }}>
             <span style={{ width:12 }}/>
             <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, minWidth:32 }}>+</span>
-            <input value={nuevaNombre} onChange={e => setNuevaNombre(e.target.value)} onKeyDown={e => e.key === 'Enter' && agregarActividadInline()} placeholder="Agregar actividad..." style={{ flex:1, border:'none', outline:'none', background:'transparent', fontSize:12, color:COLORS.ink, padding:'4px 0' }}/>
+            <input value={nuevaNombre} onChange={e => setNuevaNombre(e.target.value)} onKeyDown={e => e.key === 'Enter' && agregarActividadInline()} placeholder="Agregar actividad..." style={{ flex:1, border:'none', outline:'none', background:'transparent', fontSize:12, color:COLORS.ink, padding:'4px 0', fontFamily:'inherit' }}/>
             {nuevaNombre.trim() && (
               <button onClick={agregarActividadInline} disabled={creando} style={{ padding:'4px 10px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>{creando ? '...' : 'Agregar'}</button>
             )}
@@ -1864,7 +1866,7 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14, marginBottom:18 }}>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Avance global</div>
-          <div style={{ fontSize:32, fontWeight:400, color:COLORS.navy, fontFamily:'var(--font-serif)', marginBottom:6 }}>{avance}%</div>
+          <div style={{ fontSize:32, fontWeight:400, color:COLORS.navy, fontFamily:'var(--font-sans)', marginBottom:6 }}>{avance}%</div>
           <BarraAvance avance={avance}/>
         </div>
         <div style={cardStyle}>
@@ -1874,12 +1876,12 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Fecha de cierre</div>
-          <div style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>{fmtDate(proyecto.cierre)}</div>
+          <div style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{fmtDate(proyecto.cierre)}</div>
           <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>Inicio: {fmtDate(proyecto.inicio)}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Alertas</div>
-          <div style={{ fontSize:32, fontWeight:400, color: (bloqueadas+retrasadas)>0 ? COLORS.red : COLORS.teal, fontFamily:'var(--font-serif)', marginBottom:4 }}>{bloqueadas + retrasadas}</div>
+          <div style={{ fontSize:32, fontWeight:400, color: (bloqueadas+retrasadas)>0 ? COLORS.red : COLORS.teal, fontFamily:'var(--font-sans)', marginBottom:4 }}>{bloqueadas + retrasadas}</div>
           <div style={{ fontSize:11, color:COLORS.slate400 }}>{bloqueadas} bloq · {retrasadas} retr</div>
         </div>
       </div>
@@ -1987,8 +1989,8 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
               style={{ background:'linear-gradient(to right, #F8FAFC, white)', padding:'12px 16px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, marginBottom:2, display:'flex', alignItems:'center', gap:10 }}>
               <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:700, minWidth:24 }}>{numeracion[padre.id]}</span>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>
-                  <EditableText value={padre.nombre} onSave={v => onInlineUpdate(padre.id, { nombre: v })} style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-serif)' }}/>
+                <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>
+                  <EditableText value={padre.nombre} onSave={v => onInlineUpdate(padre.id, { nombre: v })} style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)' }}/>
                 </div>
                 <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
                   {fmtDate(padre.inicio)} → {fmtDate(padre.fin)} · {hijos.length} sub-actividades
@@ -2051,7 +2053,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                     </div>
                   )}
                   <BarraAvance avance={h.avance}/>
-                  <select value={h.estado} onChange={e => onInlineUpdate(h.id, { estado: e.target.value })} style={{ padding:'4px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[h.estado]?.bg, color: ESTADOS[h.estado]?.color, fontWeight:500, cursor:'pointer' }}>
+                  <select value={h.estado} onChange={e => onInlineUpdate(h.id, { estado: e.target.value })} style={{ padding:'4px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[h.estado]?.bg, color: ESTADOS[h.estado]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
                     {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
                   </select>
                   <button onClick={() => onAbrirInfo(h)} title="Información" style={{ padding:'5px 9px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Info/></button>
@@ -2267,23 +2269,23 @@ function TabPorPersona({ actividades, usuarios, numeracion, onAbrirInfo }) {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginBottom:14 }}>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:4 }}>Total</div>
-          <div style={{ fontSize:26, fontWeight:400, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>{misActs.length}</div>
+          <div style={{ fontSize:26, fontWeight:400, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{misActs.length}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:4 }}>Completadas</div>
-          <div style={{ fontSize:26, fontWeight:400, color:COLORS.teal, fontFamily:'var(--font-serif)' }}>{comp}</div>
+          <div style={{ fontSize:26, fontWeight:400, color:COLORS.teal, fontFamily:'var(--font-sans)' }}>{comp}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:4 }}>En progreso</div>
-          <div style={{ fontSize:26, fontWeight:400, color:COLORS.blue, fontFamily:'var(--font-serif)' }}>{inProg}</div>
+          <div style={{ fontSize:26, fontWeight:400, color:COLORS.blue, fontFamily:'var(--font-sans)' }}>{inProg}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:4 }}>Bloqueadas</div>
-          <div style={{ fontSize:26, fontWeight:400, color: bloq>0 ? COLORS.amber : COLORS.slate400, fontFamily:'var(--font-serif)' }}>{bloq}</div>
+          <div style={{ fontSize:26, fontWeight:400, color: bloq>0 ? COLORS.amber : COLORS.slate400, fontFamily:'var(--font-sans)' }}>{bloq}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:4 }}>Retrasadas</div>
-          <div style={{ fontSize:26, fontWeight:400, color: retr>0 ? COLORS.red : COLORS.slate400, fontFamily:'var(--font-serif)' }}>{retr}</div>
+          <div style={{ fontSize:26, fontWeight:400, color: retr>0 ? COLORS.red : COLORS.slate400, fontFamily:'var(--font-sans)' }}>{retr}</div>
         </div>
       </div>
       <div style={{ ...cardStyle, padding:0, overflow:'hidden' }}>
@@ -2454,20 +2456,20 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero }) {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14, marginBottom:18 }}>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Monto total</div>
-          <div style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>{fmtMoney(total)}</div>
+          <div style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{fmtMoney(total)}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Cobrado</div>
-          <div style={{ fontSize:22, fontWeight:500, color:COLORS.teal, fontFamily:'var(--font-serif)' }}>{fmtMoney(cobrado)}</div>
+          <div style={{ fontSize:22, fontWeight:500, color:COLORS.teal, fontFamily:'var(--font-sans)' }}>{fmtMoney(cobrado)}</div>
           <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>{total > 0 ? Math.round(cobrado/total*100) : 0}%</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Por cobrar</div>
-          <div style={{ fontSize:22, fontWeight:500, color:COLORS.amber, fontFamily:'var(--font-serif)' }}>{fmtMoney(pendiente)}</div>
+          <div style={{ fontSize:22, fontWeight:500, color:COLORS.amber, fontFamily:'var(--font-sans)' }}>{fmtMoney(pendiente)}</div>
         </div>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Hitos</div>
-          <div style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)' }}>{hitos.length}</div>
+          <div style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{hitos.length}</div>
           <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>{hitos.filter(h => h.estado === 'Pagado').length} cobrados</div>
         </div>
       </div>
@@ -2545,7 +2547,7 @@ function ConfirmDepDeleteModal({ data, onCancel, onConfirm }) {
             <div style={{ flex:1, minWidth:0 }}>
               <h3 style={{
                 margin:0, fontSize:16, fontWeight:600,
-                color:COLORS.navy, fontFamily:'var(--font-serif)',
+                color:COLORS.navy, fontFamily:'var(--font-sans)',
                 letterSpacing:'-0.01em',
               }}>
                 Quitar dependencia
@@ -2779,7 +2781,7 @@ function ModalNuevoProyecto({ onClose, onCreado }) {
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:999 }}/>
       <div style={{ position:'fixed', top: isMobile ? 0 : '5%', left:'50%', transform:'translateX(-50%)', width: isMobile ? '100%' : 'min(880px, 95vw)', maxHeight: isMobile ? '100vh' : '90vh', background:'white', borderRadius: isMobile ? 0 : 16, zIndex:1000, display:'flex', flexDirection:'column' }}>
         <div style={{ padding:'18px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
-          <h2 style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)', margin:0 }}>Nuevo proyecto</h2>
+          <h2 style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)', margin:0 }}>Nuevo proyecto</h2>
           <button onClick={onClose} style={{ width:32, height:32, border:'none', background:COLORS.slate50, borderRadius:8, cursor:'pointer' }}><Icon.X/></button>
         </div>
         <div style={{ flex:1, overflow:'auto', padding:20, display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:20 }}>
@@ -2893,7 +2895,7 @@ function ModalDesglose({ actividad, onClose, onDesglosado }) {
       <div style={{ position:'fixed', top: isMobile ? 0 : '5%', left:'50%', transform:'translateX(-50%)', width: isMobile ? '100%' : 'min(880px, 95vw)', maxHeight: isMobile ? '100vh' : '90vh', background:'white', borderRadius: isMobile ? 0 : 16, zIndex:1000, display:'flex', flexDirection:'column' }}>
         <div style={{ padding:'18px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
           <div>
-            <h2 style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)', margin:0 }}>Desglosar con plantilla</h2>
+            <h2 style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)', margin:0 }}>Desglosar con plantilla</h2>
             <p style={{ fontSize:11, color:COLORS.slate500, margin:'3px 0 0' }}>Para: <strong>{actividad.nombre}</strong></p>
           </div>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}><Icon.X/></button>
@@ -3135,12 +3137,12 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
             <Badge texto={proyecto.estado} mapa={ESTADOS_PROY}/>
             {bloqueadas > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:500, padding:'3px 10px', borderRadius:20, background:'#FEF3C7', color:'#D97706' }}><Icon.Lock/> {bloqueadas} bloqueadas</span>}
           </div>
-          <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-serif)' }}>
+          <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-sans)' }}>
             <EditableText value={proyecto.nombre} onSave={async v => {
               setProyecto(prev => ({ ...prev, nombre: v }))
               try { await supabase.from('proyectos').update({ nombre: v }).eq('id', proyectoId) }
               catch (e) { alert('Error: ' + e.message); cargar() }
-            }} style={{ fontSize: isMobile ? 20 : 26, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-serif)' }}/>
+            }} style={{ fontSize: isMobile ? 20 : 26, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)' }}/>
           </h1>
           <p style={{ fontSize:12, color:COLORS.slate500, margin:'3px 0 0' }}>{proyecto.cliente?.razon_social || 'Sin cliente'} · {proyecto.director?.nombre || 'Sin director'}</p>
         </div>
@@ -3258,7 +3260,7 @@ export default function Proyectos({ usuario }) {
       {modalNuevo && <ModalNuevoProyecto onClose={() => setModalNuevo(false)} onCreado={(p) => { setModalNuevo(false); cargar(); setProyectoSel(p.id) }}/>}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
-          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, fontFamily:'var(--font-serif)' }}>Proyectos</h1>
+          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, fontFamily:'var(--font-sans)' }}>Proyectos</h1>
           <p style={{ color:COLORS.slate500, fontSize:12, marginTop:4 }}>{filtrados.length} de {proyectos.length}</p>
         </div>
         <button onClick={() => setModalNuevo(true)} style={{ padding:'10px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6, minHeight:44 }}>
@@ -3273,7 +3275,7 @@ export default function Proyectos({ usuario }) {
         </div>
         <div style={{ flex:1, minWidth:200, position:'relative' }}>
           <div style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:COLORS.slate400 }}><Icon.Search/></div>
-          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar..." style={{ width:'100%', padding:'9px 14px 9px 36px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, fontSize:12, outline:'none', minHeight:40, boxSizing:'border-box' }}/>
+          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar..." style={{ width:'100%', padding:'9px 14px 9px 36px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, fontSize:12, outline:'none', minHeight:40, boxSizing:'border-box', fontFamily:'inherit' }}/>
         </div>
       </div>
       {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}

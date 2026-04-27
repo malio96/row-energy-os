@@ -96,7 +96,7 @@ export default function CentroAlertas({ usuario }) {
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font-sans)',
           fontSize: isMobile ? 24 : 30,
           color: COLORS.navy,
           fontWeight: 500,
@@ -192,7 +192,7 @@ export default function CentroAlertas({ usuario }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: COLORS.teal,
           }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6 9 17l-5-5"/>
             </svg>
           </div>
@@ -418,7 +418,7 @@ function ItemAlerta({ item, onClick, isLast, isMobile }) {
             {labelSeveridad(item.severidad)}
           </span>
         )}
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.slate400} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.slate400} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
       </div>
