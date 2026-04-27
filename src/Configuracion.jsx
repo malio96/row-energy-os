@@ -12,7 +12,8 @@ import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
   puedeGestionarUsuarios, labelRol, descripcionRol,
 } from './permisos'
-import { ETIQUETAS_ALERTAS, ICONOS_ALERTAS } from './alertas'
+import { ETIQUETAS_ALERTAS } from './alertas'
+import IconAlerta from './IconAlerta'  // v15.8.6
 
 // ============================================================
 // v12.5.6: Configuración con gestión de usuarios (solo direccion)
@@ -544,7 +545,9 @@ function TabMisAlertas({ usuario, modal }) {
                   padding:'14px 18px',
                   borderTop: i === 0 ? 'none' : `1px solid ${COLORS.slate100}`,
                 }}>
-                  <span style={{ fontSize:20, width:28, textAlign:'center', flexShrink:0 }}>{ICONOS_ALERTAS[k] || '•'}</span>
+                  <span style={{ display:'flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:8, background:COLORS.slate50, color:COLORS.navy, flexShrink:0 }}>
+                    <IconAlerta categoria={k} size={16}/>
+                  </span>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{meta?.label || k}</div>
                     <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2 }}>{meta?.descripcion || ''}</div>

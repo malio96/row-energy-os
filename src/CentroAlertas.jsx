@@ -10,6 +10,7 @@ import {
   colorAlerta, bgAlerta, labelSeveridad,
 } from './alertas'
 import { COLORS, useIsMobile } from './helpers'
+import IconAlerta from './IconAlerta'  // v15.8.6
 
 // ============================================================
 // CentroAlertas v12.5.9c
@@ -293,7 +294,9 @@ function GrupoAlertas({ grupo, onItemClick, isMobile }) {
         gap: 12,
         background: COLORS.slate50,
       }}>
-        <span style={{ fontSize: 18 }}>{grupo.icono}</span>
+        <span style={{ display:'flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:8, background:'white', border:`1px solid ${COLORS.slate100}`, color: COLORS.navy }}>
+          <IconAlerta categoria={grupo.categoria} size={16}/>
+        </span>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink }}>
             {grupo.label}
