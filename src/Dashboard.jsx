@@ -396,8 +396,9 @@ function CuellosBotellaWidget({ cuellos, isMobile }) {
   return (
     <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`4px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:20 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, flexWrap:'wrap', gap:8 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-sans)' }}>
-          🚨 Cuellos de botella detectados
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+          Cuellos de botella detectados
         </h3>
         <span style={{ fontSize:11, color:COLORS.slate500 }}>
           {retrasadas.length} actividad(es) retrasadas · {porEtapa.length} etapa(s) recurrente(s)
@@ -1519,8 +1520,9 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
 
       {cuellos.porEtapa.length > 0 && (
         <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`3px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:16 }}>
-          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>
-            🚨 Cuellos de botella detectados
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, marginBottom:12, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+            Cuellos de botella detectados
           </h3>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:12 }}>
             {cuellos.retrasadas.length} actividad(es) retrasadas · agrupadas por etapa más recurrente:
