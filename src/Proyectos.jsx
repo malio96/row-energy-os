@@ -18,6 +18,8 @@ import {
   ETAPAS_SIM, ESTADOS_SIM, getProyectoSimEtapas, upsertEtapaSim,
   // v15.8: plantas eléctricas
   getPlantas,
+  // v15.8.3: CRUD hitos + eliminar proyecto
+  actualizarHito, crearHito, eliminarHito, eliminarProyecto,
 } from './supabase'
 
 // v14.1: helpers para persistir preferencias simples en localStorage
@@ -801,11 +803,21 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
   )
 }
 
-function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
+function PanelProyecto({ proyecto, clientes, usuarios, usuarioActual, onClose, onCambio, onEliminado }) {
   const [loc, setLoc] = useState(proyecto)
   const [guardando, setGuardando] = useState(false)
   const [plantas, setPlantas] = useState([])  // v15.8.0
   const isMobile = useIsMobile()
+  const puedeBorrar = usuarioActual?.rol === 'direccion'  // v15.8.3
+
+  const handleEliminar = async () => {
+    if (!confirm(`¿Eliminar el proyecto "${proyecto.nombre}"? Se borrarán todas sus actividades, hitos, notas y vinculaciones. Esta acción no se puede deshacer.`)) return
+    setGuardando(true)
+    try {
+      await eliminarProyecto(proyecto.id)
+      onEliminado?.()
+    } catch (e) { alert('Error eliminando: ' + e.message); setGuardando(false) }
+  }
 
   useEffect(() => { setLoc(proyecto) }, [proyecto])
   useEffect(() => {
@@ -945,6 +957,24 @@ function PanelProyecto({ proyecto, clientes, usuarios, onClose, onCambio }) {
               style={{ ...inputStyle, minHeight:80, resize:'vertical' }}
             />
           </div>
+
+          {/* v15.8.3: zona destructiva — solo dirección */}
+          {puedeBorrar && (
+            <div style={{ marginTop:24, paddingTop:16, borderTop:`1px solid ${COLORS.slate100}` }}>
+              <div style={{ fontSize:10, fontWeight:700, color:COLORS.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Zona peligrosa</div>
+              <button onClick={handleEliminar} disabled={guardando} style={{
+                width:'100%', padding:'10px 14px', background:'transparent',
+                border:`1px solid ${COLORS.red}`, color:COLORS.red,
+                borderRadius:8, fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+              }}>
+                <Icon.Trash/> Eliminar este proyecto
+              </button>
+              <div style={{ fontSize:10, color:COLORS.slate500, marginTop:6, textAlign:'center', fontStyle:'italic' }}>
+                Borra actividades, hitos, notas y vinculaciones asociadas.
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -2467,7 +2497,11 @@ function TabNotas({ proyectoId, usuarios }) {
   )
 }
 
-function TabFinanciero({ proyecto, hitos, puedeVerFinanciero }) {
+// v15.8.3: Tab Financiero interactivo — hitos editables, agregar/eliminar
+function TabFinanciero({ proyecto, hitos, puedeVerFinanciero, usuarioActual, onCambio }) {
+  const [hitoEditando, setHitoEditando] = useState(null)
+  const [creando, setCreando] = useState(false)
+
   if (!puedeVerFinanciero) {
     return (
       <div style={{ ...cardStyle, padding:40, textAlign:'center', color:COLORS.slate500 }}>
@@ -2478,12 +2512,25 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero }) {
     )
   }
 
-  const cobrado = hitos.filter(h => h.estado === 'Pagado').reduce((s,h) => s + (h.monto || 0), 0)
-  const pendiente = hitos.filter(h => h.estado !== 'Pagado' && h.estado !== 'Cancelado').reduce((s,h) => s + (h.monto || 0), 0)
+  // Soporta ambos esquemas históricos: 'Pagado'/'Cobrado' como estado completado
+  const esCompleto = (estado) => estado === 'Pagado' || estado === 'Cobrado'
+  const cobrado = hitos.filter(h => esCompleto(h.estado)).reduce((s,h) => s + Number(h.monto || 0), 0)
+  const pendiente = hitos.filter(h => !esCompleto(h.estado) && h.estado !== 'Cancelado').reduce((s,h) => s + Number(h.monto || 0), 0)
   const total = (proyecto.monto_total || proyecto.monto || 0) || (cobrado + pendiente)
+
+  const puedeEditar = ['direccion', 'admin', 'cobranza'].includes(usuarioActual?.rol)
 
   return (
     <div>
+      {hitoEditando && (
+        <ModalHito
+          hito={hitoEditando === 'NUEVO' ? null : hitoEditando}
+          proyectoId={proyecto.id}
+          onClose={() => setHitoEditando(null)}
+          onGuardado={() => { setHitoEditando(null); onCambio?.() }}
+        />
+      )}
+
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14, marginBottom:18 }}>
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Monto total</div>
@@ -2501,33 +2548,151 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero }) {
         <div style={cardStyle}>
           <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Hitos</div>
           <div style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{hitos.length}</div>
-          <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>{hitos.filter(h => h.estado === 'Pagado').length} cobrados</div>
+          <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>{hitos.filter(h => esCompleto(h.estado)).length} cobrados</div>
         </div>
       </div>
+
       <div style={{ ...cardStyle, padding:0, overflow:'hidden' }}>
-        <div style={{ padding:'14px 18px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50 }}>
-          <div style={labelStyle}>Hitos de cobro</div>
+        <div style={{ padding:'14px 18px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={labelStyle}>Hitos de cobro ({hitos.length})</div>
+          {puedeEditar && (
+            <button onClick={() => setHitoEditando('NUEVO')} style={{ padding:'6px 12px', background:COLORS.navy, color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+              <Icon.Plus/> Nuevo hito
+            </button>
+          )}
         </div>
         {hitos.length === 0 ? (
-          <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:12 }}>Sin hitos de cobro registrados para este proyecto.</div>
+          <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:12 }}>
+            Sin hitos de cobro registrados para este proyecto.
+            {puedeEditar && <div style={{ marginTop:8, fontSize:11 }}>Click en "Nuevo hito" arriba para agregar el primero.</div>}
+          </div>
         ) : hitos.map(h => {
           const cfg = ESTADOS_HITO[h.estado] || ESTADOS_HITO['Pendiente']
           return (
-            <div key={h.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 18px', borderBottom:`1px solid ${COLORS.slate100}` }}>
-              <div style={{ width:10, height:10, borderRadius:'50%', background:cfg.sem, flexShrink:0 }}/>
+            <div
+              key={h.id}
+              onClick={puedeEditar ? () => setHitoEditando(h) : undefined}
+              title={puedeEditar ? 'Click para editar' : ''}
+              style={{
+                display:'flex', alignItems:'center', gap:12,
+                padding:'12px 18px', borderBottom:`1px solid ${COLORS.slate100}`,
+                cursor: puedeEditar ? 'pointer' : 'default',
+                transition:'background 0.12s',
+              }}
+              onMouseEnter={e => { if (puedeEditar) e.currentTarget.style.background = COLORS.slate50 }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <div style={{ width:10, height:10, borderRadius:'50%', background: cfg?.sem || cfg?.color || COLORS.slate400, flexShrink:0 }}/>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{h.descripcion || h.concepto || 'Hito'}</div>
+                <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{h.descripcion || h.concepto || h.nombre || 'Hito'}</div>
                 <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
-                  Venc: {fmtDate(h.fecha_vencimiento)} {h.fecha_pago && `· Pago: ${fmtDate(h.fecha_pago)}`}
+                  Venc: {fmtDate(h.fecha_vencimiento || h.fecha_esperada)} {h.fecha_pago && `· Pago: ${fmtDate(h.fecha_pago)}`}
                 </div>
               </div>
-              <div style={{ fontSize:14, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(h.monto)}</div>
+              <div style={{ fontSize:14, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(Number(h.monto || 0))}</div>
               <Badge texto={h.estado} mapa={ESTADOS_HITO}/>
             </div>
           )
         })}
       </div>
     </div>
+  )
+}
+
+// v15.8.3: Modal CRUD para un hito de cobro
+function ModalHito({ hito, proyectoId, onClose, onGuardado }) {
+  const esEdicion = !!hito
+  const [form, setForm] = useState({
+    descripcion: hito?.descripcion || hito?.concepto || hito?.nombre || '',
+    monto: hito?.monto ?? '',
+    estado: hito?.estado || 'Pendiente',
+    fecha_vencimiento: hito?.fecha_vencimiento || hito?.fecha_esperada || '',
+    fecha_pago: hito?.fecha_pago || '',
+  })
+  const [guardando, setGuardando] = useState(false)
+
+  const guardar = async () => {
+    if (!form.descripcion.trim()) { alert('Descripción requerida'); return }
+    setGuardando(true)
+    try {
+      if (esEdicion) {
+        await actualizarHito(hito.id, {
+          descripcion: form.descripcion,
+          monto: Number(form.monto || 0),
+          estado: form.estado,
+          fecha_vencimiento: form.fecha_vencimiento || null,
+          fecha_pago: form.fecha_pago || null,
+        })
+      } else {
+        await crearHito({
+          proyecto_id: proyectoId,
+          descripcion: form.descripcion,
+          monto: Number(form.monto || 0),
+          estado: form.estado,
+          fecha_vencimiento: form.fecha_vencimiento || null,
+          fecha_pago: form.fecha_pago || null,
+        })
+      }
+      onGuardado()
+    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  const eliminar = async () => {
+    if (!confirm(`¿Eliminar el hito "${form.descripcion}"? Esta acción no se puede deshacer.`)) return
+    setGuardando(true)
+    try { await eliminarHito(hito.id); onGuardado() }
+    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(10,37,64,0.35)', zIndex:1100 }}/>
+      <div style={{ position:'fixed', top:'10%', left:'50%', transform:'translateX(-50%)', width:520, maxHeight:'85vh', overflow:'auto', background:'white', borderRadius:16, zIndex:1101 }}>
+        <div style={{ padding:'20px 24px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
+          <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{esEdicion ? 'Editar hito' : 'Nuevo hito de cobro'}</h2>
+          <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}><Icon.X/></button>
+        </div>
+        <div style={{ padding:20 }}>
+          <div style={{ marginBottom:12 }}>
+            <label style={miniLabel}>Descripción *</label>
+            <input value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} placeholder="Ej: 50% Anticipo" style={inputStyle}/>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div>
+              <label style={miniLabel}>Monto (MXN)</label>
+              <input type="number" value={form.monto} onChange={e=>setForm({...form, monto:e.target.value})} style={inputStyle}/>
+            </div>
+            <div>
+              <label style={miniLabel}>Estado</label>
+              <select value={form.estado} onChange={e=>setForm({...form, estado:e.target.value})} style={selectStyle}>
+                {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:6 }}>
+            <div>
+              <label style={miniLabel}>Fecha vencimiento</label>
+              <input type="date" value={form.fecha_vencimiento} onChange={e=>setForm({...form, fecha_vencimiento:e.target.value})} style={inputStyle}/>
+            </div>
+            <div>
+              <label style={miniLabel}>Fecha pago (si ya cobrado)</label>
+              <input type="date" value={form.fecha_pago} onChange={e=>setForm({...form, fecha_pago:e.target.value})} style={inputStyle}/>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding:'14px 24px', borderTop:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', gap:8 }}>
+          {esEdicion ? (
+            <button onClick={eliminar} disabled={guardando} style={{ padding:'9px 16px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:7, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+              <Icon.Trash/> Eliminar
+            </button>
+          ) : <span/>}
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={onClose} disabled={guardando} style={{ padding:'9px 16px', background:'transparent', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:12, cursor:'pointer' }}>Cancelar</button>
+            <button onClick={guardar} disabled={guardando} style={{ padding:'9px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:7, fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}>{guardando ? 'Guardando...' : (esEdicion ? 'Guardar' : 'Crear hito')}</button>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -3135,7 +3300,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     <div>
       {desglosarAct && <ModalDesglose actividad={desglosarAct} onClose={() => setDesglosarAct(null)} onDesglosado={() => { setDesglosarAct(null); cargar() }}/>}
       {panelAct && <PanelActividad actividad={panelAct} actividades={actividades} numeracion={numeracion} usuarios={usuarios} onClose={() => setPanelAct(null)} onCambio={cargar} onEliminar={handleEliminar}/>}
-      {panelProy && <PanelProyecto proyecto={proyecto} clientes={clientes} usuarios={usuarios} onClose={() => setPanelProy(false)} onCambio={cargar}/>}
+      {panelProy && <PanelProyecto proyecto={proyecto} clientes={clientes} usuarios={usuarios} usuarioActual={usuarioActual} onClose={() => setPanelProy(false)} onCambio={cargar} onEliminado={() => { setPanelProy(false); onVolver() }}/>}
       {menuCtx && (
         <MenuContextual
           x={menuCtx.x}
@@ -3213,7 +3378,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
       {tab === 'sim' && <TabSIM proyectoId={proyectoId} usuarios={usuarios} usuarioActual={usuarioActual}/>}
       {tab === 'documentos' && <TabDocumentos proyecto={proyecto}/>}
       {tab === 'notas' && <TabNotas proyectoId={proyectoId} usuarios={usuarios}/>}
-      {tab === 'financiero' && <TabFinanciero proyecto={proyecto} hitos={hitos} puedeVerFinanciero={puedeVerFinanciero}/>}
+      {tab === 'financiero' && <TabFinanciero proyecto={proyecto} hitos={hitos} puedeVerFinanciero={puedeVerFinanciero} usuarioActual={usuarioActual} onCambio={cargar}/>}
     </div>
   )
 }

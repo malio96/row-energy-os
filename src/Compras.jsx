@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getCompras, crearCompra, actualizarCompra, getProyectos, getUsuarios } from './supabase'
+import { getCompras, crearCompra, actualizarCompra, eliminarCompra, getProyectos, getUsuarios } from './supabase'
 import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
 export default function Compras({ usuario }) {
@@ -75,12 +75,23 @@ export default function Compras({ usuario }) {
                 <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(c.monto)}</div>
                 <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.proyecto?.codigo || '—'}</div>
                 <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_solicitud}</div>
-                <div>
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                   {puedeAprobar ? (
                     <select value={c.estado} onChange={e => cambiarEstado(c.id, e.target.value)} style={{ border:'none', background:ESTADOS_COMPRA[c.estado]?.bg, color:ESTADOS_COMPRA[c.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
                       {Object.keys(ESTADOS_COMPRA).map(e => <option key={e}>{e}</option>)}
                     </select>
                   ) : <Badge texto={c.estado} mapa={ESTADOS_COMPRA}/>}
+                  {usuario?.rol === 'direccion' && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`¿Eliminar compra ${c.codigo}? Esta acción no se puede deshacer.`)) return
+                        try { await eliminarCompra(c.id); cargar() }
+                        catch (e) { alert('Error: ' + e.message) }
+                      }}
+                      title="Eliminar compra"
+                      style={{ border:'none', background:'transparent', color:COLORS.red, cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}
+                    >{Icon('Trash')}</button>
+                  )}
                 </div>
               </div>
             )

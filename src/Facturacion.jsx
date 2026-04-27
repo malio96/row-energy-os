@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getFacturas, crearFactura, actualizarFactura, getHitos, getClientes } from './supabase'
+import { getFacturas, crearFactura, actualizarFactura, eliminarFactura, getHitos, getClientes } from './supabase'
 import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 
-export default function Facturacion() {
+export default function Facturacion({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
   // Deep-link desde Centro de Alertas: ?factura=X → scroll + highlight
   const deepLinkRef = useRef({ facturaId: searchParams.get('factura'), aplicado: false })
@@ -79,7 +79,20 @@ export default function Facturacion() {
               <div style={{ color:COLORS.slate600 }}>{f.cliente?.razon_social || '—'}</div>
               <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(f.total)}</div>
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>{f.fecha_emision}</div>
-              <div><select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select></div>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select>
+                {usuario?.rol === 'direccion' && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`¿Eliminar factura ${f.folio}? Esta acción no se puede deshacer.`)) return
+                      try { await eliminarFactura(f.id); cargar() }
+                      catch (e) { alert('Error: ' + e.message) }
+                    }}
+                    title="Eliminar factura"
+                    style={{ border:'none', background:'transparent', color:COLORS.red, cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}
+                  >{Icon('Trash')}</button>
+                )}
+              </div>
             </div>
           ))}
         </div>

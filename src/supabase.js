@@ -1767,3 +1767,59 @@ export async function eliminarPlanta(id) {
   const { error } = await supabase.from('plantas_electricas').delete().eq('id', id)
   if (error) throw error
 }
+
+// ============================================================
+// v15.8.3 — Helpers de eliminar / crear faltantes
+// (solo direccion según puedeEliminar; la UI controla visibilidad)
+// ============================================================
+
+export async function eliminarProyecto(id) {
+  if (!id) throw new Error('id requerido')
+  // Las actividades, hitos, notas se eliminan en cascada por la FK on delete cascade
+  const { error } = await supabase.from('proyectos').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function eliminarCotizacion(id) {
+  if (!id) throw new Error('id requerido')
+  // Los items se eliminan en cascada
+  const { error } = await supabase.from('cotizaciones').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function eliminarFactura(id) {
+  if (!id) throw new Error('id requerido')
+  const { error } = await supabase.from('facturas').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function eliminarCompra(id) {
+  if (!id) throw new Error('id requerido')
+  const { error } = await supabase.from('compras').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function eliminarHito(id) {
+  if (!id) throw new Error('id requerido')
+  const { error } = await supabase.from('hitos_cobranza').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function crearHito(payload) {
+  if (!payload?.proyecto_id || !payload?.descripcion) throw new Error('proyecto_id y descripción requeridos')
+  const limpio = {
+    proyecto_id: payload.proyecto_id,
+    descripcion: payload.descripcion,
+    monto: Number(payload.monto || 0),
+    estado: payload.estado || 'Pendiente',
+    fecha_vencimiento: payload.fecha_vencimiento || null,
+    fecha_pago: payload.fecha_pago || null,
+  }
+  const { data, error } = await supabase
+    .from('hitos_cobranza')
+    .insert(limpio)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}

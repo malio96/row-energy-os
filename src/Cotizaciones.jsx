@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, getClientes, getUsuarios, getPlantillas } from './supabase'
+import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas } from './supabase'
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 
@@ -259,6 +259,22 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
             <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Notas</div>
             <p style={{ fontSize:12, color:COLORS.slate600, margin:0, lineHeight:1.5 }}>{cot.notas}</p>
           </div>}
+
+          {/* v15.8.3: zona destructiva — solo dirección */}
+          {usuario?.rol === 'direccion' && (
+            <div style={{ marginTop:16, paddingTop:14, borderTop:`1px solid ${COLORS.slate100}` }}>
+              <button
+                onClick={async () => {
+                  if (!confirm(`¿Eliminar la cotización ${cot.codigo}? Se borrarán todos sus items. Esta acción no se puede deshacer.`)) return
+                  try { await eliminarCotizacion(cot.id); onVolver() }
+                  catch (e) { alert('Error: ' + e.message) }
+                }}
+                style={{ width:'100%', padding:'10px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}
+              >
+                {Icon('Trash')} Eliminar cotización
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
