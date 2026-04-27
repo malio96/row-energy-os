@@ -240,8 +240,12 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
           {cot.items.length > 0 && (
             <button
               onClick={async () => {
-                const m = await import('./exportCotizacion')
-                m.exportarCotizacionPDF(cot)
+                try {
+                  const m = await import('./exportCotizacion')
+                  await m.exportarCotizacionPDF(cot)
+                } catch (e) {
+                  alert('Error al generar PDF: ' + (e.message || e))
+                }
               }}
               style={{ width:'100%', padding:'12px', background:'white', color:COLORS.navy, border:`1px solid ${COLORS.navy}`, borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
             >
