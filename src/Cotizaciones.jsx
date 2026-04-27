@@ -347,8 +347,19 @@ function ModalEditarItem({ item, onClose, onGuardado }) {
     porcentaje_avance: item.porcentaje_avance ?? 40,
     porcentaje_finalizacion: item.porcentaje_finalizacion ?? 10,
   })
+  // v15.6.0: si el servicio del item matchea un nombre del catálogo, preseleccionar el dropdown
+  const [catalogoSel, setCatalogoSel] = useState(
+    SERVICIOS_CATALOGO.find(s => s.nombre === item.servicio)?.id || ''
+  )
   const [guardando, setGuardando] = useState(false)
   const suma = Number(form.porcentaje_anticipo) + Number(form.porcentaje_avance) + Number(form.porcentaje_finalizacion)
+
+  const elegirCatalogo = (id) => {
+    setCatalogoSel(id)
+    if (!id) return
+    const s = SERVICIOS_CATALOGO.find(x => x.id === id)
+    if (s) setForm(f => ({ ...f, servicio: s.nombre, descripcion: s.descripcion }))
+  }
 
   const guardar = async () => {
     if (!form.servicio || !form.precio_unitario) { alert('Completa servicio y precio'); return }
@@ -379,8 +390,22 @@ function ModalEditarItem({ item, onClose, onGuardado }) {
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
         <div style={{ padding:24 }}>
+          {/* v15.6.0: dropdown del catálogo (preseleccionado si el servicio matchea) */}
+          <div style={{ marginBottom:12, padding:12, background:COLORS.slate50, borderRadius:8 }}>
+            <label style={labelStyle}>Servicio del catálogo (opcional)</label>
+            <select value={catalogoSel} onChange={e => elegirCatalogo(e.target.value)} style={selectStyle}>
+              <option value="">— Servicio particular (custom) —</option>
+              {SERVICIOS_CATALOGO.map(s => (
+                <option key={s.id} value={s.id}>{s.nombre}{s.tipo !== 'AMBOS' ? ` · ${s.tipo}` : ''}</option>
+              ))}
+            </select>
+            <div style={{ fontSize:10, color:COLORS.slate500, marginTop:6, fontStyle:'italic' }}>
+              Cambiar reemplaza el nombre y la descripción con el wording oficial del catálogo.
+            </div>
+          </div>
+
           <div style={{ marginBottom:12 }}><label style={labelStyle}>Servicio *</label><input value={form.servicio} onChange={e=>setForm({...form, servicio:e.target.value})} style={inputStyle}/></div>
-          <div style={{ marginBottom:12 }}><label style={labelStyle}>Descripción</label><textarea value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} rows={2} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}}/></div>
+          <div style={{ marginBottom:12 }}><label style={labelStyle}>Descripción</label><textarea value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} rows={6} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}}/></div>
           <div style={{ display:'grid', gridTemplateColumns:'80px 1fr', gap:12, marginBottom:12 }}>
             <div><label style={labelStyle}>Cantidad</label><input type="number" value={form.cantidad} onChange={e=>setForm({...form, cantidad:e.target.value})} style={inputStyle}/></div>
             <div><label style={labelStyle}>Precio unitario (MXN) *</label><input type="number" value={form.precio_unitario} onChange={e=>setForm({...form, precio_unitario:e.target.value})} style={inputStyle}/></div>
