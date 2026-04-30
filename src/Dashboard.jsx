@@ -141,7 +141,7 @@ export default function Dashboard({ usuario, onNavigate }) {
       </div>
 
       {/* CONTENIDO */}
-      {vista === 'ejecutivo'      && <VistaEjecutivo      data={data} onNavigate={onNavigate} isMobile={isMobile} usuario={usuario} alertasConfig={alertasConfig} cargaColaboradores={cargaColaboradores}/>}
+      {vista === 'ejecutivo'      && <VistaEjecutivo      data={data} onNavigate={onNavigate} isMobile={isMobile} usuario={usuario} alertasConfig={alertasConfig} cargaColaboradores={cargaColaboradores} setVista={setVista} setColaboradorInicialId={setColaboradorInicialId}/>}
       {vista === 'administracion' && <VistaAdministracion data={data} onNavigate={onNavigate} isMobile={isMobile} recargar={recargar}/>}
       {vista === 'ventas'         && <VistaVentas        data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'marketing'      && <VistaMarketing     data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
@@ -153,39 +153,86 @@ export default function Dashboard({ usuario, onNavigate }) {
 }
 
 // ============================================================
-// v12.5.9: BANNER DE ALERTAS
-// Reemplaza el bloque de alertas hardcoded usando el generador
+// v15.10.5: BANNER DE ALERTAS — compacto con "Ver más"
+// Antes mostraba todas inline (mucho scroll si había 10+).
+// Ahora: top 3 + collapse, link al Centro de Alertas si hay >5.
+// onAlertaClick: callback opcional con la alerta. Si retorna true,
+//   no se hace navegación por módulo (handler ya manejó la acción).
 // ============================================================
-function BannerAlertas({ alertas, onNavigate }) {
+function BannerAlertas({ alertas, onNavigate, onAlertaClick }) {
+  const [expandido, setExpandido] = useState(false)
   if (!alertas || alertas.length === 0) return null
 
-  // onNavigate espera nombres tipo 'cobranza', 'proyectos', etc — no rutas
-  const nav = (alerta) => {
+  const handleClick = (alerta) => {
+    if (onAlertaClick && onAlertaClick(alerta) === true) return
     if (alerta.modulo) onNavigate?.(alerta.modulo)
   }
 
+  const TOP_N = 3
+  const visibles = expandido ? alertas : alertas.slice(0, TOP_N)
+  const ocultos = alertas.length - visibles.length
+  const totalAlertas = alertas.length
+
   return (
-    <div style={{ display:'grid', gap:8, marginBottom:20 }}>
-      {alertas.map(a => {
+    <div style={{ display:'grid', gap:6, marginBottom:20 }}>
+      {visibles.map(a => {
         const color = colorAlerta(a.severidad)
         return (
-          <div key={a.id} onClick={() => nav(a)} style={{
+          <div key={a.id} onClick={() => handleClick(a)} style={{
             display:'flex', alignItems:'center', gap:10,
-            padding:'12px 16px', background:'white',
+            padding:'8px 14px', background:'white',
             border:`1px solid ${COLORS.slate100}`,
             borderLeft:`3px solid ${color}`,
-            borderRadius:10, cursor:'pointer',
-            transition:'all 0.15s',
+            borderRadius:8, cursor:'pointer',
+            transition:'background 0.15s',
+            minHeight: 40,
           }}
           onMouseEnter={e => { e.currentTarget.style.background = bgAlerta(a.severidad) }}
           onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
           >
-            <div style={{ color }}>{Icon('Alert')}</div>
-            <span style={{ flex:1, fontSize:13, color:COLORS.ink, fontWeight:500 }}>{a.mensaje}</span>
-            <span style={{ fontSize:11, color:COLORS.slate400, textTransform:'uppercase', fontWeight:600 }}>Ver →</span>
+            <div style={{ color, flexShrink:0 }}>{Icon('Alert')}</div>
+            <span style={{ flex:1, fontSize:12, color:COLORS.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.mensaje}</span>
+            <span style={{ fontSize:10, color:COLORS.slate400, textTransform:'uppercase', fontWeight:700, letterSpacing:'0.04em' }}>Ver →</span>
           </div>
         )
       })}
+      {ocultos > 0 && !expandido && (
+        <button
+          onClick={() => setExpandido(true)}
+          style={{
+            display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+            padding:'6px 12px', background:'transparent',
+            border:`1px dashed ${COLORS.slate200}`, borderRadius:8,
+            fontSize:11, fontWeight:600, color:COLORS.slate500, cursor:'pointer',
+            fontFamily:'inherit',
+          }}>
+          + {ocultos} alerta{ocultos === 1 ? '' : 's'} más
+        </button>
+      )}
+      {expandido && totalAlertas > TOP_N && (
+        <button
+          onClick={() => setExpandido(false)}
+          style={{
+            display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+            padding:'6px 12px', background:'transparent',
+            border:`1px dashed ${COLORS.slate200}`, borderRadius:8,
+            fontSize:11, fontWeight:600, color:COLORS.slate500, cursor:'pointer',
+            fontFamily:'inherit',
+          }}>
+          ← Mostrar menos
+        </button>
+      )}
+      {totalAlertas > 5 && (
+        <button
+          onClick={() => onNavigate?.('alertas')}
+          style={{
+            background:'transparent', border:'none', padding:'4px 0',
+            fontSize:11, fontWeight:600, color:COLORS.teal, cursor:'pointer',
+            textAlign:'right', fontFamily:'inherit',
+          }}>
+          Ir al Centro de Alertas ({totalAlertas}) →
+        </button>
+      )}
     </div>
   )
 }
@@ -194,7 +241,7 @@ function BannerAlertas({ alertas, onNavigate }) {
 // VISTA EJECUTIVO
 // v12.5.9: usa generador de alertas en vez de hardcoded
 // ============================================================
-function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, cargaColaboradores }) {
+function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, cargaColaboradores, setVista, setColaboradorInicialId }) {
   const { proyectos, cotizaciones, leads, hitos, facturas, tickets, actividades, cxp } = data
 
   const proyectosActivos = proyectos.filter(p => p.estado !== 'Terminado' && p.estado !== 'Cancelado')
@@ -262,10 +309,22 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
   // v15.1: cuellos de botella destacados
   const cuellos = useMemo(() => identificarCuellosBotella(actividades || []), [actividades])
 
+  // v15.10.5: handler custom para alertas que tienen drill-down dentro del Dashboard
+  const handleAlertaClick = (alerta) => {
+    if (alerta.tipo === 'colaborador_sobrecargado') {
+      // Cambia a Vista Personas. Si solo hay 1 sobrecargado, expandir su card.
+      setVista?.('personas')
+      const data = alerta.data || []
+      if (data.length === 1) setColaboradorInicialId?.(data[0].usuario?.id || data[0].id)
+      return true
+    }
+    return false  // dejar que el navigator estándar maneje el resto
+  }
+
   return (
     <>
       {/* v12.5.9: Banner unificado de alertas */}
-      <BannerAlertas alertas={alertas} onNavigate={onNavigate}/>
+      <BannerAlertas alertas={alertas} onNavigate={onNavigate} onAlertaClick={handleAlertaClick}/>
 
       {/* v15.1: Cuellos de botella (solo si hay) */}
       {cuellos.porEtapa.length > 0 && (

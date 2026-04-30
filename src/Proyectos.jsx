@@ -1109,13 +1109,12 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     return visit(predId, new Set())
   }, [actividades])
 
-  // v15.10.3: refs para no re-montar listeners cuando cambian deps
+  // refs estables para no re-montar listeners cuando cambian deps
   const creariaCicloRef = useRef(creariaCiclo)
   const onRecargarRef = useRef(onRecargar)
   const actividadesPropRef = useRef(actividadesProp)
   const onUndoPushRef = useRef(null)
   const dayWidthRef = useRef(DAY_WIDTH)
-  const rafRef = useRef(null)
   useEffect(() => { creariaCicloRef.current = creariaCiclo }, [creariaCiclo])
   useEffect(() => { onRecargarRef.current = onRecargar }, [onRecargar])
   useEffect(() => { actividadesPropRef.current = actividadesProp }, [actividadesProp])
@@ -1128,12 +1127,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       if (!dragStateRef.current) return
       dragStateRef.current.mouseX = e.clientX
       dragStateRef.current.mouseY = e.clientY
-      // v15.10.3: usar requestAnimationFrame para coalescer updates (smoother + no batching issues)
-      if (rafRef.current) return
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null
-        setDragTick(t => t + 1)
-      })
+      // setDragTick fuerza re-render del rubber-band SVG en cada movimiento
+      setDragTick(t => t + 1)
       if (drag.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
@@ -1146,19 +1141,15 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
         }
       }
     }
-    const cleanupRaf = () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
     const onKey = (e) => {
-      // Escape cancela el drag actual sin aplicar cambios
       if (e.key === 'Escape' && dragStateRef.current) {
         dragStateRef.current = null
         setDrag(null); setDropTargetId(null)
-        cleanupRaf()
       }
     }
     const onUp = async (e) => {
       const d = dragStateRef.current
       setDrag(null); setDropTargetId(null)
-      cleanupRaf()
       if (!d) return
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
@@ -1235,7 +1226,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       window.removeEventListener('keydown', onKey)
-      cleanupRaf()
     }
   }, [drag])
 
