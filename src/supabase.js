@@ -273,20 +273,24 @@ export async function recalcularFechasDesde(actividadId) {
     })
 
     if (maxFin) {
-      const nuevoInicio = new Date(maxFin)
-      nuevoInicio.setDate(nuevoInicio.getDate() + 1)
-      const duracionDias = Math.round((new Date(act.fin + 'T00:00:00') - new Date(act.inicio + 'T00:00:00')) / 86400000)
-      const nuevoFin = new Date(nuevoInicio)
-      nuevoFin.setDate(nuevoFin.getDate() + duracionDias)
+      // v15.10.4: la dependencia define el INICIO MÍNIMO permitido, no la fecha exacta.
+      // Si la actividad ya está después del mínimo (lag positivo manual), respetar.
+      // Solo empujar al mínimo si la fecha actual lo viola (está antes que el mínimo).
+      const minInicio = new Date(maxFin)
+      minInicio.setDate(minInicio.getDate() + 1)
+      const minInicioStr = minInicio.toISOString().split('T')[0]
 
-      const nuevoInicioStr = nuevoInicio.toISOString().split('T')[0]
-      const nuevoFinStr = nuevoFin.toISOString().split('T')[0]
+      if (act.inicio < minInicioStr) {
+        const duracionDias = Math.round((new Date(act.fin + 'T00:00:00') - new Date(act.inicio + 'T00:00:00')) / 86400000)
+        const nuevoFin = new Date(minInicio)
+        nuevoFin.setDate(nuevoFin.getDate() + duracionDias)
+        const nuevoFinStr = nuevoFin.toISOString().split('T')[0]
 
-      if (act.inicio !== nuevoInicioStr || act.fin !== nuevoFinStr) {
-        cambios.push({ id: act.id, inicio: nuevoInicioStr, fin: nuevoFinStr })
-        mapa[act.id].inicio = nuevoInicioStr
+        cambios.push({ id: act.id, inicio: minInicioStr, fin: nuevoFinStr })
+        mapa[act.id].inicio = minInicioStr
         mapa[act.id].fin = nuevoFinStr
       }
+      // Si act.inicio >= minInicioStr, respeta la fecha actual (lag positivo válido).
     }
 
     const sucesoras = todas.filter(a => (a.deps || []).some(d => d.id === id))
