@@ -1128,19 +1128,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       dragStateRef.current.mouseX = e.clientX
       dragStateRef.current.mouseY = e.clientY
       if (drag.tipo === 'dep') {
-        // v15.10.6: actualizar el path del rubber-band DIRECTO en el DOM
-        // (sin pasar por React → 60fps puros, sin re-render del componente).
-        if (dragPathRef.current && dragPathStartRef.current && timelineRef.current) {
+        // v15.10.7: actualizar el path completo en cada move (state simple).
+        const ds = dragStateRef.current
+        if (timelineRef.current && ds.originX != null) {
           const rect = timelineRef.current.getBoundingClientRect()
           const scrollLeft = scrollRef.current?.scrollLeft || 0
           const x2 = e.clientX - rect.left + scrollLeft
           const y2 = e.clientY - rect.top
-          const { x1, y1 } = dragPathStartRef.current
-          const d = `M ${x1} ${y1} L ${x2} ${y2}`
-          dragPathRef.current.setAttribute('d', d)
-          // Sincronizar el path-shadow (la línea más gruesa de fondo) si existe
-          const shadow = dragPathRef.current.previousElementSibling
-          if (shadow && shadow.tagName === 'path') shadow.setAttribute('d', d)
+          setDragPath(`M ${ds.originX} ${ds.originY} L ${x2} ${y2}`)
         }
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
@@ -1159,14 +1154,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     const onKey = (e) => {
       if (e.key === 'Escape' && dragStateRef.current) {
         dragStateRef.current = null
-        dragPathStartRef.current = null
+        setDragPath(null)
         setDrag(null); setDropTargetId(null)
       }
     }
     const onUp = async (e) => {
       const d = dragStateRef.current
       setDrag(null); setDropTargetId(null)
-      dragPathStartRef.current = null  // v15.10.6: limpiar origen del rubber-band
+      setDragPath(null)  // v15.10.7: ocultar rubber-band
       if (!d) return
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
@@ -1250,8 +1245,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     e.stopPropagation(); e.preventDefault()
     setTooltip(null)
     const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
-    dragStateRef.current = state
-    // v15.10.6: precomputar punto de origen del rubber-band (no cambia durante el drag)
     if (tipo === 'dep') {
       const fromLeft = from === 'left'
       const x1 = act.es_milestone
@@ -1260,8 +1253,13 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
             ? getX(act.inicio) - 8
             : getX(act.inicio) + getW(act.inicio, act.fin) + 8)
       const y1 = (rowByActId[act.id] ?? 0) * ROW_HEIGHT + ROW_HEIGHT / 2
-      dragPathStartRef.current = { x1, y1 }
+      // Guardar origen en el state para que onMove lo use
+      state.originX = x1
+      state.originY = y1
+      // Path inicial: línea de longitud 0 en el origen
+      setDragPath(`M ${x1} ${y1} L ${x1} ${y1}`)
     }
+    dragStateRef.current = state
     setDrag(state)
   }
 
@@ -1339,11 +1337,10 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     return lineas
   }, [actOrdenadas, actividades, rowByActId, hoveredId, previewActividad, DAY_WIDTH, drag])
 
-  // v15.10.6: rubber-band con DOM ref directo (estilo MS Project Web / Bryntum).
-  // x1,y1 fijos al inicio del drag; x2,y2 actualizados directo en el SVG path
-  // con cada mousemove (sin pasar por React → 60fps reales sin re-renders).
-  const dragPathRef = useRef(null)
-  const dragPathStartRef = useRef(null)  // {x1, y1}
+  // v15.10.7: rubber-band con state simple. dragPath es el SVG path string
+  // completo. iniciarDrag lo inicializa, onMove lo actualiza en cada
+  // mousemove. React 19 maneja 60fps de setState sin problema.
+  const [dragPath, setDragPath] = useState(null)
 
   const getNivel = id => (numeracion[id] || '').split('.').length - 1
   const totalHeight = actOrdenadas.length * ROW_HEIGHT
@@ -1582,12 +1579,11 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                     </g>
                   )
                 })}
-                {/* v15.10.6: Rubber-band — d se actualiza DIRECTO por DOM en onMove */}
-                {drag?.tipo === 'dep' && dragPathStartRef.current && (
+                {/* v15.10.7: Rubber-band — path controlado por state dragPath */}
+                {dragPath && drag?.tipo === 'dep' && (
                   <>
-                    {/* Línea gruesa base */}
                     <path
-                      d={`M ${dragPathStartRef.current.x1} ${dragPathStartRef.current.y1} L ${dragPathStartRef.current.x1} ${dragPathStartRef.current.y1}`}
+                      d={dragPath}
                       fill="none"
                       stroke={dropTargetId ? '#16A34A' : COLORS.teal}
                       strokeWidth={4}
@@ -1595,10 +1591,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                       opacity={dropTargetId ? 0.35 : 0.2}
                       style={{ pointerEvents:'none' }}
                     />
-                    {/* Línea principal — su d lo actualiza onMove con setAttribute */}
                     <path
-                      ref={dragPathRef}
-                      d={`M ${dragPathStartRef.current.x1} ${dragPathStartRef.current.y1} L ${dragPathStartRef.current.x1} ${dragPathStartRef.current.y1}`}
+                      d={dragPath}
                       fill="none"
                       stroke={dropTargetId ? '#16A34A' : COLORS.teal}
                       strokeWidth={2}
