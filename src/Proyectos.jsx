@@ -1294,17 +1294,21 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     const prev = previewActividad(act)
     const rect = timelineRef.current.getBoundingClientRect()
     const scrollLeft = scrollRef.current?.scrollLeft || 0
-    // v15.9.2: el rubber-band sale del lado correcto según el dot que se arrastró.
-    // Si from='left' (definir predecesora), sale del lado izquierdo del bar.
-    // Si from='right' (definir sucesora), sale del lado derecho.
+    // v15.9.4: el rubber-band sale del CENTRO EXACTO del dot que se arrastró.
+    // Antes el codo saltaba +12px del origen (STUB de buildOrthPath), por eso la línea
+    // del dot izquierdo se veía "metida" en el bar. Ahora línea recta del dot al cursor.
     const fromLeft = drag.from === 'left'
+    // Dots de milestone están a ±20px del centro del rombo (rombo=20px de ancho + dot afuera)
+    // Dots de barra normal están a ±8px del borde del bar
     const x1 = act.es_milestone
-      ? getX(prev.inicio) + DAY_WIDTH/2 + (fromLeft ? -10 : 10)
-      : (fromLeft ? getX(prev.inicio) : getX(prev.inicio) + getW(prev.inicio, prev.fin))
+      ? getX(prev.inicio) + DAY_WIDTH/2 + (fromLeft ? -20 : 20)
+      : (fromLeft
+          ? getX(prev.inicio) - 8
+          : getX(prev.inicio) + getW(prev.inicio, prev.fin) + 8)
     const y1 = rowByActId[act.id] * ROW_HEIGHT + ROW_HEIGHT / 2
     const x2 = dragStateRef.current.mouseX - rect.left + scrollLeft
     const y2 = dragStateRef.current.mouseY - rect.top
-    return buildOrthPath(x1, y1, x2, y2)
+    return `M ${x1} ${y1} L ${x2} ${y2}`
   }, [drag, dragTick, actividades, rowByActId, previewActividad, DAY_WIDTH])
 
   const getNivel = id => (numeracion[id] || '').split('.').length - 1
