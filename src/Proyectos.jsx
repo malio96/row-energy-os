@@ -1294,10 +1294,13 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     const prev = previewActividad(act)
     const rect = timelineRef.current.getBoundingClientRect()
     const scrollLeft = scrollRef.current?.scrollLeft || 0
-    // v13.3.1: si el origen es milestone, el punto de salida es el lado derecho del rombo
+    // v15.9.2: el rubber-band sale del lado correcto según el dot que se arrastró.
+    // Si from='left' (definir predecesora), sale del lado izquierdo del bar.
+    // Si from='right' (definir sucesora), sale del lado derecho.
+    const fromLeft = drag.from === 'left'
     const x1 = act.es_milestone
-      ? getX(prev.inicio) + DAY_WIDTH/2 + 10
-      : getX(prev.inicio) + getW(prev.inicio, prev.fin)
+      ? getX(prev.inicio) + DAY_WIDTH/2 + (fromLeft ? -10 : 10)
+      : (fromLeft ? getX(prev.inicio) : getX(prev.inicio) + getW(prev.inicio, prev.fin))
     const y1 = rowByActId[act.id] * ROW_HEIGHT + ROW_HEIGHT / 2
     const x2 = dragStateRef.current.mouseX - rect.left + scrollLeft
     const y2 = dragStateRef.current.mouseY - rect.top
@@ -1786,6 +1789,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                         const visibleComoOrigen = esOrigen
                         const visibleComoTarget = dragDepActivo && !esOrigen
                         if (!visibleNormal && !visibleComoOrigen && !visibleComoTarget) return null
+                        // v15.9.2: cuando esta barra es el origen, mostrar SOLO el dot del lado del que se arrastró
+                        const ocultarDerechoOrigen = visibleComoOrigen && drag.from === 'left'
+                        const ocultarIzquierdoOrigen = visibleComoOrigen && drag.from === 'right'
 
                         const esTarget = visibleComoTarget && isDropTarget
                         const colorDot = esTarget ? '#16A34A' : COLORS.teal
@@ -1807,19 +1813,21 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                         return (
                           <>
                             {/* DOT DERECHO — AFUERA (right: -14) */}
-                            <div
-                              onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'right') }}
-                              title="Cuando termine esta, empieza la que vincules"
-                              style={{
-                                ...dotStyle,
-                                right: -14,
-                                transform: isHovered && !dragDepActivo
-                                  ? 'translateY(-50%) scale(1.15)'
-                                  : 'translateY(-50%)',
-                              }}
-                            />
-                            {/* DOT IZQUIERDO — AFUERA (left: -14) - solo hover normal */}
-                            {(visibleNormal || visibleComoTarget) && (
+                            {!ocultarDerechoOrigen && (
+                              <div
+                                onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'right') }}
+                                title="Cuando termine esta, empieza la que vincules"
+                                style={{
+                                  ...dotStyle,
+                                  right: -14,
+                                  transform: isHovered && !dragDepActivo
+                                    ? 'translateY(-50%) scale(1.15)'
+                                    : 'translateY(-50%)',
+                                }}
+                              />
+                            )}
+                            {/* DOT IZQUIERDO — AFUERA (left: -14) */}
+                            {(visibleNormal || visibleComoTarget || (visibleComoOrigen && !ocultarIzquierdoOrigen)) && (
                               <div
                                 onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'left') }}
                                 title="Esta actividad inicia DESPUÉS de la que vincules"
