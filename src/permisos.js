@@ -38,26 +38,32 @@ export const PERMISOS_POR_ROL = {
   },
   director_proyectos: {
     label: 'Director de Proyectos',
-    descripcion: 'Operaciones completas: proyectos, cotizaciones, contratos, compras, cierre, postventa',
+    descripcion: 'Operaciones: proyectos, cierre, postventa, plantas',
     modulos: [
-      'dashboard', 'proyectos', 'cotizaciones', 'contratos',
-      'compras', 'cierre', 'postventa',
-      'plantas',  // v15.8.0 — el director necesita el catálogo de plantas
+      'dashboard', 'proyectos', 'cierre', 'postventa',
+      'plantas',
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
   },
   ventas: {
     label: 'Ventas',
-    descripcion: 'Comercial: cotizaciones, contratos, leads',
-    modulos: ['dashboard', 'cotizaciones', 'contratos', 'leads'],
+    descripcion: 'Acceso amplio de lectura: comercial + visibilidad de operaciones',
+    modulos: [
+      'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
+      'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
+      'plantas',
+    ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
   },
   cobranza: {
     label: 'Cobranza',
-    descripcion: 'Finanzas entrantes: cobranza y facturación',
-    modulos: ['dashboard', 'cobranza', 'facturacion'],
+    descripcion: 'Finanzas entrantes + visibilidad de contratos, compras y cierre',
+    modulos: [
+      'dashboard', 'cobranza', 'facturacion',
+      'contratos', 'compras', 'cierre',
+    ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
   },
