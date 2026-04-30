@@ -1449,7 +1449,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
             const depsCount = (act.deps || []).length
             return (
               <div key={act.id}
-                onMouseEnter={() => setHoveredId(act.id)} onMouseLeave={() => setHoveredId(null)}
+                onMouseEnter={() => { if (dragStateRef.current) return; setHoveredId(act.id) }}
+                onMouseLeave={() => { if (dragStateRef.current) return; setHoveredId(null) }}
                 onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
                 style={{ height:ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', alignItems:'center', padding:'0 8px 0 12px', paddingLeft: 12 + nivel * 18, background: hoveredId === act.id ? COLORS.slate50 : (esPadre ? '#FAFBFE' : 'white'), gap:6 }}>
                 {tieneHijos ? (
@@ -1516,7 +1517,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                 })()}
               </div>
               {actOrdenadas.map((act, rowIdx) => (
-                <div key={`row-${act.id}`} onMouseEnter={() => setHoveredId(act.id)} onMouseLeave={() => setHoveredId(null)}
+                <div key={`row-${act.id}`}
+                  onMouseEnter={() => { if (dragStateRef.current) return; setHoveredId(act.id) }}
+                  onMouseLeave={() => { if (dragStateRef.current) return; setHoveredId(null) }}
                   style={{ position:'absolute', left:0, right:0, top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, background: hoveredId === act.id ? 'rgba(10, 37, 64, 0.02)' : 'transparent', zIndex: 1 }}/>
               ))}
               <div style={{ position:'absolute', left:0, right:0, top: actOrdenadas.length * ROW_HEIGHT, height: ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, background:'transparent', zIndex:1 }}/>
@@ -1658,9 +1661,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                         height: 20,
                         zIndex: isDraggedNow ? 10 : 3,
                       }}
-                      onMouseEnter={(e) => { setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
-                      onMouseMove={(e) => !drag && setTooltip({ act, x: e.clientX, y: e.clientY })}
-                      onMouseLeave={() => { setHoveredId(null); setTooltip(null) }}
+                      onMouseEnter={(e) => { if (dragStateRef.current) return; setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
+                      onMouseMove={(e) => { if (dragStateRef.current) return; setTooltip({ act, x: e.clientX, y: e.clientY }) }}
+                      onMouseLeave={() => { if (dragStateRef.current) return; setHoveredId(null); setTooltip(null) }}
                     >
                       {/* Contenedor relativo para posicionar rombo + dots */}
                       <div style={{ position:'relative', width:'100%', height:'100%' }}>

@@ -276,7 +276,12 @@ function Layout({ usuario, onLogout, children }) {
   return (
     <div style={{
       display:'flex',
-      minHeight:'100vh',
+      // v15.10.9: height fija + overflow hidden para que solo el main scrolee.
+      // Antes era minHeight:100vh → al haber muchas filas, el body completo
+      // scroleaba y el sidebar se iba con todo.
+      height: isMobile ? 'auto' : '100vh',
+      minHeight: isMobile ? '100vh' : '100vh',
+      overflow: isMobile ? 'visible' : 'hidden',
       background: COLORS.bgKlar,
       flexDirection: isMobile ? 'column' : 'row',
     }}>
@@ -285,6 +290,7 @@ function Layout({ usuario, onLogout, children }) {
         flex:1,
         minWidth:0,
         overflow:'auto',
+        height: isMobile ? 'auto' : '100vh',
         padding: isMobile ? '72px 16px 78px' : '12px 12px 12px 0',
       }}>
         <div style={{
