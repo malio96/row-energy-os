@@ -1121,33 +1121,32 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
   useEffect(() => { onUndoPushRef.current = onUndoPush }, [onUndoPush])
   useEffect(() => { dayWidthRef.current = DAY_WIDTH }, [DAY_WIDTH])
 
+  // v15.10.8: listeners always-on en window. Leen todo del ref, sin
+  // depender de la closure de drag (evita re-mount durante operaciones).
   useEffect(() => {
-    if (!drag) return
     const onMove = (e) => {
-      if (!dragStateRef.current) return
-      dragStateRef.current.mouseX = e.clientX
-      dragStateRef.current.mouseY = e.clientY
-      if (drag.tipo === 'dep') {
-        // v15.10.7: actualizar el path completo en cada move (state simple).
-        const ds = dragStateRef.current
-        if (timelineRef.current && ds.originX != null) {
+      const d = dragStateRef.current
+      if (!d) return
+      d.mouseX = e.clientX
+      d.mouseY = e.clientY
+      if (d.tipo === 'dep') {
+        if (timelineRef.current && d.originX != null) {
           const rect = timelineRef.current.getBoundingClientRect()
           const scrollLeft = scrollRef.current?.scrollLeft || 0
           const x2 = e.clientX - rect.left + scrollLeft
           const y2 = e.clientY - rect.top
-          setDragPath(`M ${ds.originX} ${ds.originY} L ${x2} ${y2}`)
+          setDragPath(`M ${d.originX} ${d.originY} L ${x2} ${y2}`)
         }
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
-        const predId = drag.from === 'left' ? targetId : drag.actId
-        const sucId  = drag.from === 'left' ? drag.actId : targetId
-        if (targetId && targetId !== drag.actId && !creariaCicloRef.current(predId, sucId)) {
+        const predId = d.from === 'left' ? targetId : d.actId
+        const sucId  = d.from === 'left' ? d.actId : targetId
+        if (targetId && targetId !== d.actId && !creariaCicloRef.current(predId, sucId)) {
           setDropTargetId(prev => prev !== targetId ? targetId : prev)
         } else {
           setDropTargetId(prev => prev ? null : prev)
         }
       } else {
-        // Para move/resize sí necesitamos re-render (la barra preview se mueve con React)
         setDragTick(t => t + 1)
       }
     }
@@ -1160,9 +1159,10 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     }
     const onUp = async (e) => {
       const d = dragStateRef.current
-      setDrag(null); setDropTargetId(null)
-      setDragPath(null)  // v15.10.7: ocultar rubber-band
       if (!d) return
+      setDrag(null); setDropTargetId(null)
+      setDragPath(null)
+      dragStateRef.current = null
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
@@ -1239,7 +1239,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       window.removeEventListener('mouseup', onUp)
       window.removeEventListener('keydown', onKey)
     }
-  }, [drag])
+  }, [])  // v15.10.8: listeners always-on (sin re-mount cuando cambia drag)
 
   const iniciarDrag = (e, act, tipo, from = null) => {
     e.stopPropagation(); e.preventDefault()
