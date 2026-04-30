@@ -1109,60 +1109,57 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     return visit(predId, new Set())
   }, [actividades])
 
-  // refs estables para no re-montar listeners cuando cambian deps
+  // v15.10.3: refs para no re-montar listeners cuando cambian deps
   const creariaCicloRef = useRef(creariaCiclo)
   const onRecargarRef = useRef(onRecargar)
   const actividadesPropRef = useRef(actividadesProp)
   const onUndoPushRef = useRef(null)
   const dayWidthRef = useRef(DAY_WIDTH)
+  const rafRef = useRef(null)
   useEffect(() => { creariaCicloRef.current = creariaCiclo }, [creariaCiclo])
   useEffect(() => { onRecargarRef.current = onRecargar }, [onRecargar])
   useEffect(() => { actividadesPropRef.current = actividadesProp }, [actividadesProp])
   useEffect(() => { onUndoPushRef.current = onUndoPush }, [onUndoPush])
   useEffect(() => { dayWidthRef.current = DAY_WIDTH }, [DAY_WIDTH])
 
-  // v15.10.8: listeners always-on en window. Leen todo del ref, sin
-  // depender de la closure de drag (evita re-mount durante operaciones).
   useEffect(() => {
+    if (!drag) return
     const onMove = (e) => {
-      const d = dragStateRef.current
-      if (!d) return
-      d.mouseX = e.clientX
-      d.mouseY = e.clientY
-      if (d.tipo === 'dep') {
-        if (timelineRef.current && d.originX != null) {
-          const rect = timelineRef.current.getBoundingClientRect()
-          const scrollLeft = scrollRef.current?.scrollLeft || 0
-          const x2 = e.clientX - rect.left + scrollLeft
-          const y2 = e.clientY - rect.top
-          setDragPath(`M ${d.originX} ${d.originY} L ${x2} ${y2}`)
-        }
+      if (!dragStateRef.current) return
+      dragStateRef.current.mouseX = e.clientX
+      dragStateRef.current.mouseY = e.clientY
+      // v15.10.3: usar requestAnimationFrame para coalescer updates (smoother + no batching issues)
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        setDragTick(t => t + 1)
+      })
+      if (drag.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
-        const predId = d.from === 'left' ? targetId : d.actId
-        const sucId  = d.from === 'left' ? d.actId : targetId
-        if (targetId && targetId !== d.actId && !creariaCicloRef.current(predId, sucId)) {
+        const predId = drag.from === 'left' ? targetId : drag.actId
+        const sucId  = drag.from === 'left' ? drag.actId : targetId
+        if (targetId && targetId !== drag.actId && !creariaCicloRef.current(predId, sucId)) {
           setDropTargetId(prev => prev !== targetId ? targetId : prev)
         } else {
           setDropTargetId(prev => prev ? null : prev)
         }
-      } else {
-        setDragTick(t => t + 1)
       }
     }
+    const cleanupRaf = () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
     const onKey = (e) => {
+      // Escape cancela el drag actual sin aplicar cambios
       if (e.key === 'Escape' && dragStateRef.current) {
         dragStateRef.current = null
-        setDragPath(null)
         setDrag(null); setDropTargetId(null)
+        cleanupRaf()
       }
     }
     const onUp = async (e) => {
       const d = dragStateRef.current
-      if (!d) return
       setDrag(null); setDropTargetId(null)
-      setDragPath(null)
-      dragStateRef.current = null
+      cleanupRaf()
+      if (!d) return
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
@@ -1238,27 +1235,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       window.removeEventListener('keydown', onKey)
+      cleanupRaf()
     }
-  }, [])  // v15.10.8: listeners always-on (sin re-mount cuando cambia drag)
+  }, [drag])
 
   const iniciarDrag = (e, act, tipo, from = null) => {
     e.stopPropagation(); e.preventDefault()
     setTooltip(null)
     const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
-    if (tipo === 'dep') {
-      const fromLeft = from === 'left'
-      const x1 = act.es_milestone
-        ? getX(act.inicio) + DAY_WIDTH/2 + (fromLeft ? -20 : 20)
-        : (fromLeft
-            ? getX(act.inicio) - 8
-            : getX(act.inicio) + getW(act.inicio, act.fin) + 8)
-      const y1 = (rowByActId[act.id] ?? 0) * ROW_HEIGHT + ROW_HEIGHT / 2
-      // Guardar origen en el state para que onMove lo use
-      state.originX = x1
-      state.originY = y1
-      // Path inicial: línea de longitud 0 en el origen
-      setDragPath(`M ${x1} ${y1} L ${x1} ${y1}`)
-    }
     dragStateRef.current = state
     setDrag(state)
   }
@@ -1337,10 +1321,29 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     return lineas
   }, [actOrdenadas, actividades, rowByActId, hoveredId, previewActividad, DAY_WIDTH, drag])
 
-  // v15.10.7: rubber-band con state simple. dragPath es el SVG path string
-  // completo. iniciarDrag lo inicializa, onMove lo actualiza en cada
-  // mousemove. React 19 maneja 60fps de setState sin problema.
-  const [dragPath, setDragPath] = useState(null)
+  const dragDepPath = useMemo(() => {
+    if (!drag || drag.tipo !== 'dep' || !timelineRef.current || !dragStateRef.current) return null
+    const act = actividades.find(a => a.id === drag.actId)
+    if (!act) return null
+    const prev = previewActividad(act)
+    const rect = timelineRef.current.getBoundingClientRect()
+    const scrollLeft = scrollRef.current?.scrollLeft || 0
+    // v15.9.4: el rubber-band sale del CENTRO EXACTO del dot que se arrastró.
+    // Antes el codo saltaba +12px del origen (STUB de buildOrthPath), por eso la línea
+    // del dot izquierdo se veía "metida" en el bar. Ahora línea recta del dot al cursor.
+    const fromLeft = drag.from === 'left'
+    // Dots de milestone están a ±20px del centro del rombo (rombo=20px de ancho + dot afuera)
+    // Dots de barra normal están a ±8px del borde del bar
+    const x1 = act.es_milestone
+      ? getX(prev.inicio) + DAY_WIDTH/2 + (fromLeft ? -20 : 20)
+      : (fromLeft
+          ? getX(prev.inicio) - 8
+          : getX(prev.inicio) + getW(prev.inicio, prev.fin) + 8)
+    const y1 = rowByActId[act.id] * ROW_HEIGHT + ROW_HEIGHT / 2
+    const x2 = dragStateRef.current.mouseX - rect.left + scrollLeft
+    const y2 = dragStateRef.current.mouseY - rect.top
+    return `M ${x1} ${y1} L ${x2} ${y2}`
+  }, [drag, dragTick, actividades, rowByActId, previewActividad, DAY_WIDTH])
 
   const getNivel = id => (numeracion[id] || '').split('.').length - 1
   const totalHeight = actOrdenadas.length * ROW_HEIGHT
@@ -1449,8 +1452,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
             const depsCount = (act.deps || []).length
             return (
               <div key={act.id}
-                onMouseEnter={() => { if (dragStateRef.current) return; setHoveredId(act.id) }}
-                onMouseLeave={() => { if (dragStateRef.current) return; setHoveredId(null) }}
+                onMouseEnter={() => setHoveredId(act.id)} onMouseLeave={() => setHoveredId(null)}
                 onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
                 style={{ height:ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', alignItems:'center', padding:'0 8px 0 12px', paddingLeft: 12 + nivel * 18, background: hoveredId === act.id ? COLORS.slate50 : (esPadre ? '#FAFBFE' : 'white'), gap:6 }}>
                 {tieneHijos ? (
@@ -1517,9 +1519,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                 })()}
               </div>
               {actOrdenadas.map((act, rowIdx) => (
-                <div key={`row-${act.id}`}
-                  onMouseEnter={() => { if (dragStateRef.current) return; setHoveredId(act.id) }}
-                  onMouseLeave={() => { if (dragStateRef.current) return; setHoveredId(null) }}
+                <div key={`row-${act.id}`} onMouseEnter={() => setHoveredId(act.id)} onMouseLeave={() => setHoveredId(null)}
                   style={{ position:'absolute', left:0, right:0, top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, background: hoveredId === act.id ? 'rgba(10, 37, 64, 0.02)' : 'transparent', zIndex: 1 }}/>
               ))}
               <div style={{ position:'absolute', left:0, right:0, top: actOrdenadas.length * ROW_HEIGHT, height: ROW_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, background:'transparent', zIndex:1 }}/>
@@ -1582,11 +1582,12 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                     </g>
                   )
                 })}
-                {/* v15.10.7: Rubber-band — path controlado por state dragPath */}
-                {dragPath && drag?.tipo === 'dep' && (
+                {/* v13.2: Rubber-band mejorado — cambia color según haya target válido */}
+                {dragDepPath && (
                   <>
+                    {/* Línea gruesa base, semi-transparente */}
                     <path
-                      d={dragPath}
+                      d={dragDepPath}
                       fill="none"
                       stroke={dropTargetId ? '#16A34A' : COLORS.teal}
                       strokeWidth={4}
@@ -1594,8 +1595,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                       opacity={dropTargetId ? 0.35 : 0.2}
                       style={{ pointerEvents:'none' }}
                     />
+                    {/* Línea principal */}
                     <path
-                      d={dragPath}
+                      d={dragDepPath}
                       fill="none"
                       stroke={dropTargetId ? '#16A34A' : COLORS.teal}
                       strokeWidth={2}
@@ -1661,9 +1663,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                         height: 20,
                         zIndex: isDraggedNow ? 10 : 3,
                       }}
-                      onMouseEnter={(e) => { if (dragStateRef.current) return; setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
-                      onMouseMove={(e) => { if (dragStateRef.current) return; setTooltip({ act, x: e.clientX, y: e.clientY }) }}
-                      onMouseLeave={() => { if (dragStateRef.current) return; setHoveredId(null); setTooltip(null) }}
+                      onMouseEnter={(e) => { setHoveredId(act.id); setTooltip({ act, x: e.clientX, y: e.clientY }) }}
+                      onMouseMove={(e) => !drag && setTooltip({ act, x: e.clientX, y: e.clientY })}
+                      onMouseLeave={() => { setHoveredId(null); setTooltip(null) }}
                     >
                       {/* Contenedor relativo para posicionar rombo + dots */}
                       <div style={{ position:'relative', width:'100%', height:'100%' }}>
