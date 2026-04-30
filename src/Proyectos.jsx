@@ -2866,8 +2866,8 @@ function FormClienteInline({ onCancel, onCreated }) {
           razon_social: form.razon_social.trim(),
           rfc: form.rfc.trim() || null,
           contacto_nombre: form.contacto_nombre.trim() || null,
-          email: form.email.trim() || null,
-          telefono: form.telefono.trim() || null,
+          contacto_email: form.email.trim() || null,
+          contacto_telefono: form.telefono.trim() || null,
         })
         .select()
         .single()
