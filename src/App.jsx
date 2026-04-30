@@ -46,13 +46,15 @@ const inputStyle = {
 }
 
 // ============================================================
-// LOGIN
+// LOGIN + RECOVERY (v15.10: flujo "Olvidé contraseña")
 // ============================================================
 function Login({ onLogin }) {
+  const [mode, setMode] = useState('login')   // 'login' | 'recover'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
 
   const login = async (e) => {
     e.preventDefault()
@@ -77,28 +79,163 @@ function Login({ onLogin }) {
     setLoading(false)
   }
 
+  const recover = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setInfo('')
+    const emailLower = email.toLowerCase().trim()
+    const { error: recError } = await supabase.auth.resetPasswordForEmail(emailLower, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (recError) {
+      setError(recError.message)
+    } else {
+      setInfo('Si el email existe, recibirás un link de recuperación en los próximos minutos. Revisa también la carpeta de spam.')
+    }
+    setLoading(false)
+  }
+
+  const switchMode = (next) => {
+    setMode(next)
+    setError('')
+    setInfo('')
+    setPassword('')
+  }
+
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg, #F8FAFC 0%, #E1F5EE 100%)', fontFamily:'var(--font-sans)' }}>
       <div style={{ background:'white', padding:'40px 44px', borderRadius:16, boxShadow:'0 20px 60px rgba(10,37,64,0.08)', width:400 }}>
         <div style={{ textAlign:'center', marginBottom:32 }}>
           <img src="/logo-negro.png" alt="Row Energy" style={{ height:40, marginBottom:16 }} onError={(e)=>{e.target.style.display='none'}}/>
           <h1 style={{ fontSize:22, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)', margin:0, letterSpacing:'-0.01em' }}>Row Energy OS</h1>
-          <p style={{ fontSize:12, color:COLORS.slate500, marginTop:6 }}>Plataforma interna</p>
+          <p style={{ fontSize:12, color:COLORS.slate500, marginTop:6 }}>{mode === 'recover' ? 'Recuperar contraseña' : 'Plataforma interna'}</p>
         </div>
-        <form onSubmit={login}>
-          <div style={{ marginBottom:16 }}>
-            <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Email</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputStyle} placeholder="tu@row.energy"/>
+
+        {mode === 'login' ? (
+          <form onSubmit={login}>
+            <div style={{ marginBottom:16 }}>
+              <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Email</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputStyle} placeholder="tu@row.energy"/>
+            </div>
+            <div style={{ marginBottom:8 }}>
+              <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Contraseña</label>
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required style={inputStyle} placeholder="••••••••"/>
+            </div>
+            <div style={{ textAlign:'right', marginBottom:18 }}>
+              <button type="button" onClick={() => switchMode('recover')} style={{ background:'none', border:'none', color:COLORS.teal, fontSize:11, cursor:'pointer', padding:0, fontFamily:'inherit', textDecoration:'underline' }}>
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+            {error && <div style={{ padding:10, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>{error}</div>}
+            <button type="submit" disabled={loading} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:loading?'wait':'pointer', opacity:loading?0.7:1 }}>
+              {loading ? 'Entrando...' : 'Iniciar sesión'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={recover}>
+            <div style={{ marginBottom:16, fontSize:12, color:COLORS.slate500, lineHeight:1.5 }}>
+              Ingresa tu email y te enviaremos un link para establecer una nueva contraseña.
+            </div>
+            <div style={{ marginBottom:18 }}>
+              <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Email</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputStyle} placeholder="tu@row.energy" autoFocus/>
+            </div>
+            {error && <div style={{ padding:10, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>{error}</div>}
+            {info && <div style={{ padding:10, background:'#F0FDF4', color:COLORS.teal, borderRadius:8, fontSize:12, marginBottom:14, border:`1px solid #86EFAC` }}>{info}</div>}
+            <button type="submit" disabled={loading} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:loading?'wait':'pointer', opacity:loading?0.7:1, marginBottom:10 }}>
+              {loading ? 'Enviando...' : 'Enviar link de recuperación'}
+            </button>
+            <button type="button" onClick={() => switchMode('login')} style={{ width:'100%', padding:'10px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate100}`, borderRadius:8, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
+              ← Volver a iniciar sesión
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// RESET PASSWORD — pantalla destino del email de recuperación
+// ============================================================
+function ResetPassword() {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+  const [validToken, setValidToken] = useState(false)
+  const navigate = useNavigate()
+
+  // Verificar que el link de recovery es válido
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        setValidToken(true)
+      }
+    })
+    // También checar si ya hay sesión recovery activa al montar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setValidToken(true)
+    })
+    return () => subscription?.unsubscribe()
+  }, [])
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return }
+    if (password !== confirm) { setError('Las contraseñas no coinciden'); return }
+    setLoading(true)
+    const { error: upErr } = await supabase.auth.updateUser({ password })
+    if (upErr) { setError(upErr.message); setLoading(false); return }
+    // Cerrar todas las otras sesiones de este usuario (si las hubiera)
+    try { await supabase.auth.signOut({ scope: 'others' }) } catch (_) {}
+    setDone(true)
+    setLoading(false)
+    // Cerrar la sesión actual y redirigir al login después de 2s
+    setTimeout(async () => {
+      await supabase.auth.signOut()
+      navigate('/', { replace: true })
+    }, 2000)
+  }
+
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg, #F8FAFC 0%, #E1F5EE 100%)', fontFamily:'var(--font-sans)' }}>
+      <div style={{ background:'white', padding:'40px 44px', borderRadius:16, boxShadow:'0 20px 60px rgba(10,37,64,0.08)', width:400 }}>
+        <div style={{ textAlign:'center', marginBottom:32 }}>
+          <img src="/logo-negro.png" alt="Row Energy" style={{ height:40, marginBottom:16 }} onError={(e)=>{e.target.style.display='none'}}/>
+          <h1 style={{ fontSize:22, fontWeight:500, color:COLORS.navy, margin:0, letterSpacing:'-0.01em' }}>Nueva contraseña</h1>
+          <p style={{ fontSize:12, color:COLORS.slate500, marginTop:6 }}>Establece una contraseña nueva para tu cuenta</p>
+        </div>
+        {done ? (
+          <div style={{ padding:14, background:'#F0FDF4', color:COLORS.teal, borderRadius:8, fontSize:13, textAlign:'center', border:`1px solid #86EFAC` }}>
+            ✅ Contraseña actualizada. Redirigiendo al login...
           </div>
-          <div style={{ marginBottom:20 }}>
-            <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Contraseña</label>
-            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required style={inputStyle} placeholder="••••••••"/>
+        ) : !validToken ? (
+          <div style={{ padding:14, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:13, lineHeight:1.5 }}>
+            Link inválido o expirado. Solicita un nuevo email de recuperación desde la pantalla de login.
+            <button onClick={() => navigate('/', { replace: true })} style={{ marginTop:14, width:'100%', padding:10, background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:12, cursor:'pointer' }}>
+              Ir al login
+            </button>
           </div>
-          {error && <div style={{ padding:10, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>{error}</div>}
-          <button type="submit" disabled={loading} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:loading?'wait':'pointer', opacity:loading?0.7:1 }}>
-            {loading ? 'Entrando...' : 'Iniciar sesión'}
-          </button>
-        </form>
+        ) : (
+          <form onSubmit={submit}>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Nueva contraseña</label>
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required minLength={8} style={inputStyle} placeholder="Mínimo 8 caracteres" autoFocus/>
+            </div>
+            <div style={{ marginBottom:18 }}>
+              <label style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', display:'block', marginBottom:6 }}>Confirmar</label>
+              <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} required style={inputStyle} placeholder="Repite la contraseña"/>
+            </div>
+            {error && <div style={{ padding:10, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>{error}</div>}
+            <button type="submit" disabled={loading} style={{ width:'100%', padding:12, background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:loading?'wait':'pointer', opacity:loading?0.7:1 }}>
+              {loading ? 'Guardando...' : 'Guardar nueva contraseña'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )
@@ -166,6 +303,19 @@ function Layout({ usuario, onLogout, children }) {
 }
 
 export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Reset password debe ser accesible sin sesión válida (el link del email
+            crea una sesión temporal de tipo recovery). */}
+        <Route path="/reset-password" element={<ResetPassword/>}/>
+        <Route path="*" element={<MainApp/>}/>
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+function MainApp() {
   const [usuario, setUsuario] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -214,13 +364,12 @@ export default function App() {
   if (!usuario) return <Login onLogin={setUsuario}/>
 
   return (
-    <BrowserRouter>
-      <Layout usuario={usuario} onLogout={handleLogout}>
-        <Routes>
-          <Route path="/" element={<DashboardWrapper usuario={usuario}/>}/>
+    <Layout usuario={usuario} onLogout={handleLogout}>
+      <Routes>
+        <Route path="/" element={<DashboardWrapper usuario={usuario}/>}/>
 
-          {/* v12.5.9c: Centro de Alertas — accesible para todos */}
-          <Route path="/alertas" element={<CentroAlertas usuario={usuario}/>}/>
+        {/* v12.5.9c: Centro de Alertas — accesible para todos */}
+        <Route path="/alertas" element={<CentroAlertas usuario={usuario}/>}/>
 
           <Route path="/proyectos" element={
             <RutaProtegida usuario={usuario} modulo="proyectos">
@@ -272,13 +421,12 @@ export default function App() {
               <Plantas usuario={usuario}/>
             </RutaProtegida>
           }/>
-          <Route path="/config" element={
-            <RutaProtegida usuario={usuario} modulo="config">
-              <Configuracion usuario={usuario}/>
-            </RutaProtegida>
-          }/>
-        </Routes>
-      </Layout>
-    </BrowserRouter>
+        <Route path="/config" element={
+          <RutaProtegida usuario={usuario} modulo="config">
+            <Configuracion usuario={usuario}/>
+          </RutaProtegida>
+        }/>
+      </Routes>
+    </Layout>
   )
 }
