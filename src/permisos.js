@@ -69,8 +69,8 @@ export const PERMISOS_POR_ROL = {
   },
   equipo_proyectos: {
     label: 'Equipo de Proyectos',
-    descripcion: 'Ejecución: proyectos, cierre y postventa',
-    modulos: ['dashboard', 'proyectos', 'cierre', 'postventa'],
+    descripcion: 'Ejecución de actividades en proyectos. Dashboard personal.',
+    modulos: ['dashboard', 'proyectos'],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
   },

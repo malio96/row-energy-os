@@ -981,7 +981,7 @@ function PanelProyecto({ proyecto, clientes, usuarios, usuarioActual, onClose, o
   )
 }
 
-function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep }) {
+function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep, onUndoPush }) {
   const [zoom, setZoom] = useState('dia')
   const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 8)
   const ROW_HEIGHT = 42
@@ -1109,50 +1109,75 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     return visit(predId, new Set())
   }, [actividades])
 
+  // v15.10.3: refs para no re-montar listeners cuando cambian deps
+  const creariaCicloRef = useRef(creariaCiclo)
+  const onRecargarRef = useRef(onRecargar)
+  const actividadesPropRef = useRef(actividadesProp)
+  const onUndoPushRef = useRef(null)
+  const dayWidthRef = useRef(DAY_WIDTH)
+  const rafRef = useRef(null)
+  useEffect(() => { creariaCicloRef.current = creariaCiclo }, [creariaCiclo])
+  useEffect(() => { onRecargarRef.current = onRecargar }, [onRecargar])
+  useEffect(() => { actividadesPropRef.current = actividadesProp }, [actividadesProp])
+  useEffect(() => { onUndoPushRef.current = onUndoPush }, [onUndoPush])
+  useEffect(() => { dayWidthRef.current = DAY_WIDTH }, [DAY_WIDTH])
+
   useEffect(() => {
     if (!drag) return
     const onMove = (e) => {
       if (!dragStateRef.current) return
       dragStateRef.current.mouseX = e.clientX
       dragStateRef.current.mouseY = e.clientY
-      setDragTick(t => t + 1)  // v13.2: Provoca re-render del rubber-band SVG
+      // v15.10.3: usar requestAnimationFrame para coalescer updates (smoother + no batching issues)
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        setDragTick(t => t + 1)
+      })
       if (drag.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
-        // Si arrastró desde el dot izquierdo, la actividad arrastrada es la SUCESORA
-        // (esta inicia después de la otra). Invertir predId/sucId para chequeo de ciclo.
         const predId = drag.from === 'left' ? targetId : drag.actId
         const sucId  = drag.from === 'left' ? drag.actId : targetId
-        if (targetId && targetId !== drag.actId && !creariaCiclo(predId, sucId)) {
+        if (targetId && targetId !== drag.actId && !creariaCicloRef.current(predId, sucId)) {
           setDropTargetId(prev => prev !== targetId ? targetId : prev)
         } else {
           setDropTargetId(prev => prev ? null : prev)
         }
       }
     }
+    const cleanupRaf = () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
+    const onKey = (e) => {
+      // Escape cancela el drag actual sin aplicar cambios
+      if (e.key === 'Escape' && dragStateRef.current) {
+        dragStateRef.current = null
+        setDrag(null); setDropTargetId(null)
+        cleanupRaf()
+      }
+    }
     const onUp = async (e) => {
       const d = dragStateRef.current
       setDrag(null); setDropTargetId(null)
+      cleanupRaf()
       if (!d) return
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
-        // dot derecho (default): origen=predecesora, target=sucesora ("X termina → empieza Y")
-        // dot izquierdo: invertido → origen=sucesora, target=predecesora ("Y empieza después de X")
         const predId = d.from === 'left' ? targetId : d.actId
         const sucId  = d.from === 'left' ? d.actId : targetId
-        if (targetId && targetId !== d.actId && !creariaCiclo(predId, sucId)) {
+        if (targetId && targetId !== d.actId && !creariaCicloRef.current(predId, sucId)) {
           setActividades(prev => prev.map(a => a.id === sucId ? { ...a, deps: [...(a.deps || []), { id: predId, tipo: 'FS' }] } : a))
           try {
             await agregarDependencia(sucId, predId, 'FS')
-            onRecargar()
+            onUndoPushRef.current?.({ type: 'addDep', sucId, predId, tipo: 'FS' })
+            onRecargarRef.current?.()
           } catch (err) {
             setActividades(prev => prev.map(a => a.id === sucId ? { ...a, deps: (a.deps || []).filter(x => x.id !== predId) } : a))
             alert('No se pudo crear la dependencia: ' + err.message)
           }
         }
       } else {
-        const deltaDays = Math.round((d.mouseX - d.startX) / DAY_WIDTH)
+        const deltaDays = Math.round((d.mouseX - d.startX) / dayWidthRef.current)
         if (deltaDays === 0) { dragStateRef.current = null; return }
         let cambios = {}
         if (d.tipo === 'move') {
@@ -1167,13 +1192,11 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
           if (nuevoFin <= d.originalInicio) { dragStateRef.current = null; return }
           cambios.fin = nuevoFin
         }
-        // v13.3: actualización optimista — aplicar cambios también al padre si existe
-        const actividadMovida = actividades.find(a => a.id === d.actId)
+        const actividadMovida = (actividadesPropRef.current || []).find(a => a.id === d.actId)
         const parentId = actividadMovida?.parent_id
 
         setActividades(prev => {
           const nuevo = prev.map(a => a.id === d.actId ? { ...a, ...cambios } : a)
-          // Si esta actividad tiene padre, recalcular las fechas del padre
           if (parentId) {
             const hermanos = nuevo.filter(a => a.parent_id === parentId)
             if (hermanos.length > 0) {
@@ -1186,15 +1209,20 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
         })
         dragStateRef.current = null
         try {
-          // v13.3: solo actualizar la actividad movida.
-          // recalcularFechasDesde ahora respeta el movimiento del usuario (no jala hacia atrás).
-          // recalcularPadre actualiza el padre si aplica.
           await actualizarActividad(d.actId, cambios)
+          // v15.10.3: registrar en undo stack — guarda fechas originales para revertir
+          onUndoPushRef.current?.({
+            type: d.tipo,  // 'move' | 'resize-left' | 'resize-right'
+            actId: d.actId,
+            prevInicio: d.originalInicio, prevFin: d.originalFin,
+            newInicio: cambios.inicio ?? d.originalInicio,
+            newFin: cambios.fin ?? d.originalFin,
+          })
           await recalcularFechasDesde(d.actId)
           if (parentId) await recalcularPadre(parentId)
-          onRecargar()
+          onRecargarRef.current?.()
         } catch (err) {
-          setActividades(actividadesProp)
+          setActividades(actividadesPropRef.current)
           alert('Error: ' + err.message)
         }
       }
@@ -1202,8 +1230,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  }, [drag, actividadesProp, onRecargar, creariaCiclo, DAY_WIDTH])
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('keydown', onKey)
+      cleanupRaf()
+    }
+  }, [drag])
 
   const iniciarDrag = (e, act, tipo, from = null) => {
     e.stopPropagation(); e.preventDefault()
@@ -3181,8 +3215,12 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   const [usuarios, setUsuarios] = useState([])
   const [menuCtx, setMenuCtx] = useState(null)  // v8: {actividad, x, y}
   const [confirmDepDelete, setConfirmDepDelete] = useState(null)  // v13.2: {predId, actId, predNombre, actNombre}
+  const [toast, setToast] = useState(null)  // v15.10.3: feedback de undo
   const deepLinkActRef = useRef(false)
   const isMobile = useIsMobile()
+  // v15.10.3: undo stack — máx 30 acciones, sesión local
+  const undoStackRef = useRef([])
+  const MAX_UNDO = 30
 
   const puedeVerFinanciero = usuarioActual?.rol
     ? ['direccion', 'admin', 'cobranza', 'ventas'].includes(usuarioActual.rol)
@@ -3218,6 +3256,66 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     deepLinkActRef.current = true
   }, [proyecto, actividadInicialId])
 
+  // v15.10.3: undo stack — registra acciones en el Gantt para revertir con Ctrl+Z
+  const showToast = useCallback((mensaje, tipo = 'info') => {
+    setToast({ mensaje, tipo })
+    setTimeout(() => setToast(null), 2500)
+  }, [])
+
+  const pushUndo = useCallback((action) => {
+    undoStackRef.current.push(action)
+    if (undoStackRef.current.length > MAX_UNDO) undoStackRef.current.shift()
+  }, [])
+
+  const handleUndo = useCallback(async () => {
+    const action = undoStackRef.current.pop()
+    if (!action) {
+      showToast('No hay nada que deshacer', 'info')
+      return
+    }
+    try {
+      switch (action.type) {
+        case 'move':
+        case 'resize-left':
+        case 'resize-right':
+          await actualizarActividad(action.actId, { inicio: action.prevInicio, fin: action.prevFin })
+          break
+        case 'addDep':
+          await quitarDependencia(action.sucId, action.predId)
+          break
+        case 'removeDep':
+          await agregarDependencia(action.sucId, action.predId, action.tipo || 'FS')
+          break
+        case 'create':
+          await eliminarActividad(action.actId)
+          break
+        case 'delete':
+          await crearActividad(action.fullData)
+          break
+        default:
+          showToast('Acción no reversible', 'info')
+          return
+      }
+      await cargar()
+      showToast('Acción deshecha (Ctrl+Z)', 'success')
+    } catch (e) {
+      showToast('No se pudo deshacer: ' + e.message, 'error')
+    }
+  }, [cargar, showToast])
+
+  // Listener global Ctrl/Cmd + Z (solo cuando no se está editando un input)
+  useEffect(() => {
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'z' || e.shiftKey) return
+      const tag = (e.target?.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return
+      e.preventDefault()
+      handleUndo()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleUndo])
+
   const numeracion = useMemo(() => generarNumeracion(proyecto?.actividades || []), [proyecto])
 
   const actualizarInline = useCallback(async (actId, cambios) => {
@@ -3233,13 +3331,14 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     const lastFin = siblings.length > 0 ? siblings.reduce((m, a) => a.fin > m ? a.fin : m, siblings[0].fin) : (proyecto.inicio || new Date().toISOString().split('T')[0])
     const inicio = addDays(lastFin, 1)
     const fin = addDays(inicio, 4)
-    await crearActividad({
+    const nueva = await crearActividad({
       proyecto_id: proyectoId, parent_id: parentId, nombre,
       numero: maxNum + 1, inicio, fin, avance: 0,
       estado: 'Sin iniciar', es_milestone: false, es_servicio_padre: false,
     })
+    if (nueva?.id) pushUndo({ type: 'create', actId: nueva.id })
     await cargar()
-  }, [proyecto, proyectoId, cargar])
+  }, [proyecto, proyectoId, cargar, pushUndo])
 
   const toggleActividad = async (a) => {
     const nueva = { completada: !a.completada, avance: !a.completada ? 100 : 0, estado: !a.completada ? 'Completada' : 'Sin iniciar' }
@@ -3262,14 +3361,18 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   const handleEliminar = useCallback(async (actividad) => {
     const tieneHijos = proyecto?.actividades?.some(a => a.parent_id === actividad.id)
     const msg = tieneHijos
-      ? `¿Eliminar "${actividad.nombre}" y TODAS sus sub-actividades? Esta acción no se puede deshacer.`
-      : `¿Eliminar "${actividad.nombre}"? Esta acción no se puede deshacer.`
+      ? `¿Eliminar "${actividad.nombre}" y TODAS sus sub-actividades? (puedes deshacer con Ctrl+Z mientras dura la sesión, pero las sub-actividades NO se restauran)`
+      : `¿Eliminar "${actividad.nombre}"? (puedes deshacer con Ctrl+Z)`
     if (!confirm(msg)) return
     try {
+      // v15.10.3: snapshot del row para poder restaurarlo en undo
+      const snapshot = { ...actividad }
+      delete snapshot.proyecto  // por si vino con join
       await eliminarActividad(actividad.id)
+      pushUndo({ type: 'delete', actId: actividad.id, fullData: snapshot })
       await cargar()
     } catch (e) { alert('Error al eliminar: ' + e.message) }
-  }, [proyecto, cargar])
+  }, [proyecto, cargar, pushUndo])
 
   // v11: Handler para borrar dependencia desde click en flecha del Gantt
   // v13.2: Abre modal propio en vez de window.confirm()
@@ -3289,9 +3392,10 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     setConfirmDepDelete(null)
     try {
       await quitarDependencia(actId, predId)
+      pushUndo({ type: 'removeDep', sucId: actId, predId, tipo: 'FS' })
       await cargar()
     } catch (e) { alert('Error al quitar dependencia: ' + e.message) }
-  }, [confirmDepDelete, cargar])
+  }, [confirmDepDelete, cargar, pushUndo])
 
   const handleToggleMilestone = useCallback(async (actividad) => {
     const nuevo = !actividad.es_milestone
@@ -3408,7 +3512,22 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
 
       {tab === 'resumen' && <TabResumen proyecto={proyecto} actividades={actividades} hitos={hitos} usuarios={usuarios} puedeVerFinanciero={puedeVerFinanciero}/>}
       {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
-      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt}/>}
+      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt} onUndoPush={pushUndo}/>}
+
+      {/* v15.10.3: Toast de feedback para Ctrl+Z */}
+      {toast && (
+        <div style={{
+          position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)',
+          padding:'12px 20px', borderRadius:10, fontSize:13, fontWeight:500, zIndex:9999,
+          background: toast.tipo === 'error' ? '#FEF2F2' : toast.tipo === 'success' ? '#F0FDF4' : '#F8FAFC',
+          color: toast.tipo === 'error' ? COLORS.red : toast.tipo === 'success' ? COLORS.teal : COLORS.navy,
+          border: `1px solid ${toast.tipo === 'error' ? '#FECACA' : toast.tipo === 'success' ? '#86EFAC' : COLORS.slate200}`,
+          boxShadow:'0 8px 24px rgba(10,37,64,0.12)',
+          fontFamily:'var(--font-sans)',
+        }}>
+          {toast.mensaje}
+        </div>
+      )}
       {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion}/>}
       {tab === 'personas' && <TabPorPersona actividades={actividades} usuarios={usuarios} numeracion={numeracion} onAbrirInfo={setPanelAct}/>}
       {tab === 'sim' && <TabSIM proyectoId={proyectoId} usuarios={usuarios} usuarioActual={usuarioActual}/>}
