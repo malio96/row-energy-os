@@ -138,9 +138,15 @@ export async function eliminarActividad(id) {
   if (error) throw error
 }
 
-export async function crearActividad(proyectoId, actividad) {
-  const { count } = await supabase.from('actividades').select('*', { count: 'exact', head: true }).eq('proyecto_id', proyectoId)
-  const { data, error } = await supabase.from('actividades').insert({ ...actividad, proyecto_id: proyectoId, numero: (count || 0) + 1 }).select().single()
+export async function crearActividad(actividad) {
+  const proyectoId = actividad?.proyecto_id
+  if (!proyectoId) throw new Error('crearActividad: falta proyecto_id')
+  const numero = actividad.numero
+  if (numero == null) {
+    const { count } = await supabase.from('actividades').select('*', { count: 'exact', head: true }).eq('proyecto_id', proyectoId)
+    actividad.numero = (count || 0) + 1
+  }
+  const { data, error } = await supabase.from('actividades').insert(actividad).select().single()
   if (error) throw error
   return data
 }
@@ -840,50 +846,75 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
   return usuariosOperativos.map(u => {
     const capacidad = Number(u.capacidad_horas_semana || 40) // horas/semana, default 40
     const actsUsuario = actividades.filter(a => a.responsable_id === u.id || a.asignado_id === u.id)
+    // Activas pendientes (lo que sigue abierto, sin importar fechas)
     const activas = actsUsuario.filter(a => !['Completada','Cancelada'].includes(a.estado))
     const completadas = actsUsuario.filter(a => a.estado === 'Completada')
-
-    // Horas consumidas esta semana: contar días traslapados con la semana actual × 8h
-    let horasSemana = 0
-    activas.forEach(a => {
-      if (!a.inicio || !a.fin) return
+    // Activas que tocan la semana actual (las que realmente generan carga ahora)
+    const activasEstaSemana = activas.filter(a => {
+      if (!a.inicio || !a.fin) return false
       const ini = new Date(a.inicio); ini.setHours(0,0,0,0)
       const fin = new Date(a.fin); fin.setHours(23,59,59,999)
-      // Intersección con [lunes, domingo)
+      return fin >= lunes && ini < domingo
+    })
+
+    // Horas consumidas esta semana usando horas_estimadas si existe (>0).
+    // Si no, fallback a días traslapados × 8h por día.
+    let horasSemana = 0
+    activasEstaSemana.forEach(a => {
+      const ini = new Date(a.inicio); ini.setHours(0,0,0,0)
+      const fin = new Date(a.fin); fin.setHours(23,59,59,999)
       const interIni = ini > lunes ? ini : lunes
       const interFin = fin < domingo ? fin : new Date(domingo.getTime() - 1)
-      if (interFin < interIni) return
       const diasTraslape = Math.max(1, Math.ceil((interFin - interIni) / (1000*60*60*24)))
-      horasSemana += diasTraslape * 8 // 8h por día
+      const horasEst = Number(a.horas_estimadas || 0)
+      if (horasEst > 0) {
+        // Prorratear horas_estimadas por días que caen en esta semana
+        const duracionDias = Math.max(1, Math.ceil((fin - ini) / (1000*60*60*24)))
+        horasSemana += (horasEst / duracionDias) * diasTraslape
+      } else {
+        horasSemana += diasTraslape * 8 // fallback a 8h/día
+      }
     })
- 
+    horasSemana = Math.round(horasSemana)
 
     const porcentaje = capacidad > 0 ? Math.round((horasSemana / capacidad) * 100) : 0
     const sobrecargado = porcentaje > 100
-    const subutilizado = porcentaje < 50 && activas.length > 0
+    const subutilizado = porcentaje < 50 && activasEstaSemana.length > 0
 
-     // Tiempo promedio en actividades completadas
-    // NOTA: Tu tabla 'actividades' no tiene columnas fecha_inicio_real/fecha_fin_real,
-    // usamos inicio/fin como referencia de duración.
+    // Tiempo promedio en actividades completadas — usa fecha_fin_real - fecha_inicio_real si existen
     let tiempoPromedioDias = null
     if (completadas.length > 0) {
       const dias = completadas.map(a => {
-        if (!a.inicio || !a.fin) return null
-        return Math.ceil((new Date(a.fin) - new Date(a.inicio)) / (1000*60*60*24))
+        const fini = a.fecha_inicio_real || a.inicio
+        const ffin = a.fecha_fin_real || a.fin
+        if (!fini || !ffin) return null
+        return Math.ceil((new Date(ffin) - new Date(fini)) / (1000*60*60*24))
       }).filter(d => d !== null && d > 0)
       if (dias.length > 0) {
         tiempoPromedioDias = Math.round(dias.reduce((s,d) => s+d, 0) / dias.length)
       }
     }
- 
-    // Desviación real vs estimado — por ahora es 0 porque no tenemos fechas reales separadas.
-    // Si en el futuro agregas columnas fecha_inicio_real/fecha_fin_real a la tabla,
-    // podemos calcular desviación aquí.
+
+    // Desviación real vs estimado: promedio de (real_fin - planeado_fin) / duracion_planeada
+    // Solo cuenta completadas con fecha_fin_real registrada y fechas planeadas válidas.
     let desviacionPct = 0
+    const desvs = completadas.map(a => {
+      if (!a.fecha_fin_real || !a.fin || !a.inicio) return null
+      const planFin = new Date(a.fin)
+      const realFin = new Date(a.fecha_fin_real)
+      const planIni = new Date(a.inicio)
+      const duracionPlan = Math.max(1, Math.ceil((planFin - planIni) / (1000*60*60*24)))
+      const diferenciaDias = Math.round((realFin - planFin) / (1000*60*60*24))
+      return Math.round((diferenciaDias / duracionPlan) * 100)
+    }).filter(d => d !== null)
+    if (desvs.length > 0) {
+      desviacionPct = Math.round(desvs.reduce((s, d) => s + d, 0) / desvs.length)
+    }
 
     return {
       usuario: u,
-      asignadas: activas.length,
+      asignadas: activasEstaSemana.length,        // Solo las que tocan esta semana (Issue #1)
+      pendientesTotal: activas.length,             // Todas las pendientes (referencia)
       completadas: completadas.length,
       horasSemana,
       capacidad,

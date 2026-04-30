@@ -1485,13 +1485,24 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
     }, 150)
   }, [colaboradorInicialId])
 
-  // Actividades activas de cada usuario (mismo criterio que calcularCargaPorColaborador)
+  // Actividades activas de cada usuario que tocan la semana actual
+  // (mismo criterio que calcularCargaPorColaborador para consistencia con KPIs)
   const actividadesPorUsuario = useMemo(() => {
+    const hoy = new Date()
+    const dia = hoy.getDay()
+    const diasDesdeLunes = dia === 0 ? 6 : dia - 1
+    const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - diasDesdeLunes); lunes.setHours(0,0,0,0)
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 7)
+
     const map = {}
     ;(actividades || []).forEach(a => {
       if (['Completada', 'Cancelada'].includes(a.estado)) return
       const respId = a.responsable_id || a.asignado_id
       if (!respId) return
+      if (!a.inicio || !a.fin) return
+      const ini = new Date(a.inicio); ini.setHours(0,0,0,0)
+      const fin = new Date(a.fin); fin.setHours(23,59,59,999)
+      if (fin < lunes || ini >= domingo) return  // no toca esta semana
       if (!map[respId]) map[respId] = []
       map[respId].push(a)
     })
@@ -1565,13 +1576,14 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
       </div>
 
       <div style={{ background:'linear-gradient(to right, #F0F9FF, white)', border:`1px solid #BFDBFE`, borderRadius:12, padding:18, marginTop:16 }}>
-        <h3 style={{ fontSize:13, fontWeight:700, color:'#1E3A8A', margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>Fórmulas (Luis)</h3>
+        <h3 style={{ fontSize:13, fontWeight:700, color:'#1E3A8A', margin:0, marginBottom:12, fontFamily:'var(--font-sans)' }}>Fórmulas</h3>
         {[
           'Capacidad = horas/semana configurables por colaborador (default 40h)',
-          'Carga = Σ(días traslapados con esta semana × 8h) / capacidad',
-          'Sobrecarga: > 100% · Subutilización: < 50% con actividades asignadas',
-          'Tiempo promedio: días reales de actividades completadas por este colaborador',
-          'Desviación: (días reales − duración estimada) / duración estimada',
+          'Carga = horas de actividades activas que tocan esta semana ÷ capacidad. Si la actividad tiene horas_estimadas se prorratea por días; si no, default 8h/día.',
+          'Solo se cuentan actividades activas (no completadas/canceladas) cuyas fechas se traslapan con la semana actual.',
+          'Sobrecarga: > 100% · Subutilización: < 50% con actividades activas esta semana',
+          'Tiempo promedio: (fecha_fin_real − fecha_inicio_real) en días, promedio de las actividades completadas',
+          'Desviación: promedio de (fecha_fin_real − fecha_fin_planeada) ÷ duración planeada × 100, sobre las completadas con fechas reales registradas',
         ].map((t, i) => (
           <div key={i} style={{ display:'flex', gap:8, padding:'4px 0', fontSize:12, color:'#1E40AF' }}>
             <span>•</span><span>{t}</span>
@@ -1583,7 +1595,7 @@ function VistaPersonas({ data, onNavigate, isMobile, colaboradorInicialId }) {
 }
 
 function PersonaCard({ carga, actividades = [], expandidoInicial = false, cardRef, isMobile }) {
-  const { usuario, asignadas, horasSemana, capacidad, porcentaje, sobrecargado, subutilizado, tiempoPromedioDias, desviacionPct, completadas } = carga
+  const { usuario, asignadas, pendientesTotal, horasSemana, capacidad, porcentaje, sobrecargado, subutilizado, tiempoPromedioDias, desviacionPct, completadas } = carga
   const color = sobrecargado ? COLORS.red : porcentaje >= 70 ? COLORS.teal : subutilizado ? COLORS.amber : COLORS.slate500
   const pctVisible = Math.min(100, porcentaje)
   const [expandido, setExpandido] = useState(expandidoInicial)
@@ -1596,6 +1608,19 @@ function PersonaCard({ carga, actividades = [], expandidoInicial = false, cardRe
     e.stopPropagation()
     if (a.proyecto?.id) navigate(`/proyectos?proyecto=${a.proyecto.id}&actividad=${a.id}`)
   }
+
+  // v15.9.1 #3: agrupar actividades por proyecto para evitar perderse en lista plana
+  const actsPorProyecto = useMemo(() => {
+    const map = new Map()
+    actividades.forEach(a => {
+      const key = a.proyecto?.id || '_sin_proyecto'
+      if (!map.has(key)) {
+        map.set(key, { proyecto: a.proyecto, actividades: [] })
+      }
+      map.get(key).actividades.push(a)
+    })
+    return Array.from(map.values())
+  }, [actividades])
 
   return (
     <div ref={cardRef} onClick={() => setExpandido(v => !v)} style={{
@@ -1618,7 +1643,8 @@ function PersonaCard({ carga, actividades = [], expandidoInicial = false, cardRe
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:600, color:COLORS.ink }}>{usuario.nombre}</div>
           <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2 }}>
-            {usuario.rol} · {asignadas} actividad(es) activa(s)
+            {usuario.rol} · {asignadas} activa{asignadas === 1 ? '' : 's'} esta semana
+            {pendientesTotal > asignadas && <span style={{ color:COLORS.slate400 }}> · {pendientesTotal} pendiente{pendientesTotal === 1 ? '' : 's'} en total</span>}
             {sobrecargado && <span style={{ marginLeft:6, color:COLORS.red, fontWeight:700 }}>· SOBRECARGADO</span>}
             {subutilizado && <span style={{ marginLeft:6, color:COLORS.amber, fontWeight:700 }}>· SUBUTILIZADO</span>}
           </div>
@@ -1663,26 +1689,47 @@ function PersonaCard({ carga, actividades = [], expandidoInicial = false, cardRe
       </div>
 
       {expandido && actividades.length > 0 && (
-        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${sobrecargado ? '#FECACA' : COLORS.slate100}`, display:'grid', gap:6 }}>
-          {actividades.map(a => {
-            const hoy = new Date(); hoy.setHours(0,0,0,0)
-            const fin = a.fin ? new Date(a.fin) : null
-            const retrasada = fin && fin < hoy
+        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${sobrecargado ? '#FECACA' : COLORS.slate100}`, display:'grid', gap:10 }}>
+          {actsPorProyecto.map((grupo, idx) => {
+            const proyKey = grupo.proyecto?.id || `sin-proy-${idx}`
+            const tituloProy = grupo.proyecto
+              ? `${grupo.proyecto.codigo || ''}${grupo.proyecto.nombre ? ` · ${grupo.proyecto.nombre}` : ''}`.trim()
+              : 'Sin proyecto'
             return (
-              <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${retrasada ? COLORS.red : COLORS.slate200}`, borderRadius:6 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.nombre || 'Sin nombre'}</div>
-                  <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2, fontFamily:'var(--font-mono)' }}>
-                    {a.proyecto?.codigo || ''}{a.proyecto?.nombre ? ` · ${a.proyecto.nombre}` : ''}
+              <div key={proyKey} style={{ background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:8, overflow:'hidden' }}>
+                <div style={{ padding:'8px 12px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {tituloProy}
+                  </div>
+                  <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, padding:'2px 8px', background:'white', borderRadius:10, border:`1px solid ${COLORS.slate200}`, flexShrink:0 }}>
+                    {grupo.actividades.length}
                   </div>
                 </div>
-                <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color: retrasada ? COLORS.red : COLORS.slate500, fontWeight:retrasada ? 700 : 500, minWidth:80, textAlign:'right' }}>
-                  {a.fin ? fmtDate(a.fin) : '—'}
-                  {retrasada && <div style={{ fontSize:9, fontWeight:700 }}>RETRASADA</div>}
+                <div style={{ display:'grid', gap:6, padding:8 }}>
+                  {grupo.actividades.map(a => {
+                    const hoy = new Date(); hoy.setHours(0,0,0,0)
+                    const fin = a.fin ? new Date(a.fin) : null
+                    const retrasada = fin && fin < hoy
+                    return (
+                      <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${retrasada ? COLORS.red : COLORS.slate200}`, borderRadius:6 }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:12, fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.nombre || 'Sin nombre'}</div>
+                          <div style={{ fontSize:10, color:COLORS.slate500, marginTop:2, fontFamily:'var(--font-mono)' }}>
+                            {a.inicio ? fmtDate(a.inicio) : '—'} → {a.fin ? fmtDate(a.fin) : '—'}
+                            {(a.horas_estimadas || 0) > 0 && <span> · {a.horas_estimadas}h</span>}
+                          </div>
+                        </div>
+                        <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color: retrasada ? COLORS.red : COLORS.slate500, fontWeight:retrasada ? 700 : 500, minWidth:80, textAlign:'right' }}>
+                          {a.fin ? fmtDate(a.fin) : '—'}
+                          {retrasada && <div style={{ fontSize:9, fontWeight:700 }}>RETRASADA</div>}
+                        </div>
+                        <button onClick={(e) => abrirActividad(e, a)} disabled={!a.proyecto?.id} style={{ padding:'5px 10px', background: a.proyecto?.id ? COLORS.navy : COLORS.slate200, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor: a.proyecto?.id ? 'pointer' : 'not-allowed', flexShrink:0 }}>
+                          Abrir →
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
-                <button onClick={(e) => abrirActividad(e, a)} disabled={!a.proyecto?.id} style={{ padding:'5px 10px', background: a.proyecto?.id ? COLORS.navy : COLORS.slate200, color:'white', border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor: a.proyecto?.id ? 'pointer' : 'not-allowed', flexShrink:0 }}>
-                  Abrir →
-                </button>
               </div>
             )
           })}

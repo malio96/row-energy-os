@@ -22,7 +22,7 @@
 
 ## 🎯 Versión actual en producción
 
-**v15.9.0** — Security Hardening completo (BD + headers + auth checklist)
+**v15.9.1** — Bugfixes funcionales (sub-actividades, Gantt deps, carga, desviación, agrupación)
 
 La versión visible está en `package.json` y se renderiza en el Sidebar como "OS · v{version}". **REGLA**: bumpear `package.json.version` antes de cada commit visible.
 
@@ -46,6 +46,13 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
 - **v15.8.5 — Fix 404 al refrescar en rutas SPA:** `vercel.json` con rewrites `/(.*) → /index.html`.
 - **v15.8.6 — Iconos de alertas como SVG** (matching Sidebar) en Centro de Alertas y tab Mis alertas. Reemplaza emojis 💰⏰🚧🎯💸🌱📑👥. Componente nuevo `src/IconAlerta.jsx` + `SVG_PATHS_ALERTAS` en alertas.js.
 - **v15.9.0 — Security Hardening completo.** 5 migraciones SQL aplicadas vía MCP (drop tablas muertas, harden weak policies, security definer revoke, perf optimize RLS, FK indexes). Security headers + CSP estricto en `vercel.json`. Advisors: 35 → 6 warnings (los 6 restantes son intencionales: helpers RLS y RPCs callable por authenticated by design + leaked_password_protection que solo se activa por dashboard). Ver sección "🔐 Security Hardening v15.9.0" abajo para checklist pendiente (Auth dashboard + rotación creds).
+- **v15.9.1 — Bugfixes reportados por Luis (Q&A).** 6 issues funcionales:
+  - **#1 Carga histórica**: VistaPersonas ahora muestra solo "actividades activas en esta semana" + "X pendientes en total" como referencia. `calcularCargaPorColaborador` filtra por traslape con [lunes, domingo) actual.
+  - **#2 Peso/sobrecarga no recalcula**: la columna `peso` (existente) sirve para avance del proyecto (0-100%), no para esfuerzo. Agregada UI inline para `horas_estimadas` (existente, default 0). Cuando >0, el cálculo de carga lo prorratea por días que tocan la semana en lugar del fallback 8h/día. UseMemo dependiente de actividades, así que cambios se reflejan inmediato.
+  - **#3 Listado plano de actividades por usuario**: PersonaCard expandido ahora agrupa por proyecto (recuadros con código+nombre+conteo).
+  - **#4 Desviación 0**: SQL migration `v15.9.1_actividades_fechas_reales.sql` agrega `fecha_inicio_real` y `fecha_fin_real` con trigger automático (estado→'Completada' set fecha_fin_real=hoy). Backfill desde updated_at para completadas existentes. `calcularCargaPorColaborador` ahora calcula desviación real = avg((real_fin - planeado_fin) / duracion_planeada × 100).
+  - **#5 Error al crear sub-actividades**: bug crítico — `crearActividad(proyectoId, actividad)` en supabase.js esperaba 2 args pero el caller en Proyectos.jsx pasaba 1 objeto. Refactor a single-arg `crearActividad(actividad)`.
+  - **#6 Gantt dependencia invertida**: dot izquierdo y derecho llamaban a `iniciarDrag` con misma signature, sin distinguir sentido. Agregado parámetro `from = 'left' | 'right'`. Si `from === 'left'`, en mouseup se invierte: predecesora = donde soltaste, sucesora = de donde arrastraste. Tooltips actualizados ("Cuando termine esta, empieza la que vincules" vs "Esta inicia DESPUÉS de la que vincules").
 
 ## 🗺️ Roadmap pendiente
 

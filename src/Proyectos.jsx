@@ -1119,7 +1119,11 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       if (drag.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
-        if (targetId && targetId !== drag.actId && !creariaCiclo(drag.actId, targetId)) {
+        // Si arrastró desde el dot izquierdo, la actividad arrastrada es la SUCESORA
+        // (esta inicia después de la otra). Invertir predId/sucId para chequeo de ciclo.
+        const predId = drag.from === 'left' ? targetId : drag.actId
+        const sucId  = drag.from === 'left' ? drag.actId : targetId
+        if (targetId && targetId !== drag.actId && !creariaCiclo(predId, sucId)) {
           setDropTargetId(prev => prev !== targetId ? targetId : prev)
         } else {
           setDropTargetId(prev => prev ? null : prev)
@@ -1133,13 +1137,17 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
-        if (targetId && targetId !== d.actId && !creariaCiclo(d.actId, targetId)) {
-          setActividades(prev => prev.map(a => a.id === targetId ? { ...a, deps: [...(a.deps || []), { id: d.actId, tipo: 'FS' }] } : a))
+        // dot derecho (default): origen=predecesora, target=sucesora ("X termina → empieza Y")
+        // dot izquierdo: invertido → origen=sucesora, target=predecesora ("Y empieza después de X")
+        const predId = d.from === 'left' ? targetId : d.actId
+        const sucId  = d.from === 'left' ? d.actId : targetId
+        if (targetId && targetId !== d.actId && !creariaCiclo(predId, sucId)) {
+          setActividades(prev => prev.map(a => a.id === sucId ? { ...a, deps: [...(a.deps || []), { id: predId, tipo: 'FS' }] } : a))
           try {
-            await agregarDependencia(targetId, d.actId, 'FS')
+            await agregarDependencia(sucId, predId, 'FS')
             onRecargar()
           } catch (err) {
-            setActividades(prev => prev.map(a => a.id === targetId ? { ...a, deps: (a.deps || []).filter(x => x.id !== d.actId) } : a))
+            setActividades(prev => prev.map(a => a.id === sucId ? { ...a, deps: (a.deps || []).filter(x => x.id !== predId) } : a))
             alert('No se pudo crear la dependencia: ' + err.message)
           }
         }
@@ -1197,10 +1205,10 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [drag, actividadesProp, onRecargar, creariaCiclo, DAY_WIDTH])
 
-  const iniciarDrag = (e, act, tipo) => {
+  const iniciarDrag = (e, act, tipo, from = null) => {
     e.stopPropagation(); e.preventDefault()
     setTooltip(null)
-    const state = { tipo, actId: act.id, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
+    const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
     dragStateRef.current = state
     setDrag(state)
   }
@@ -1648,8 +1656,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                         {/* DOT IZQUIERDO — separado del rombo */}
                         {mostrarDots && (visibleNormal || visibleComoTarget) && (
                           <div
-                            onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
-                            title="Arrastra a otra actividad para crear dependencia"
+                            onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'left') }}
+                            title="Esta actividad inicia DESPUÉS de la que vincules"
                             style={{
                               ...dotStyle,
                               left: 4,  // 4px desde el borde izq del hitbox
@@ -1663,8 +1671,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                         {/* DOT DERECHO */}
                         {mostrarDots && (
                           <div
-                            onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
-                            title="Arrastra a otra actividad para crear dependencia"
+                            onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'right') }}
+                            title="Cuando termine esta, empieza la que vincules"
                             style={{
                               ...dotStyle,
                               right: 4,  // 4px desde el borde der del hitbox
@@ -1800,8 +1808,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                           <>
                             {/* DOT DERECHO — AFUERA (right: -14) */}
                             <div
-                              onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
-                              title="Arrastra a otra actividad para crear dependencia"
+                              onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'right') }}
+                              title="Cuando termine esta, empieza la que vincules"
                               style={{
                                 ...dotStyle,
                                 right: -14,
@@ -1813,8 +1821,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                             {/* DOT IZQUIERDO — AFUERA (left: -14) - solo hover normal */}
                             {(visibleNormal || visibleComoTarget) && (
                               <div
-                                onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep') }}
-                                title="Arrastra a otra actividad para crear dependencia"
+                                onMouseDown={(e) => { e.stopPropagation(); iniciarDrag(e, act, 'dep', 'left') }}
+                                title="Esta actividad inicia DESPUÉS de la que vincules"
                                 style={{
                                   ...dotStyle,
                                   left: -14,
@@ -2099,7 +2107,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                   </div>
                   {/* v12: Input peso % (editable solo por direccion/admin) */}
                   {(puedeEditarPeso) && (
-                    <div title="Peso ponderado (Luis)" style={{ display:'flex', alignItems:'center', gap:2 }}>
+                    <div title="Peso ponderado (avance del proyecto)" style={{ display:'flex', alignItems:'center', gap:2 }}>
                       <input
                         type="number" min="0" max="100" step="1"
                         value={h.peso || 0}
@@ -2111,6 +2119,22 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                         style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (h.peso || 0) > 0 ? COLORS.navy : COLORS.slate400, background: 'white' }}
                       />
                       <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>%</span>
+                    </div>
+                  )}
+                  {/* v15.9.1: Horas estimadas (afecta carga del responsable) */}
+                  {(puedeEditarPeso) && (
+                    <div title="Horas estimadas — afecta el cálculo de carga del responsable. 0 = auto (días×8h)." style={{ display:'flex', alignItems:'center', gap:2 }}>
+                      <input
+                        type="number" min="0" step="1"
+                        value={h.horas_estimadas || 0}
+                        onChange={e => {
+                          const v = Math.max(0, parseInt(e.target.value) || 0)
+                          onInlineUpdate(h.id, { horas_estimadas: v })
+                        }}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (h.horas_estimadas || 0) > 0 ? COLORS.teal : COLORS.slate400, background: 'white' }}
+                      />
+                      <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>h</span>
                     </div>
                   )}
                   <BarraAvance avance={h.avance}/>
