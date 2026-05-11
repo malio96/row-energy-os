@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Claude Code agent skills (instalados localmente, no se commitean)
+.agents/
+.claude/
+.playwright-mcp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
