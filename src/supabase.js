@@ -143,8 +143,10 @@ export async function crearActividad(actividad) {
   if (!proyectoId) throw new Error('crearActividad: falta proyecto_id')
   const numero = actividad.numero
   if (numero == null) {
-    const { count } = await supabase.from('actividades').select('*', { count: 'exact', head: true }).eq('proyecto_id', proyectoId)
-    actividad.numero = (count || 0) + 1
+    // v15.10.13: usar MAX(numero) en lugar de COUNT. Con borrados puede haber gaps,
+    // y COUNT+1 podría chocar con un numero existente (constraint proyecto_id+numero).
+    const { data: maxRow } = await supabase.from('actividades').select('numero').eq('proyecto_id', proyectoId).order('numero', { ascending: false }).limit(1).maybeSingle()
+    actividad.numero = ((maxRow?.numero) || 0) + 1
   }
   const { data, error } = await supabase.from('actividades').insert(actividad).select().single()
   if (error) throw error
@@ -876,7 +878,11 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
         const duracionDias = Math.max(1, Math.ceil((fin - ini) / (1000*60*60*24)))
         horasSemana += (horasEst / duracionDias) * diasTraslape
       } else {
-        horasSemana += diasTraslape * 8 // fallback a 8h/día
+        // v15.10.13: fallback a 2h/día (antes 8h/día). Razón: 8h/día asumía
+        // dedicación full-time por actividad, lo que sobrecargaba con solo 2-3
+        // tareas. 2h/día es un default realista para actividades parciales;
+        // si una actividad requiere más, se ajusta con el campo horas_estimadas.
+        horasSemana += diasTraslape * 2
       }
     })
     horasSemana = Math.round(horasSemana)

@@ -1946,9 +1946,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
 
 function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero }) {
   const padres = actividades.filter(a => !a.parent_id)
-  const avance = padres.length > 0
-    ? Math.round(padres.reduce((s,a) => s+(a.avance||0), 0) / padres.length)
-    : 0
+  const avance = calcularAvancePonderado(actividades, null)
   const completadas = actividades.filter(a => a.completada).length
   const bloqueadas = actividades.filter(a => a.estado === 'Bloqueada').length
   const retrasadas = actividades.filter(a => a.estado === 'Retrasada').length
@@ -1961,7 +1959,7 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
     <div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14, marginBottom:18 }}>
         <div style={cardStyle}>
-          <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Avance global</div>
+          <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Avance ponderado</div>
           <div style={{ fontSize:32, fontWeight:400, color:COLORS.navy, fontFamily:'var(--font-sans)', marginBottom:6 }}>{avance}%</div>
           <BarraAvance avance={avance}/>
         </div>
@@ -2150,7 +2148,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                   )}
                   {/* v15.9.1: Horas estimadas (afecta carga del responsable) */}
                   {(puedeEditarPeso) && (
-                    <div title="Horas estimadas — afecta el cálculo de carga del responsable. 0 = auto (días×8h)." style={{ display:'flex', alignItems:'center', gap:2 }}>
+                    <div title="Horas estimadas — afecta el cálculo de carga del responsable. 0 = auto (días×2h)." style={{ display:'flex', alignItems:'center', gap:2 }}>
                       <input
                         type="number" min="0" step="1"
                         value={h.horas_estimadas || 0}
@@ -2205,7 +2203,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
   )
 }
 
-function TabKanban({ actividades, onAbrirInfo, numeracion }) {
+function TabKanban({ actividades, onAbrirInfo, numeracion, onNuevaActividad }) {
   // v14.1.1: Kanban rediseñado robusto — muestra TODAS las actividades no-padre
   // Bug anterior: filtro que ocultaba actividades padre intermedias y completadas
   // Nuevo: 6 columnas (incluyendo completadas colapsable) + milestones visibles
@@ -2266,35 +2264,88 @@ function TabKanban({ actividades, onAbrirInfo, numeracion }) {
     return !(a.es_servicio_padre && tieneHijos) && a.estado !== 'Cancelada'
   }).length
 
+  // v15.10.13: handler para crear sub-actividad inline desde el Kanban
+  const [subInputFor, setSubInputFor] = useState(null)  // id de la actividad padre cuyo input está abierto
+  const [subNombre, setSubNombre] = useState('')
+  const crearSub = async (parentId) => {
+    const nombre = subNombre.trim()
+    if (!nombre) { setSubInputFor(null); setSubNombre(''); return }
+    try {
+      await onNuevaActividad?.({ nombre, parentId })
+      setSubInputFor(null); setSubNombre('')
+    } catch (e) {
+      alert('Error: ' + e.message)
+    }
+  }
+
   const renderCard = (a, c) => {
     const diasFaltan = a.fin ? diffDays(hoy, a.fin) : null
     const esMilestone = a.es_milestone
     const completa = estaCompletada(a)
+    const subAbierto = subInputFor === a.id
     return (
-      <div key={a.id} onClick={() => onAbrirInfo(a)} style={{
+      <div key={a.id} style={{
         background:'white', borderRadius:8, padding:12,
         border:`1px solid ${COLORS.slate100}`,
         borderLeft:`3px solid ${completa ? COLORS.teal : c.borde}`,
-        marginBottom:8, cursor:'pointer',
+        marginBottom:8,
         transition:'all 0.15s',
         opacity: completa ? 0.75 : 1,
+        position:'relative',
       }}
-        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-        onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
-        <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-          <span>{numeracion[a.id]}</span>
-          {esMilestone && <span title="Hito / Milestone" style={{ color:COLORS.navy, display:'inline-flex' }}><Icon.Diamond/></span>}
-          {a.estado === 'Bloqueada' && <Icon.Lock/>}
-          {a.importancia && <BadgeImportancia importancia={a.importancia} tamano="mini"/>}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-1px)'; const btn = e.currentTarget.querySelector('[data-add-sub]'); if (btn) btn.style.opacity = '1' }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none'; const btn = e.currentTarget.querySelector('[data-add-sub]'); if (btn && !subAbierto) btn.style.opacity = '0' }}>
+        <div onClick={() => onAbrirInfo(a)} style={{ cursor:'pointer' }}>
+          <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+            <span>{numeracion[a.id]}</span>
+            {esMilestone && <span title="Hito / Milestone" style={{ color:COLORS.navy, display:'inline-flex' }}><Icon.Diamond/></span>}
+            {a.estado === 'Bloqueada' && <Icon.Lock/>}
+            {a.importancia && <BadgeImportancia importancia={a.importancia} tamano="mini"/>}
+          </div>
+          <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, marginBottom:6, textDecoration: completa ? 'line-through' : 'none' }}>{a.nombre}</div>
+          <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:8 }}>
+            {a.fin ? fmtDate(a.fin) : 'Sin fecha'}
+            {!completa && diasFaltan !== null && diasFaltan > 0 && diasFaltan <= 60 && <> · <span style={{ color: diasFaltan <= 7 ? COLORS.amber : COLORS.slate500 }}>en {diasFaltan}d</span></>}
+            {!completa && diasFaltan !== null && diasFaltan < 0 && <> · <span style={{ color:COLORS.red, fontWeight:700 }}>{Math.abs(diasFaltan)}d tarde</span></>}
+          </div>
+          {!completa && <BarraAvance avance={a.avance||0} height={4}/>}
+          <div style={{ marginTop:6 }}><Badge texto={a.estado} mapa={ESTADOS} tamano={10}/></div>
         </div>
-        <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, marginBottom:6, textDecoration: completa ? 'line-through' : 'none' }}>{a.nombre}</div>
-        <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginBottom:8 }}>
-          {a.fin ? fmtDate(a.fin) : 'Sin fecha'}
-          {!completa && diasFaltan !== null && diasFaltan > 0 && diasFaltan <= 60 && <> · <span style={{ color: diasFaltan <= 7 ? COLORS.amber : COLORS.slate500 }}>en {diasFaltan}d</span></>}
-          {!completa && diasFaltan !== null && diasFaltan < 0 && <> · <span style={{ color:COLORS.red, fontWeight:700 }}>{Math.abs(diasFaltan)}d tarde</span></>}
-        </div>
-        {!completa && <BarraAvance avance={a.avance||0} height={4}/>}
-        <div style={{ marginTop:6 }}><Badge texto={a.estado} mapa={ESTADOS} tamano={10}/></div>
+        {/* v15.10.13: botón "+" para crear sub-actividad. Solo visible al hover (excepto si el input está abierto). */}
+        {onNuevaActividad && !esMilestone && (
+          <button
+            data-add-sub
+            title="Crear sub-actividad bajo esta"
+            onClick={(e) => { e.stopPropagation(); setSubInputFor(a.id); setSubNombre('') }}
+            style={{
+              position:'absolute', top:8, right:8,
+              width:22, height:22, borderRadius:'50%',
+              background:COLORS.teal, color:'white', border:'none',
+              fontSize:14, fontWeight:700, lineHeight:1, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              opacity: subAbierto ? 1 : 0, transition:'opacity 0.15s',
+              boxShadow:'0 2px 4px rgba(0,0,0,0.15)',
+            }}
+          >+</button>
+        )}
+        {subAbierto && (
+          <div onClick={e => e.stopPropagation()} style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${COLORS.slate100}`, display:'flex', gap:6 }}>
+            <input
+              autoFocus
+              type="text"
+              placeholder="Nombre de sub-actividad..."
+              value={subNombre}
+              onChange={e => setSubNombre(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') crearSub(a.id); if (e.key === 'Escape') { setSubInputFor(null); setSubNombre('') } }}
+              style={{ flex:1, padding:'5px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'inherit' }}
+            />
+            <button
+              onClick={() => crearSub(a.id)}
+              disabled={!subNombre.trim()}
+              style={{ padding:'5px 10px', background: subNombre.trim() ? COLORS.teal : COLORS.slate200, color:'white', border:'none', borderRadius:5, fontSize:11, fontWeight:600, cursor: subNombre.trim() ? 'pointer' : 'not-allowed' }}
+            >OK</button>
+          </div>
+        )}
       </div>
     )
   }
@@ -3308,13 +3359,15 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   const crearNuevaActividad = useCallback(async ({ nombre, parentId = null }) => {
     const acts = proyecto?.actividades || []
     const siblings = acts.filter(a => (a.parent_id || null) === parentId)
-    const maxNum = siblings.reduce((m, a) => Math.max(m, a.numero || 0), 0)
+    // v15.10.13: numero único en TODO el proyecto (constraint: actividades_proyecto_id_numero_key).
+    // Antes: max(siblings)+1 → sub-actividades chocaban con padres existentes.
+    const maxNumGlobal = acts.reduce((m, a) => Math.max(m, a.numero || 0), 0)
     const lastFin = siblings.length > 0 ? siblings.reduce((m, a) => a.fin > m ? a.fin : m, siblings[0].fin) : (proyecto.inicio || new Date().toISOString().split('T')[0])
     const inicio = addDays(lastFin, 1)
     const fin = addDays(inicio, 4)
     const nueva = await crearActividad({
       proyecto_id: proyectoId, parent_id: parentId, nombre,
-      numero: maxNum + 1, inicio, fin, avance: 0,
+      numero: maxNumGlobal + 1, inicio, fin, avance: 0,
       estado: 'Sin iniciar', es_milestone: false, es_servicio_padre: false,
     })
     if (nueva?.id) pushUndo({ type: 'create', actId: nueva.id })
@@ -3509,7 +3562,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
           {toast.mensaje}
         </div>
       )}
-      {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion}/>}
+      {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion} onNuevaActividad={crearNuevaActividad}/>}
       {tab === 'personas' && <TabPorPersona actividades={actividades} usuarios={usuarios} numeracion={numeracion} onAbrirInfo={setPanelAct}/>}
       {tab === 'sim' && <TabSIM proyectoId={proyectoId} usuarios={usuarios} usuarioActual={usuarioActual}/>}
       {tab === 'documentos' && <TabDocumentos proyecto={proyecto}/>}
