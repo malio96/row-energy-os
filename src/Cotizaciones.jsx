@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS, getTareasPostCierre, completarTareaPostCierre, asignarTareaPostCierre, aprobarWorkflowPostCierre, DEPARTAMENTOS_POST_CIERRE, ESTADOS_TAREA_PC } from './supabase'
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
+import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 
 export default function Cotizaciones({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -80,10 +81,19 @@ function ModalNuevaCotizacion({ usuario, onClose, onCreada }) {
   const [plantillas, setPlantillas] = useState([])
   const [form, setForm] = useState({ nombre_proyecto:'', cliente_id:'', plantilla_id:'', capacidad_mw:'', ubicacion:'', notas:'' })
   const [creando, setCreando] = useState(false)
+  const [nuevoCliente, setNuevoCliente] = useState(false)  // v16.1.1
 
   useEffect(() => {
     Promise.all([getClientes(), getPlantillas()]).then(([c, p]) => { setClientes(c); setPlantillas(p) })
   }, [])
+
+  // v16.1.1: cuando se crea un cliente desde el form inline, refrescar y seleccionar
+  const onClienteCreado = async (cli) => {
+    setNuevoCliente(false)
+    const cs = await getClientes()
+    setClientes(cs)
+    setForm(f => ({ ...f, cliente_id: cli.id }))
+  }
 
   const crear = async () => {
     if (!form.nombre_proyecto || !form.cliente_id) { alert('Completa nombre y cliente'); return }
@@ -110,7 +120,21 @@ function ModalNuevaCotizacion({ usuario, onClose, onCreada }) {
         </div>
         <div style={{ padding:24 }}>
           <div style={{ marginBottom:14 }}><label style={labelStyle}>Nombre del proyecto *</label><input value={form.nombre_proyecto} onChange={e=>setForm({...form, nombre_proyecto:e.target.value})} placeholder="Ej: Interconexión Intel Querétaro 50 MW" style={inputStyle}/></div>
-          <div style={{ marginBottom:14 }}><label style={labelStyle}>Cliente *</label><select value={form.cliente_id} onChange={e=>setForm({...form, cliente_id:e.target.value})} style={selectStyle}><option value="">Selecciona...</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.razon_social}</option>)}</select></div>
+          <div style={{ marginBottom:14 }}>
+            <label style={labelStyle}>Cliente *</label>
+            <div style={{ display:'flex', gap:8 }}>
+              <select value={form.cliente_id} onChange={e=>setForm({...form, cliente_id:e.target.value})} style={{...selectStyle, flex:1}}>
+                <option value="">Selecciona...</option>
+                {clientes.map(c => <option key={c.id} value={c.id}>{c.razon_social}</option>)}
+              </select>
+              <button type="button" onClick={() => setNuevoCliente(v => !v)} style={{ padding:'8px 14px', background: nuevoCliente ? COLORS.slate200 : COLORS.teal, color: nuevoCliente ? COLORS.slate600 : 'white', border:'none', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
+                {nuevoCliente ? 'Cancelar' : '+ Nuevo'}
+              </button>
+            </div>
+            {nuevoCliente && (
+              <FormClienteInline onCancel={() => setNuevoCliente(false)} onCreated={onClienteCreado}/>
+            )}
+          </div>
           <div style={{ marginBottom:14 }}><label style={labelStyle}>Plantilla sugerida (opcional)</label><select value={form.plantilla_id} onChange={e=>setForm({...form, plantilla_id:e.target.value})} style={selectStyle}><option value="">Sin plantilla</option>{plantillas.map(p => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}</select></div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
             <div><label style={labelStyle}>Capacidad (MW)</label><input type="number" step="0.1" value={form.capacidad_mw} onChange={e=>setForm({...form, capacidad_mw:e.target.value})} style={inputStyle}/></div>

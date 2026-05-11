@@ -26,6 +26,27 @@ export async function getClientes() {
   return data || []
 }
 
+// v16.1.1: actualizar cliente — necesario para completar campos faltantes
+// (especialmente RFC y dirección fiscal, requeridos por el trigger de aprobar cotización).
+export async function actualizarCliente(id, cambios) {
+  const limpio = {
+    razon_social: cambios.razon_social?.trim() || undefined,
+    rfc: cambios.rfc?.trim() || null,
+    contacto_nombre: cambios.contacto_nombre?.trim() || null,
+    contacto_email: cambios.contacto_email?.trim() || null,
+    contacto_telefono: cambios.contacto_telefono?.trim() || null,
+    direccion: cambios.direccion?.trim() || null,
+    industria: cambios.industria?.trim() || null,
+    notas: cambios.notas?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }
+  // Quitar undefined para no sobrescribir con null la razón social
+  Object.keys(limpio).forEach(k => limpio[k] === undefined && delete limpio[k])
+  const { data, error } = await supabase.from('clientes').update(limpio).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
 // ============================================================
 // PLANTILLAS
 // ============================================================

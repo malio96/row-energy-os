@@ -22,6 +22,8 @@ import {
   actualizarHito, crearHito, eliminarHito, eliminarProyecto,
   // v16.0.0: Storage de documentos
   DOC_CATEGORIAS, uploadDoc, listDocs, getSignedDocUrl, deleteDoc, downloadDoc,
+  // v16.1.1: actualización de clientes
+  actualizarCliente,
 } from './supabase'
 
 // v14.1: helpers para persistir preferencias simples en localStorage
@@ -3104,12 +3106,26 @@ function ConfirmDepDeleteModal({ data, onCancel, onConfirm }) {
 }
 
 // v13: Formulario inline para crear cliente rápido desde el modal de nuevo proyecto
-function FormClienteInline({ onCancel, onCreated }) {
-  const [form, setForm] = useState({ razon_social:'', rfc:'', contacto_nombre:'', email:'', telefono:'' })
+// v16.1.1: refactor — soporta crear (cliente=null) o editar (cliente=obj).
+// Ahora incluye Dirección fiscal e Industria (faltantes en v16.1.0 que bloqueaban
+// el flujo de cotización porque el trigger requiere RFC + dirección).
+// Exportado para reuso en Cotizaciones y Configuracion.
+export function FormClienteInline({ cliente, onCancel, onCreated, onUpdated }) {
+  const esEdicion = !!cliente
+  const [form, setForm] = useState({
+    razon_social: cliente?.razon_social || '',
+    rfc: cliente?.rfc || '',
+    contacto_nombre: cliente?.contacto_nombre || '',
+    contacto_email: cliente?.contacto_email || '',
+    contacto_telefono: cliente?.contacto_telefono || '',
+    direccion: cliente?.direccion || '',
+    industria: cliente?.industria || '',
+    notas: cliente?.notas || '',
+  })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
 
-  const crear = async () => {
+  const guardar = async () => {
     if (!form.razon_social.trim()) {
       setError('La razón social es obligatoria')
       return
@@ -3117,24 +3133,31 @@ function FormClienteInline({ onCancel, onCreated }) {
     setGuardando(true)
     setError(null)
     try {
-      // Generar código auto: CLI-XXX
-      const { count } = await supabase.from('clientes').select('*', { count:'exact', head:true })
-      const codigo = `CLI-${String((count || 0) + 1).padStart(3, '0')}`
-
-      const { data, error: insertError } = await supabase
-        .from('clientes')
-        .insert({
-          codigo,
-          razon_social: form.razon_social.trim(),
-          rfc: form.rfc.trim() || null,
-          contacto_nombre: form.contacto_nombre.trim() || null,
-          contacto_email: form.email.trim() || null,
-          contacto_telefono: form.telefono.trim() || null,
-        })
-        .select()
-        .single()
-      if (insertError) throw insertError
-      onCreated(data)
+      if (esEdicion) {
+        const data = await actualizarCliente(cliente.id, form)
+        onUpdated?.(data)
+      } else {
+        // Crear: generar código CLI-XXX
+        const { count } = await supabase.from('clientes').select('*', { count:'exact', head:true })
+        const codigo = `CLI-${String((count || 0) + 1).padStart(3, '0')}`
+        const { data, error: insertError } = await supabase
+          .from('clientes')
+          .insert({
+            codigo,
+            razon_social: form.razon_social.trim(),
+            rfc: form.rfc.trim() || null,
+            contacto_nombre: form.contacto_nombre.trim() || null,
+            contacto_email: form.contacto_email.trim() || null,
+            contacto_telefono: form.contacto_telefono.trim() || null,
+            direccion: form.direccion.trim() || null,
+            industria: form.industria.trim() || null,
+            notas: form.notas.trim() || null,
+          })
+          .select()
+          .single()
+        if (insertError) throw insertError
+        onCreated?.(data)
+      }
     } catch (e) {
       setError(e.message)
       setGuardando(false)
@@ -3142,8 +3165,10 @@ function FormClienteInline({ onCancel, onCreated }) {
   }
 
   return (
-    <div style={{ marginTop:8, padding:14, background:'#F0FDF4', border:`1px solid #86EFAC`, borderRadius:10 }}>
-      <div style={{ fontSize:11, fontWeight:700, color:COLORS.teal, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Crear cliente nuevo</div>
+    <div style={{ marginTop:8, padding:14, background: esEdicion ? 'white' : '#F0FDF4', border:`1px solid ${esEdicion ? COLORS.slate200 : '#86EFAC'}`, borderRadius:10 }}>
+      <div style={{ fontSize:11, fontWeight:700, color:COLORS.teal, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>
+        {esEdicion ? `Editar cliente: ${cliente.codigo}` : 'Crear cliente nuevo'}
+      </div>
       <div style={{ display:'grid', gap:8 }}>
         <div>
           <label style={miniLabel}>Razón social *</label>
@@ -3151,13 +3176,13 @@ function FormClienteInline({ onCancel, onCreated }) {
             value={form.razon_social}
             onChange={e => setForm({ ...form, razon_social: e.target.value })}
             placeholder="Intel Tecnología de México S.A. de C.V."
-            autoFocus
+            autoFocus={!esEdicion}
             style={inputStyle}
           />
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
           <div>
-            <label style={miniLabel}>RFC</label>
+            <label style={miniLabel}>RFC <span style={{ color:COLORS.slate400, fontWeight:400 }}>(necesario para facturar)</span></label>
             <input
               value={form.rfc}
               onChange={e => setForm({ ...form, rfc: e.target.value.toUpperCase() })}
@@ -3167,30 +3192,51 @@ function FormClienteInline({ onCancel, onCreated }) {
             />
           </div>
           <div>
+            <label style={miniLabel}>Industria</label>
+            <input
+              value={form.industria}
+              onChange={e => setForm({ ...form, industria: e.target.value })}
+              placeholder="Energía, Datacenter, Manufactura..."
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        <div>
+          <label style={miniLabel}>Dirección fiscal <span style={{ color:COLORS.slate400, fontWeight:400 }}>(necesaria para aprobar cotizaciones)</span></label>
+          <textarea
+            value={form.direccion}
+            onChange={e => setForm({ ...form, direccion: e.target.value })}
+            placeholder="Calle, número, colonia, CP, ciudad, estado"
+            rows={2}
+            style={{ ...inputStyle, resize:'vertical', fontFamily:'inherit' }}
+          />
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+          <div>
+            <label style={miniLabel}>Contacto principal</label>
+            <input
+              value={form.contacto_nombre}
+              onChange={e => setForm({ ...form, contacto_nombre: e.target.value })}
+              placeholder="Nombre del contacto"
+              style={inputStyle}
+            />
+          </div>
+          <div>
             <label style={miniLabel}>Teléfono</label>
             <input
-              value={form.telefono}
-              onChange={e => setForm({ ...form, telefono: e.target.value })}
+              value={form.contacto_telefono}
+              onChange={e => setForm({ ...form, contacto_telefono: e.target.value })}
               placeholder="55 1234 5678"
               style={inputStyle}
             />
           </div>
         </div>
         <div>
-          <label style={miniLabel}>Contacto principal</label>
-          <input
-            value={form.contacto_nombre}
-            onChange={e => setForm({ ...form, contacto_nombre: e.target.value })}
-            placeholder="Nombre del contacto"
-            style={inputStyle}
-          />
-        </div>
-        <div>
-          <label style={miniLabel}>Email</label>
+          <label style={miniLabel}>Email contacto</label>
           <input
             type="email"
-            value={form.email}
-            onChange={e => setForm({ ...form, email: e.target.value })}
+            value={form.contacto_email}
+            onChange={e => setForm({ ...form, contacto_email: e.target.value })}
             placeholder="contacto@empresa.com"
             style={inputStyle}
           />
@@ -3210,11 +3256,11 @@ function FormClienteInline({ onCancel, onCreated }) {
           </button>
           <button
             type="button"
-            onClick={crear}
+            onClick={guardar}
             disabled={guardando || !form.razon_social.trim()}
             style={{ padding:'8px 16px', background: guardando || !form.razon_social.trim() ? COLORS.slate400 : COLORS.teal, color:'white', border:'none', borderRadius:7, fontSize:12, fontWeight:600, cursor: guardando ? 'wait' : 'pointer' }}
           >
-            {guardando ? 'Creando...' : 'Crear cliente'}
+            {guardando ? 'Guardando...' : (esEdicion ? 'Guardar cambios' : 'Crear cliente')}
           </button>
         </div>
       </div>

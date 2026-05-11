@@ -22,7 +22,25 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.1.0** — Estado actual en producción. **Workflow Post-Cierre CRM** entregado tras la mega v16.0.
+**v16.1.1** — Estado actual en producción. **3 bugs detectados en E2E completo y arreglados** sobre v16.1.0:
+
+## 🐛 v16.1.1 — Bugfix: edición de clientes (entregado)
+
+Test E2E exhaustivo del sistema (crear cliente → proyecto → sub-actividad → docs → cotización → pricing → workflow post-cierre → alertas) reveló 3 bugs:
+
+- **BUG #1** (CRÍTICO): el `FormClienteInline` que se usaba para crear cliente NO tenía campo "Dirección fiscal" (ni "Industria"). Pero el trigger v16.1 requiere RFC + dirección para aprobar cotización → loop frustrante: el sistema dice "edita el cliente" pero no había forma de hacerlo.
+- **BUG #2**: el modal "Nueva cotización" NO tenía botón "+ Nuevo" para crear cliente inline (a diferencia del modal "Nuevo proyecto"). Inconsistencia UX.
+- **BUG #3** (CRÍTICO bloqueante): NO existía función `actualizarCliente()` ni UI para editar un cliente existente. Los clientes creados sin dirección quedaban atrapados sin forma de completarlos.
+
+**Fixes:**
+- `actualizarCliente(id, cambios)` en `supabase.js`. RLS UPDATE de `clientes` ampliada a los 5 roles operativos (direccion/admin/ventas/director_proyectos/cobranza), alineado con la policy INSERT de v15.10.13.
+- `FormClienteInline` refactorizado: ahora soporta crear (`cliente=null`) o editar (`cliente=obj`). Agregados campos Dirección fiscal (textarea), Industria, Notas. Exportado para reuso. Validación visual: labels indican "necesario para facturar" (RFC) y "necesaria para aprobar cotizaciones" (dirección).
+- Modal "Nueva cotización" ahora tiene botón "+ Nuevo" cliente que abre el form inline (UX consistente con modal "Nuevo proyecto").
+- TabClientes en Configuración: ahora es read-write. Botón "+ Nuevo cliente". Cada fila es clickeable → expande form de edición inline. Badge **⚠ INCOMPLETO** visible junto a clientes sin RFC o sin dirección (alerta visual proactiva al usuario antes de bloquearse en una cotización).
+
+Migration: `supabase/migrations/v16.1.1_clientes_update_align.sql`.
+
+## 🔄 v16.1.0 — Workflow Post-Cierre CRM (entregado)
 
 ## 🔄 v16.1.0 — Workflow Post-Cierre CRM (entregado)
 

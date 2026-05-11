@@ -13,6 +13,7 @@ import {
   puedeGestionarUsuarios, labelRol, descripcionRol,
 } from './permisos'
 import { ETIQUETAS_ALERTAS } from './alertas'
+import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso para crear/editar cliente
 import IconAlerta from './IconAlerta'  // v15.8.6
 
 // ============================================================
@@ -367,27 +368,93 @@ function MatrizPermisos() {
 // ============================================================
 // TAB CLIENTES
 // ============================================================
-function TabClientes({ clientes }) {
+// v16.1.1: TabClientes ahora permite crear y editar clientes inline.
+// Antes era read-only, lo que dejaba a clientes sin RFC/dirección bloqueados
+// (no podían aprobar cotizaciones porque el trigger v16.1 lo requiere).
+function TabClientes({ clientes: clientesProp }) {
+  const [clientes, setClientes] = useState(clientesProp || [])
+  const [editando, setEditando] = useState(null)  // cliente o null
+  const [creando, setCreando] = useState(false)
+
+  useEffect(() => { setClientes(clientesProp || []) }, [clientesProp])
+  const recargar = async () => setClientes(await getClientes())
+
+  // Helper visual: marca clientes incompletos (sin RFC o sin dirección) en rojo.
+  // Ayuda al usuario a ver de un vistazo qué clientes bloquearán sus cotizaciones.
+  const incompleto = (c) => !c.rfc || !c.direccion
+
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
-      <div style={{ padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:13, fontWeight:600, color:COLORS.ink }}>
-        Clientes ({clientes.length})
+      <div style={{ padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div style={{ fontSize:13, fontWeight:600, color:COLORS.ink }}>Clientes ({clientes.length})</div>
+        <button onClick={() => { setCreando(true); setEditando(null) }} style={{ padding:'6px 12px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer' }}>
+          + Nuevo cliente
+        </button>
       </div>
-      {clientes.length === 0 && (
+
+      {creando && (
+        <div style={{ padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50 }}>
+          <FormClienteInline
+            onCancel={() => setCreando(false)}
+            onCreated={async () => { setCreando(false); await recargar() }}
+          />
+        </div>
+      )}
+
+      {clientes.length === 0 && !creando && (
         <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin clientes</div>
       )}
-      {clientes.map(c => (
-        <div key={c.id} style={{ display:'grid', gridTemplateColumns:'80px 1fr 180px 160px 140px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13 }}>
-          <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
-          <div>
-            <div style={{ fontWeight:500, color:COLORS.ink }}>{c.razon_social}</div>
-            <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.rfc || '—'}</div>
+
+      {clientes.map(c => {
+        const enEdicion = editando?.id === c.id
+        return (
+          <div key={c.id} style={{ borderBottom:`1px solid ${COLORS.slate100}` }}>
+            <div
+              onClick={() => setEditando(enEdicion ? null : c)}
+              style={{
+                display:'grid',
+                gridTemplateColumns:'80px 1fr 180px 160px 140px 90px',
+                padding:'12px 20px',
+                alignItems:'center',
+                fontSize:13,
+                cursor:'pointer',
+                background: enEdicion ? COLORS.tealLight : 'transparent',
+                transition:'background 0.12s',
+              }}
+              onMouseEnter={e => { if (!enEdicion) e.currentTarget.style.background = COLORS.slate50 }}
+              onMouseLeave={e => { if (!enEdicion) e.currentTarget.style.background = 'transparent' }}
+            >
+              <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
+              <div>
+                <div style={{ fontWeight:500, color:COLORS.ink, display:'flex', alignItems:'center', gap:6 }}>
+                  {c.razon_social}
+                  {incompleto(c) && (
+                    <span title="Cliente incompleto: falta RFC o dirección. No podrá aprobar cotizaciones." style={{ fontSize:9, padding:'2px 6px', background:'#FEF3C7', color:'#92400E', borderRadius:6, fontWeight:700 }}>
+                      ⚠ INCOMPLETO
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.rfc || <span style={{ color:COLORS.red }}>sin RFC</span>}</div>
+              </div>
+              <div style={{ fontSize:12, color:COLORS.slate600 }}>{c.contacto_nombre || '—'}</div>
+              <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.contacto_email || '—'}</div>
+              <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.industria || '—'}</div>
+              <div style={{ fontSize:11, color:COLORS.teal, textAlign:'right', fontWeight:600 }}>
+                {enEdicion ? 'Cerrar ▴' : 'Editar ▾'}
+              </div>
+            </div>
+            {enEdicion && (
+              <div style={{ padding:'8px 20px 14px', background:COLORS.slate50 }}>
+                <FormClienteInline
+                  cliente={c}
+                  onCancel={() => setEditando(null)}
+                  onUpdated={async () => { setEditando(null); await recargar() }}
+                />
+              </div>
+            )}
           </div>
-          <div style={{ fontSize:12, color:COLORS.slate600 }}>{c.contacto_nombre || '—'}</div>
-          <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.contacto_email || '—'}</div>
-          <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.industria || '—'}</div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
