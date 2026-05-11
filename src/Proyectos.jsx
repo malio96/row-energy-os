@@ -1063,15 +1063,20 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
   const [collapsed, setCollapsed] = useState(new Set())
   const toggleCollapse = (id) => setCollapsed(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
+  // v16.1.2: render recursivo para soportar profundidad ilimitada de jerarquía
+  // (sub-sub-actividades y más allá). Antes estaba limitado a 2 niveles.
   const actOrdenadas = useMemo(() => {
-    const padres = actividades.filter(a => !a.parent_id)
     const result = []
-    padres.forEach(p => {
-      result.push(p)
-      if (!collapsed.has(p.id)) {
-        actividades.filter(a => a.parent_id === p.id).forEach(h => result.push(h))
-      }
-    })
+    const visit = (parentId) => {
+      const hijos = actividades
+        .filter(a => (a.parent_id || null) === parentId)
+        .sort((a, b) => (a.numero || 0) - (b.numero || 0))
+      hijos.forEach(h => {
+        result.push(h)
+        if (!collapsed.has(h.id)) visit(h.id)
+      })
+    }
+    visit(null)
     return result
   }, [actividades, collapsed])
 
@@ -2047,12 +2052,15 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
   )
 }
 
+// v16.1.2: TabActividades refactorizado a render recursivo para soportar
+// profundidad ilimitada de jerarquía. Antes estaba limitado a 2 niveles
+// (padre→hijo). Ahora cada actividad tiene su propio botón "+ sub-actividad"
+// debajo, permitiendo sub-sub-actividades y más allá.
 function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, puedeEditarPeso }) {
   const [nombreNueva, setNombreNueva] = useState('')
   const [creandoBajo, setCreandoBajo] = useState(null)
   const [creando, setCreando] = useState(false)
 
-  const padres = actividades.filter(a => !a.parent_id).sort((a,b) => (a.numero||0) - (b.numero||0))
   const getNivel = id => (numeracion[id] || '').split('.').length - 1
 
   const crearBajo = async (parentId) => {
@@ -2065,131 +2073,136 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
     setCreando(false)
   }
 
+  // Render recursivo: cada nodo se pinta con su indent + botón "+ sub-actividad" debajo
+  const renderFila = (act, nivel) => {
+    const hijos = actividades.filter(a => a.parent_id === act.id).sort((a,b) => (a.numero||0) - (b.numero||0))
+    const tieneHijos = hijos.length > 0
+    const esRoot = nivel === 0
+    const padreAvance = tieneHijos ? calcularAvancePonderado(actividades, act.id) : (act.avance||0)
+    const sumaPesos = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
+    const sumaOk = sumaPesos === 0 || sumaPesos === 100
+    const depsCount = (act.deps || []).length
+
+    // Estilo del header de root vs sub-actividades
+    const headerRoot = {
+      background: 'linear-gradient(to right, #F8FAFC, white)',
+      padding: '12px 16px',
+      border: `1px solid ${COLORS.slate100}`,
+      borderRadius: 10,
+      marginBottom: 2,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+    }
+    const headerSub = {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '10px 16px',
+      background: 'white',
+      border: `1px solid ${COLORS.slate100}`,
+      borderTop: 'none',
+      paddingLeft: 16 + nivel * 20,
+    }
+
+    return (
+      <div key={act.id} style={esRoot ? { marginBottom: 16 } : {}}>
+        <div
+          onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
+          style={esRoot ? headerRoot : headerSub}
+        >
+          {!esRoot && (
+            <div onClick={() => onToggle(act)} style={{ width:18, height:18, borderRadius:5, border:`1.5px solid ${act.completada?COLORS.teal:'#CBD5E1'}`, background:act.completada?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'white', flexShrink:0 }}>
+              {act.completada && <Icon.Check/>}
+            </div>
+          )}
+          <span style={{ fontSize:esRoot?11:10, fontFamily:'var(--font-mono)', color:esRoot?COLORS.navy:COLORS.slate400, fontWeight:esRoot?700:500, minWidth:esRoot?24:36 }}>{numeracion[act.id]}</span>
+          {act.es_milestone && <span style={{ color:COLORS.navy }}><Icon.Diamond/></span>}
+          {!esRoot && <BadgeImportancia importancia={act.importancia} tamano="mini"/>}
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:esRoot?14:13, fontWeight:esRoot?600:400, color:esRoot?COLORS.navy:COLORS.ink, fontFamily:'var(--font-sans)' }}>
+                <EditableText value={act.nombre} onSave={v => onInlineUpdate(act.id, { nombre: v })} style={{ fontSize:esRoot?14:13, fontWeight:esRoot?600:400, color:esRoot?COLORS.navy:COLORS.ink, fontFamily:'var(--font-sans)' }}/>
+              </span>
+              {!esRoot && depsCount > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:3, background:COLORS.tealLight, color:COLORS.teal, padding:'2px 7px', borderRadius:10, fontSize:10, fontWeight:700 }}><Icon.Link/>{depsCount}</span>}
+              {!esRoot && act.es_cobrable && (
+                <span title={`Cobrable: ${act.estado_cobro || 'Pendiente'}`} style={{ display:'inline-flex', alignItems:'center', gap:3, background: ESTADOS_COBRO[act.estado_cobro]?.bg || '#E1F5EE', color: ESTADOS_COBRO[act.estado_cobro]?.color || '#0F6E56', padding:'2px 7px', borderRadius:4, fontSize:10, fontWeight:700 }}>
+                  $ {ESTADOS_COBRO[act.estado_cobro]?.label || 'cobrable'}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
+              {fmtDate(act.inicio)} → {fmtDate(act.fin)}
+              {esRoot
+                ? ` · ${hijos.length} sub-actividades`
+                : ` · ${diffDays(act.inicio, act.fin) + 1}d`}
+              {esRoot && tieneHijos && sumaPesos > 0 && (
+                <span style={{ marginLeft:10, padding:'1px 7px', borderRadius:4, background: sumaOk ? '#E1F5EE' : '#FEF2F2', color: sumaOk ? '#0F6E56' : '#DC2626', fontWeight:700 }}>
+                  pesos: {sumaPesos}%{!sumaOk && ' ⚠'}
+                </span>
+              )}
+            </div>
+          </div>
+          {esRoot && <BadgeImportancia importancia={act.importancia} tamano="normal"/>}
+          {puedeEditarPeso && !esRoot && (
+            <>
+              <div title="Peso ponderado (avance del proyecto)" style={{ display:'flex', alignItems:'center', gap:2 }}>
+                <input type="number" min="0" max="100" step="1" value={act.peso || 0}
+                  onChange={e => { const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); onInlineUpdate(act.id, { peso: v }) }}
+                  onClick={e => e.stopPropagation()}
+                  style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.peso || 0) > 0 ? COLORS.navy : COLORS.slate400, background: 'white' }}/>
+                <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>%</span>
+              </div>
+              <div title="Horas estimadas — afecta el cálculo de carga del responsable. 0 = auto (días×2h)." style={{ display:'flex', alignItems:'center', gap:2 }}>
+                <input type="number" min="0" step="1" value={act.horas_estimadas || 0}
+                  onChange={e => { const v = Math.max(0, parseInt(e.target.value) || 0); onInlineUpdate(act.id, { horas_estimadas: v }) }}
+                  onClick={e => e.stopPropagation()}
+                  style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.horas_estimadas || 0) > 0 ? COLORS.teal : COLORS.slate400, background: 'white' }}/>
+                <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>h</span>
+              </div>
+            </>
+          )}
+          <div style={{ width: esRoot ? 140 : undefined }}><BarraAvance avance={esRoot ? padreAvance : act.avance}/></div>
+          {!esRoot && (
+            <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} style={{ padding:'4px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[act.estado]?.bg, color: ESTADOS[act.estado]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
+              {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+          )}
+          {esRoot && <Badge texto={act.estado} mapa={ESTADOS}/>}
+          <button onClick={() => onAbrirInfo(act)} title="Información" style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}><Icon.Info/></button>
+          {esRoot && act.es_servicio_padre && <button onClick={() => onDesglosar(act)} title="Desglosar con plantilla" style={{ padding:'5px 10px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>⚖ Desglosar</button>}
+          <button onClick={() => onEliminar?.(act)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
+        </div>
+
+        {/* Renderizar hijos recursivamente */}
+        {hijos.map(h => renderFila(h, nivel + 1))}
+
+        {/* v16.1.2: botón "+ sub-actividad" para CADA actividad (no solo root).
+            Permite sub-sub-actividades y más profundidad. */}
+        {creandoBajo === act.id ? (
+          <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, border:`1px solid ${COLORS.slate100}`, borderTop:'none', marginLeft: nivel * 20, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
+            <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearBajo(act.id)} autoFocus placeholder="Nombre de la sub-actividad..." style={{...inputStyle, flex:1}}/>
+            <button onClick={() => crearBajo(act.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px'}}>{creando ? '...' : 'Crear'}</button>
+            <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
+          </div>
+        ) : (
+          <div onClick={() => setCreandoBajo(act.id)} style={{ padding:'8px 16px', background:COLORS.slate50, border:`1px dashed ${COLORS.slate200}`, borderTop:'none', marginLeft: nivel * 20, fontSize:11, color:COLORS.slate500, cursor:'pointer', display:'flex', alignItems:'center', gap:6, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
+            <Icon.Plus/> Agregar sub-actividad a "{act.nombre}"
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const roots = actividades.filter(a => !a.parent_id).sort((a,b) => (a.numero||0) - (b.numero||0))
+
   return (
     <div>
-      {padres.length === 0 ? (
+      {roots.length === 0 ? (
         <div style={{ ...cardStyle, textAlign:'center', color:COLORS.slate400, padding:40 }}>
           Sin actividades aún. Usa el Gantt para agregar la primera.
         </div>
-      ) : padres.map(padre => {
-        const hijos = actividades.filter(a => a.parent_id === padre.id).sort((a,b) => (a.numero||0) - (b.numero||0))
-        // v12: avance ponderado con fórmula Luis
-        const padreAvance = hijos.length > 0
-          ? calcularAvancePonderado(actividades, padre.id)
-          : (padre.avance||0)
-        // v12: validación suma de pesos
-        const sumaPesos = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
-        const sumaOk = sumaPesos === 0 || sumaPesos === 100
-        return (
-          <div key={padre.id} style={{ marginBottom:16 }}>
-            <div
-              onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(padre, e.clientX, e.clientY) }}
-              style={{ background:'linear-gradient(to right, #F8FAFC, white)', padding:'12px 16px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, marginBottom:2, display:'flex', alignItems:'center', gap:10 }}>
-              <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:700, minWidth:24 }}>{numeracion[padre.id]}</span>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>
-                  <EditableText value={padre.nombre} onSave={v => onInlineUpdate(padre.id, { nombre: v })} style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)' }}/>
-                </div>
-                <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
-                  {fmtDate(padre.inicio)} → {fmtDate(padre.fin)} · {hijos.length} sub-actividades
-                  {/* v12: indicador de suma de pesos */}
-                  {hijos.length > 0 && sumaPesos > 0 && (
-                    <span style={{ marginLeft:10, padding:'1px 7px', borderRadius:4, background: sumaOk ? '#E1F5EE' : '#FEF2F2', color: sumaOk ? '#0F6E56' : '#DC2626', fontWeight:700 }}>
-                      pesos: {sumaPesos}%{!sumaOk && ' ⚠'}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <BadgeImportancia importancia={padre.importancia} tamano="normal"/>
-              <div style={{ width:140 }}><BarraAvance avance={padreAvance}/></div>
-              <Badge texto={padre.estado} mapa={ESTADOS}/>
-              <button onClick={() => onAbrirInfo(padre)} style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}><Icon.Info/></button>
-              {padre.es_servicio_padre && <button onClick={() => onDesglosar(padre)} title="Desglosar con plantilla" style={{ padding:'5px 10px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>⚖ Desglosar</button>}
-              {/* v11: Botón eliminar visible */}
-              <button onClick={() => onEliminar?.(padre)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
-            </div>
-            {hijos.map(h => {
-              const nivel = getNivel(h.id)
-              const depsCount = (h.deps || []).length
-              return (
-                <div key={h.id}
-                  onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(h, e.clientX, e.clientY) }}
-                  style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background:'white', border:`1px solid ${COLORS.slate100}`, borderTop:'none', paddingLeft: 16 + nivel * 20 }}>
-                  <div onClick={() => onToggle(h)} style={{ width:18, height:18, borderRadius:5, border:`1.5px solid ${h.completada?COLORS.teal:'#CBD5E1'}`, background:h.completada?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'white', flexShrink:0 }}>{h.completada && <Icon.Check/>}</div>
-                  <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:500, minWidth:36 }}>{numeracion[h.id]}</span>
-                  {h.es_milestone && <span style={{ color:COLORS.navy }}><Icon.Diamond/></span>}
-                  <BadgeImportancia importancia={h.importancia} tamano="mini"/>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      <span style={{ fontSize:13, color:COLORS.ink }}>
-                        <EditableText value={h.nombre} onSave={v => onInlineUpdate(h.id, { nombre: v })} style={{ fontSize:13, color:COLORS.ink }}/>
-                      </span>
-                      {depsCount > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:3, background:COLORS.tealLight, color:COLORS.teal, padding:'2px 7px', borderRadius:10, fontSize:10, fontWeight:700 }}><Icon.Link/>{depsCount}</span>}
-                      {/* v12: Badge cobrable */}
-                      {h.es_cobrable && (
-                        <span title={`Cobrable: ${h.estado_cobro || 'Pendiente'}`} style={{ display:'inline-flex', alignItems:'center', gap:3, background: ESTADOS_COBRO[h.estado_cobro]?.bg || '#E1F5EE', color: ESTADOS_COBRO[h.estado_cobro]?.color || '#0F6E56', padding:'2px 7px', borderRadius:4, fontSize:10, fontWeight:700 }}>
-                          $ {ESTADOS_COBRO[h.estado_cobro]?.label || 'cobrable'}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>{fmtDate(h.inicio)} → {fmtDate(h.fin)} · {diffDays(h.inicio, h.fin) + 1}d</div>
-                  </div>
-                  {/* v12: Input peso % (editable solo por direccion/admin) */}
-                  {(puedeEditarPeso) && (
-                    <div title="Peso ponderado (avance del proyecto)" style={{ display:'flex', alignItems:'center', gap:2 }}>
-                      <input
-                        type="number" min="0" max="100" step="1"
-                        value={h.peso || 0}
-                        onChange={e => {
-                          const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
-                          onInlineUpdate(h.id, { peso: v })
-                        }}
-                        onClick={e => e.stopPropagation()}
-                        style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (h.peso || 0) > 0 ? COLORS.navy : COLORS.slate400, background: 'white' }}
-                      />
-                      <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>%</span>
-                    </div>
-                  )}
-                  {/* v15.9.1: Horas estimadas (afecta carga del responsable) */}
-                  {(puedeEditarPeso) && (
-                    <div title="Horas estimadas — afecta el cálculo de carga del responsable. 0 = auto (días×2h)." style={{ display:'flex', alignItems:'center', gap:2 }}>
-                      <input
-                        type="number" min="0" step="1"
-                        value={h.horas_estimadas || 0}
-                        onChange={e => {
-                          const v = Math.max(0, parseInt(e.target.value) || 0)
-                          onInlineUpdate(h.id, { horas_estimadas: v })
-                        }}
-                        onClick={e => e.stopPropagation()}
-                        style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (h.horas_estimadas || 0) > 0 ? COLORS.teal : COLORS.slate400, background: 'white' }}
-                      />
-                      <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>h</span>
-                    </div>
-                  )}
-                  <BarraAvance avance={h.avance}/>
-                  <select value={h.estado} onChange={e => onInlineUpdate(h.id, { estado: e.target.value })} style={{ padding:'4px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[h.estado]?.bg, color: ESTADOS[h.estado]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
-                    {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
-                  </select>
-                  <button onClick={() => onAbrirInfo(h)} title="Información" style={{ padding:'5px 9px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Info/></button>
-                  {/* v11: Botón eliminar visible */}
-                  <button onClick={() => onEliminar?.(h)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
-                </div>
-              )
-            })}
-            {creandoBajo === padre.id ? (
-              <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, border:`1px solid ${COLORS.slate100}`, borderTop:'none', borderBottomLeftRadius:10, borderBottomRightRadius:10 }}>
-                <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearBajo(padre.id)} autoFocus placeholder="Nombre de la sub-actividad..." style={{...inputStyle, flex:1}}/>
-                <button onClick={() => crearBajo(padre.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px'}}>{creando ? '...' : 'Crear'}</button>
-                <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
-              </div>
-            ) : (
-              <div onClick={() => setCreandoBajo(padre.id)} style={{ padding:'10px 16px', background:COLORS.slate50, border:`1px dashed ${COLORS.slate200}`, borderTop:'none', borderBottomLeftRadius:10, borderBottomRightRadius:10, fontSize:11, color:COLORS.slate500, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-                <Icon.Plus/> Agregar sub-actividad a "{padre.nombre}"
-              </div>
-            )}
-          </div>
-        )
-      })}
+      ) : roots.map(root => renderFila(root, 0))}
       <div style={{ marginTop:20 }}>
         {creandoBajo === 'root' ? (
           <div style={{ display:'flex', gap:8, padding:'12px 16px', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10 }}>

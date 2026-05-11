@@ -22,7 +22,26 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.1.1** — Estado actual en producción. **3 bugs detectados en E2E completo y arreglados** sobre v16.1.0:
+**v16.1.2** — Estado actual en producción. **Bugfix: sub-actividades + jerarquía ilimitada.**
+
+## 🌳 v16.1.2 — Jerarquía ilimitada de actividades (entregado)
+
+Director reportó: "Aparecen nuevos errores al intentar crear sub-actividades. Debido a esto, no fue posible validar la creación de sub-sub-actividades." También pidió: "tambien quieren agregar subactividades de las subavtividades, no los limites".
+
+**Causa raíz:** La UI estaba hardcodeada para exactamente 2 niveles (root + sub). El backend (numeración `1.1.1...`, parent_id self-FK, queries) ya soportaba N niveles desde v15.x — el limitante era puramente visual.
+
+**Cambios en `src/Proyectos.jsx`:**
+- **TabActividades**: refactor completo a recursivo. Nueva función `renderFila(act, nivel)` que pinta una fila y luego se llama a sí misma para cada hijo. Cada fila (root, sub, sub-sub, sub-sub-sub...) tiene su propio botón "+ Agregar sub-actividad" → no hay límite de profundidad. Indentación visual por nivel.
+- **Gantt (`actOrdenadas` useMemo)**: refactor de filter 2-niveles a `visit(parentId)` recursivo que respeta `collapsed` Set. Renderiza N niveles en orden DFS. CPM y dependencias ya tomaban actividades planas → no requirió cambios.
+- **Kanban**: ya funcionaba (filtra por estado, no por nivel).
+
+**Verificación E2E (Playwright):**
+- Creé sub-actividad y sub-sub-actividad (nivel 3) en proyecto real.
+- Numeración auto-generada: `5.1.1` (3 niveles).
+- Visible en TabActividades con indentación, Gantt con barras y dependencias correctas.
+- `totalWrappers=15, has3Nivel=true` confirmado por inspección DOM.
+
+Sin migración SQL — solo cambios de render. Build verde.
 
 ## 🐛 v16.1.1 — Bugfix: edición de clientes (entregado)
 
