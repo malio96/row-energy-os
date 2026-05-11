@@ -22,7 +22,50 @@
 
 ## 🎯 Versión actual en producción
 
-**v15.10.12** — Estado actual en producción (10 may 2026). Ver "📍 Estado de sesión actual" abajo para el contexto vivo.
+**v15.10.13** — Estado actual en producción. Ver "📍 Estado de sesión actual" abajo para el contexto vivo.
+
+## 🚀 PRÓXIMA SESIÓN: Mega v16.0
+
+Plan acordado con Malio. Arrancar EN ESTE ORDEN:
+
+### Fase 0 — Preflight (Malio, no Claude)
+- Rotar password DB Supabase (Dashboard → Settings → Database → Reset)
+- Roll JWT secret (Settings → API → Roll)
+- Actualizar `VITE_SUPABASE_KEY` en Vercel + redeploy
+- Actualizar `.env.local` local
+
+### Fase 1 — Security review baseline (Claude, ~45 min)
+- Usar skill `security-review` sobre el codebase actual
+- Cruzar con `mcp__supabase__get_advisors` (RLS + perf)
+- Reportar findings HIGH-CONFIDENCE
+- Parchar lo crítico antes de seguir
+
+### Fase 2 — Storage de documentos (Claude, ~5h)
+- Bucket Supabase Storage `proyectos-docs` con RLS por proyecto/rol/categoría
+- Helpers en `supabase.js` (upload/download/list/delete + signed URLs)
+- Tab Documentos funcional en Proyectos: drag-and-drop, preview PDF/imágenes, agrupación por carpetas (contratos/planos/fotos/facturas)
+- Aplicar también a Plantas y Clientes
+- Test Playwright: subir, descargar, eliminar, verificar permisos cruzados
+
+### Fase 3 — Pricing engine v15.7 (Claude, ~4h)
+- Leer `templates/PRECIOS AMPERE.xlsx` con skill `xlsx` (4 sheets: CC/CE × sin/con inflación)
+- Tabla `precios_servicios` (servicio, capacidad_min_mw, capacidad_max_mw, tipo, con_inflacion, precio)
+- Migration con seed data desde Excel
+- UI en CotizacionDetalle: dropdown servicio + input MW + toggle inflación → autopobla precio
+- Test caso típico end-to-end
+
+### Fase 4 — Security review final + push v16.0 (Claude, ~30 min)
+- `security-review` sobre los cambios
+- Bump `v16.0.0`
+- Commit + push
+- Actualizar CLAUDE.md (mover esta sección a histórico)
+
+### Skills disponibles (ya instaladas en `.agents/skills/`)
+- `security-review` (de Sentry, OWASP)
+- `supabase` + `supabase-postgres-best-practices` (de Supabase)
+- `pdf`, `docx`, `xlsx`, `pptx`, `doc-coauthoring` (de Anthropic)
+
+
 
 La versión visible está en `package.json` y se renderiza en el Sidebar como "OS · v{version}". **REGLA**: bumpear `package.json.version` antes de cada commit visible.
 
