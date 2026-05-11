@@ -20,6 +20,8 @@ import {
   getPlantas,
   // v15.8.3: CRUD hitos + eliminar proyecto
   actualizarHito, crearHito, eliminarHito, eliminarProyecto,
+  // v16.0.0: Storage de documentos
+  DOC_CATEGORIAS, uploadDoc, listDocs, getSignedDocUrl, deleteDoc, downloadDoc,
 } from './supabase'
 
 // v14.1: helpers para persistir preferencias simples en localStorage
@@ -2473,37 +2475,207 @@ function TabPorPersona({ actividades, usuarios, numeracion, onAbrirInfo }) {
   )
 }
 
-function TabDocumentos({ proyecto }) {
-  const carpetas = [
-    { n:'Contratos', icon:'📝', color:COLORS.navy },
-    { n:'Planos', icon:'📐', color:COLORS.blue },
-    { n:'Entregables', icon:'📦', color:COLORS.teal },
-    { n:'Fotos', icon:'📷', color:COLORS.gold },
-    { n:'Facturas', icon:'🧾', color:COLORS.amber },
-    { n:'Permisos', icon:'📑', color:COLORS.purple },
-  ]
+// v16.0.0: Tab Documentos funcional (Storage de Supabase)
+// Recibe scope ('proyectos' | 'plantas' | 'clientes') y scopeId.
+// Para retrocompat: si recibe `proyecto` lo mapea a scope='proyectos', scopeId=proyecto.id.
+// Reusable desde otros módulos (Plantas, Clientes) — exportado.
+export function TabDocumentos({ proyecto, scope = 'proyectos', scopeId, usuarioActual }) {
+  const realScopeId = scopeId || proyecto?.id
+  const [docs, setDocs] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadCat, setUploadCat] = useState(null)  // categoría seleccionada para drag-drop
+  const [preview, setPreview] = useState(null)  // {path, name, type, url}
+  const fileInputRef = useRef(null)
+  const dragCounterRef = useRef(0)
+  const [dragActive, setDragActive] = useState(false)
+
+  const puedeEliminar = ['direccion', 'admin'].includes(usuarioActual?.rol)
+  const puedeSubir = ['direccion','admin','director_proyectos','ventas','cobranza','equipo_proyectos'].includes(usuarioActual?.rol)
+
+  const cargar = async () => {
+    if (!realScopeId) return
+    setLoading(true)
+    try { setDocs(await listDocs(scope, realScopeId)) }
+    catch (e) { console.error('listDocs:', e); setDocs({}) }
+    setLoading(false)
+  }
+  useEffect(() => { cargar() }, [scope, realScopeId])
+
+  const subirArchivos = async (archivos, cat) => {
+    if (!cat) { alert('Selecciona primero una categoría'); return }
+    if (!archivos || archivos.length === 0) return
+    setUploading(true)
+    let exitos = 0, fallos = 0
+    for (const file of archivos) {
+      try { await uploadDoc({ scope, scopeId: realScopeId, categoria: cat, file }); exitos++ }
+      catch (e) { console.error(`upload ${file.name}:`, e); fallos++ }
+    }
+    setUploading(false)
+    if (fallos > 0) alert(`Subidos: ${exitos} · Fallaron: ${fallos}.\nÚltimo error en consola.`)
+    cargar()
+  }
+
+  const onPickFiles = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length) subirArchivos(files, uploadCat)
+    e.target.value = ''  // reset input
+  }
+
+  const onDrop = (e) => {
+    e.preventDefault()
+    setDragActive(false); dragCounterRef.current = 0
+    const files = Array.from(e.dataTransfer.files || [])
+    if (files.length) subirArchivos(files, uploadCat)
+  }
+
+  const verArchivo = async (file, categoria) => {
+    const path = `${scope}/${realScopeId}/${categoria}/${file.name}`
+    try {
+      const url = await getSignedDocUrl(path, 600)
+      setPreview({ path, name: file.name, type: file.metadata?.mimetype || '', url })
+    } catch (e) { alert('Error al obtener URL: ' + e.message) }
+  }
+
+  const bajarArchivo = async (file, categoria) => {
+    const path = `${scope}/${realScopeId}/${categoria}/${file.name}`
+    try { await downloadDoc(path, file.name.replace(/^\d+_/, '')) }
+    catch (e) { alert('Error al descargar: ' + e.message) }
+  }
+
+  const eliminar = async (file, categoria) => {
+    if (!confirm(`¿Eliminar "${file.name}" permanentemente?`)) return
+    const path = `${scope}/${realScopeId}/${categoria}/${file.name}`
+    try { await deleteDoc(path); cargar() }
+    catch (e) { alert('Error al eliminar: ' + e.message) }
+  }
+
+  const fmtBytes = (b) => {
+    if (!b) return '?'
+    if (b < 1024) return `${b} B`
+    if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`
+    return `${(b/(1024*1024)).toFixed(1)} MB`
+  }
+  const fmtFecha = (s) => s ? new Date(s).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }) : '—'
+  const nombreLimpio = (n) => n.replace(/^\d+_/, '')
+
+  const totalDocs = Object.values(docs).reduce((s, arr) => s + (arr?.length || 0), 0)
+
   return (
     <div>
-      <Alerta tipo="info">
-        <Icon.Info/> Documentos por carpeta · La carga de archivos se activará cuando conectemos a Supabase Storage.
-      </Alerta>
-      <div style={{ border:`2px dashed ${COLORS.slate200}`, borderRadius:10, padding:24, textAlign:'center', marginBottom:16, background:COLORS.slate50, cursor:'pointer' }}
-        onClick={() => alert('Función de carga próximamente. Se integrará con Supabase Storage para manejar archivos por proyecto.')}>
-        <div style={{ fontSize:28, marginBottom:6 }}>📤</div>
-        <div style={{ fontSize:13, fontWeight:600, color:COLORS.navy }}>Arrastra archivos aquí o haz clic para subir</div>
-        <div style={{ fontSize:11, color:COLORS.slate500, marginTop:4 }}>PDF, Word, Excel, JPG, PNG, ZIP · Máx. 50MB por archivo</div>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:12 }}>
-        {carpetas.map(c => (
-          <div key={c.n} style={{ ...cardStyle, cursor:'pointer', transition:'all 0.15s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = c.color; e.currentTarget.style.transform = 'translateY(-2px)' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = COLORS.slate100; e.currentTarget.style.transform = 'none' }}>
-            <div style={{ fontSize:28, marginBottom:8 }}>{c.icon}</div>
-            <div style={{ fontSize:14, fontWeight:600, color:COLORS.navy, marginBottom:2 }}>{c.n}</div>
-            <div style={{ fontSize:11, color:COLORS.slate500 }}>0 archivos</div>
+      {/* Drag-drop area */}
+      <div
+        onDragEnter={(e) => { e.preventDefault(); dragCounterRef.current++; setDragActive(true) }}
+        onDragLeave={(e) => { e.preventDefault(); dragCounterRef.current--; if (dragCounterRef.current <= 0) setDragActive(false) }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+        onClick={() => puedeSubir && uploadCat && fileInputRef.current?.click()}
+        style={{
+          border: `2px dashed ${dragActive ? COLORS.teal : COLORS.slate200}`,
+          borderRadius: 10, padding: 24, textAlign: 'center', marginBottom: 16,
+          background: dragActive ? COLORS.tealLight : COLORS.slate50,
+          cursor: puedeSubir && uploadCat ? 'pointer' : 'not-allowed',
+          opacity: puedeSubir ? 1 : 0.6,
+          transition: 'all 0.15s',
+        }}
+      >
+        <input ref={fileInputRef} type="file" multiple onChange={onPickFiles} style={{ display:'none' }}/>
+        <div style={{ fontSize: 28, marginBottom: 6 }}>{uploading ? '⏳' : '📤'}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.navy }}>
+          {uploading ? 'Subiendo...' : (puedeSubir ? 'Arrastra archivos aquí o haz clic para subir' : 'No tienes permiso para subir documentos')}
+        </div>
+        <div style={{ fontSize: 11, color: COLORS.slate500, marginTop: 4 }}>
+          PDF, Word, Excel, JPG, PNG, ZIP · Máx. 50MB por archivo · {totalDocs} documentos en total
+        </div>
+        {puedeSubir && (
+          <div style={{ marginTop: 10, display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10, color: COLORS.slate500, alignSelf: 'center' }}>Categoría:</span>
+            {DOC_CATEGORIAS.map(c => (
+              <button
+                key={c.k}
+                onClick={(e) => { e.stopPropagation(); setUploadCat(c.k) }}
+                style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  border: `1px solid ${uploadCat === c.k ? COLORS.teal : COLORS.slate200}`,
+                  background: uploadCat === c.k ? COLORS.teal : 'white',
+                  color: uploadCat === c.k ? 'white' : COLORS.slate600,
+                  cursor: 'pointer',
+                }}
+              >{c.icon} {c.l}</button>
+            ))}
           </div>
-        ))}
+        )}
       </div>
+
+      {/* Listado por categoría */}
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: COLORS.slate400 }}>Cargando documentos...</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+          {DOC_CATEGORIAS.map(c => {
+            const files = docs[c.k] || []
+            return (
+              <div key={c.k} style={{ ...cardStyle, padding: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${COLORS.slate100}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{c.icon}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.navy }}>{c.l}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: COLORS.slate500, fontWeight: 600 }}>{files.length}</span>
+                </div>
+                {files.length === 0 ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: COLORS.slate400, fontSize: 11 }}>Sin archivos</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {files.map(f => (
+                      <div key={f.id || f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: COLORS.slate50, borderRadius: 6, fontSize: 11 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, color: COLORS.navy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={nombreLimpio(f.name)}>
+                            {nombreLimpio(f.name)}
+                          </div>
+                          <div style={{ fontSize: 10, color: COLORS.slate400, fontFamily: 'var(--font-mono)' }}>
+                            {fmtFecha(f.created_at)} · {fmtBytes(f.metadata?.size)}
+                          </div>
+                        </div>
+                        <button onClick={() => verArchivo(f, c.k)} title="Vista previa" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: COLORS.teal, padding: 4 }}>👁</button>
+                        <button onClick={() => bajarArchivo(f, c.k)} title="Descargar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: COLORS.navy, padding: 4 }}>⬇</button>
+                        {puedeEliminar && (
+                          <button onClick={() => eliminar(f, c.k)} title="Eliminar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: COLORS.red, padding: 4 }}>✕</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Preview modal */}
+      {preview && (
+        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 12, maxWidth: '90vw', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '12px 16px', borderBottom: `1px solid ${COLORS.slate100}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.navy, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreLimpio(preview.name)}</div>
+              <button onClick={() => setPreview(null)} style={{ background: 'transparent', border: 'none', fontSize: 18, cursor: 'pointer', color: COLORS.slate500, padding: '0 8px' }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', minHeight: 400, minWidth: 600 }}>
+              {preview.type.startsWith('image/') ? (
+                <img src={preview.url} alt={preview.name} style={{ width: '100%', height: 'auto', display: 'block' }}/>
+              ) : preview.type === 'application/pdf' ? (
+                <iframe src={preview.url} title={preview.name} style={{ width: '100%', height: '70vh', border: 'none' }}/>
+              ) : (
+                <div style={{ padding: 40, textAlign: 'center', color: COLORS.slate500 }}>
+                  Vista previa no disponible para este tipo de archivo.
+                  <br/><br/>
+                  <a href={preview.url} target="_blank" rel="noopener noreferrer" style={{ color: COLORS.teal, fontWeight: 600 }}>Abrir en nueva pestaña →</a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2542,9 +2714,28 @@ function TabNotas({ proyectoId, usuarios }) {
     catch (e) { alert('Error: ' + e.message) }
   }
 
+  // v16.0.0 (security fix): Renderizar @menciones como JSX en lugar de inyectar HTML.
+  // Antes usaba dangerouslySetInnerHTML con un .replace() que NO sanitizaba el resto del
+  // contenido, permitiendo XSS stored: cualquier usuario podía meter <script> o
+  // <img onerror> en una nota y robar tokens de otros usuarios al ver el proyecto.
+  const RE_MENCION = /(@[A-ZÁ-ÚÑ][a-zá-úñ]+(?:\s+[A-ZÁ-ÚÑ][a-zá-úñ]+)?)/g
   const formatoContenido = (texto) => {
-    return texto.replace(/@([A-ZÁ-ÚÑ][a-zá-úñ]+(?:\s+[A-ZÁ-ÚÑ][a-zá-úñ]+)?)/g,
-      `<span style="color:${COLORS.navy};font-weight:600;background:${COLORS.tealLight};padding:1px 5px;border-radius:4px">@$1</span>`)
+    if (!texto) return null
+    // Split por menciones manteniendo los matches. Resultado: array alternado
+    // [texto_normal, mencion, texto_normal, mencion, ...]
+    const partes = texto.split(RE_MENCION)
+    return partes.map((p, i) => {
+      if (RE_MENCION.test(p)) {
+        // Reset del lastIndex porque el regex es /g
+        RE_MENCION.lastIndex = 0
+        return (
+          <span key={i} style={{ color: COLORS.navy, fontWeight: 600, background: COLORS.tealLight, padding: '1px 5px', borderRadius: 4 }}>
+            {p}
+          </span>
+        )
+      }
+      return p  // Texto plano: React lo escapa automáticamente
+    })
   }
 
   return (
@@ -2589,8 +2780,9 @@ function TabNotas({ proyectoId, usuarios }) {
                 </span>
                 <button onClick={() => eliminar(n.id)} style={{ marginLeft:'auto', border:'none', background:'transparent', color:COLORS.slate400, cursor:'pointer', padding:4 }} title="Eliminar"><Icon.Trash/></button>
               </div>
-              <div style={{ background:COLORS.slate50, borderRadius:10, padding:12, fontSize:13, lineHeight:1.6, color:COLORS.slate600 }}
-                dangerouslySetInnerHTML={{ __html: formatoContenido(n.contenido) }}/>
+              <div style={{ background:COLORS.slate50, borderRadius:10, padding:12, fontSize:13, lineHeight:1.6, color:COLORS.slate600, whiteSpace:'pre-wrap' }}>
+                {formatoContenido(n.contenido)}
+              </div>
             </div>
           </div>
         )
@@ -3565,7 +3757,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
       {tab === 'kanban' && <TabKanban actividades={actividades} onAbrirInfo={setPanelAct} numeracion={numeracion} onNuevaActividad={crearNuevaActividad}/>}
       {tab === 'personas' && <TabPorPersona actividades={actividades} usuarios={usuarios} numeracion={numeracion} onAbrirInfo={setPanelAct}/>}
       {tab === 'sim' && <TabSIM proyectoId={proyectoId} usuarios={usuarios} usuarioActual={usuarioActual}/>}
-      {tab === 'documentos' && <TabDocumentos proyecto={proyecto}/>}
+      {tab === 'documentos' && <TabDocumentos scope="proyectos" scopeId={proyecto.id} usuarioActual={usuarioActual}/>}
       {tab === 'notas' && <TabNotas proyectoId={proyectoId} usuarios={usuarios}/>}
       {tab === 'financiero' && <TabFinanciero proyecto={proyecto} hitos={hitos} puedeVerFinanciero={puedeVerFinanciero} usuarioActual={usuarioActual} onCambio={cargar}/>}
     </div>

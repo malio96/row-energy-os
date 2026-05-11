@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas } from './supabase'
+import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS } from './supabase'
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 
@@ -286,12 +286,41 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
   const [catalogoSel, setCatalogoSel] = useState('')  // v15.6.0
   const suma = Number(form.porcentaje_anticipo) + Number(form.porcentaje_avance) + Number(form.porcentaje_finalizacion)
 
+  // v15.7 — Pricing engine: state local del bloque
+  const [precios, setPrecios] = useState([])
+  const [pricingOpen, setPricingOpen] = useState(false)
+  const [pricingTipo, setPricingTipo] = useState('CC')
+  const [pricingCap, setPricingCap] = useState('')
+  const [pricingInfl, setPricingInfl] = useState(false)
+  const [pricingAnios, setPricingAnios] = useState(0)
+  useEffect(() => { getPreciosServicios().then(setPrecios).catch(()=>{}) }, [])
+
+  const pricingMatch = (() => {
+    if (!form.servicio || !pricingCap) return null
+    return buscarPrecioServicio(precios, {
+      servicio: form.servicio,
+      tipo: pricingTipo,
+      capacidadMw: Number(pricingCap),
+      conInflacion: pricingInfl,
+      anios: Number(pricingAnios) || 0,
+    })
+  })()
+
+  const aplicarPrecioPricing = () => {
+    if (!pricingMatch) return
+    setForm(f => ({ ...f, precio_unitario: pricingMatch.precio }))
+  }
+
   // v15.6.0: al elegir un servicio del catálogo, autocompletar nombre + descripcion
   const elegirCatalogo = (id) => {
     setCatalogoSel(id)
     if (!id) return // "Particular custom" → no toca form
     const s = SERVICIOS_CATALOGO.find(x => x.id === id)
-    if (s) setForm(f => ({ ...f, servicio: s.nombre, descripcion: s.descripcion }))
+    if (s) {
+      setForm(f => ({ ...f, servicio: s.nombre, descripcion: s.descripcion }))
+      // Si el servicio tiene un tipo específico (CC o CE), sugerirlo al pricing
+      if (s.tipo === 'CC' || s.tipo === 'CE') setPricingTipo(s.tipo)
+    }
   }
 
   const agregar = async () => {
@@ -326,6 +355,75 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
           </div>
 
           <div style={{ marginBottom:12 }}><label style={labelStyle}>Servicio *</label><input value={form.servicio} onChange={e=>setForm({...form, servicio:e.target.value})} placeholder="Ej: Estudio de Impacto" style={inputStyle}/></div>
+
+          {/* v15.7 — Pricing engine: bloque colapsable */}
+          <div style={{ marginBottom: 12, border: `1px solid ${COLORS.slate200}`, borderRadius: 8, overflow: 'hidden' }}>
+            <button
+              type="button"
+              onClick={() => setPricingOpen(v => !v)}
+              style={{ width: '100%', padding: '10px 14px', background: pricingOpen ? COLORS.tealLight : COLORS.slate50, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: COLORS.navy, textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <span>💲 Calcular precio según capacidad MW {pricingOpen ? '▼' : '▶'}</span>
+              {pricingMatch && <span style={{ fontSize: 11, color: COLORS.teal, fontWeight: 700 }}>${pricingMatch.precio.toLocaleString('es-MX')} MXN</span>}
+            </button>
+            {pricingOpen && (
+              <div style={{ padding: 14, background: 'white' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 110px', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: COLORS.slate500, marginBottom: 4 }}>Tipo</div>
+                    <select value={pricingTipo} onChange={e => setPricingTipo(e.target.value)} style={selectStyle}>
+                      {PRICING_TIPOS.map(t => <option key={t.k} value={t.k}>{t.l}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: COLORS.slate500, marginBottom: 4 }}>Servicio del catálogo</div>
+                    <select value={form.servicio} onChange={e => setForm(f => ({ ...f, servicio: e.target.value }))} style={selectStyle}>
+                      <option value="">— Seleccionar —</option>
+                      {listarServiciosPricing(precios, pricingTipo).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: COLORS.slate500, marginBottom: 4 }}>Capacidad (MW)</div>
+                    <input type="number" min="0" step="0.5" value={pricingCap} onChange={e => setPricingCap(e.target.value)} placeholder="Ej: 25" style={inputStyle}/>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, marginBottom: 10 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={pricingInfl} onChange={e => setPricingInfl(e.target.checked)}/>
+                    Con inflación (5% anual)
+                  </label>
+                  {pricingInfl && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: COLORS.slate500 }}>Años:</span>
+                      <input type="number" min="0" max="20" value={pricingAnios} onChange={e => setPricingAnios(e.target.value)} style={{ ...inputStyle, width: 60, padding: '4px 8px' }}/>
+                    </div>
+                  )}
+                </div>
+                {pricingMatch ? (
+                  <div style={{ padding: '10px 12px', background: COLORS.tealLight, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: 12 }}>
+                      <strong style={{ color: COLORS.navy }}>${pricingMatch.precio.toLocaleString('es-MX')} MXN</strong>
+                      <span style={{ color: COLORS.slate500, marginLeft: 8 }}>
+                        (rango {pricingMatch.rango.min}{pricingMatch.rango.max != null ? `–${pricingMatch.rango.max}` : '+'} MW{pricingInfl && pricingAnios > 0 ? ` · +${pricingAnios}a inflación` : ''})
+                      </span>
+                    </div>
+                    <button type="button" onClick={aplicarPrecioPricing} style={{ padding: '6px 12px', background: COLORS.teal, color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                      Usar este precio
+                    </button>
+                  </div>
+                ) : (form.servicio && pricingCap) ? (
+                  <div style={{ padding: '8px 12px', background: '#FEF3C7', borderRadius: 6, fontSize: 11, color: COLORS.amber }}>
+                    No hay precio en el catálogo para "{form.servicio}" ({pricingTipo}) a {pricingCap} MW.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: COLORS.slate500 }}>
+                    Selecciona tipo + servicio + capacidad para ver el precio.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div style={{ marginBottom:12 }}><label style={labelStyle}>Descripción</label><textarea value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} rows={6} style={{...inputStyle, resize:'vertical', fontFamily:'inherit'}} placeholder="Bullets que aparecerán en el PDF (cada línea con '- ' al inicio se renderiza como lista)"/></div>
           <div style={{ display:'grid', gridTemplateColumns:'80px 1fr', gap:12, marginBottom:12 }}>
             <div><label style={labelStyle}>Cantidad</label><input type="number" value={form.cantidad} onChange={e=>setForm({...form, cantidad:e.target.value})} style={inputStyle}/></div>

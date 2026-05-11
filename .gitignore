@@ -16,6 +16,7 @@ dist-ssr
 .agents/
 .claude/
 .playwright-mcp/
+skills-lock.json
 
 # Editor directories and files
 .vscode/*

@@ -14,6 +14,7 @@ import {
   btnPrimary, Icon, EmptyState, LoadingState, useIsMobile,
 } from './helpers'
 import { puede, puedeEliminar as rolPuedeEliminar } from './permisos'
+import { TabDocumentos } from './Proyectos'
 
 export default function Plantas({ usuario }) {
   const [plantas, setPlantas] = useState(null)  // null = no cargado / tabla no existe
@@ -335,6 +336,12 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* v16.0.0: Documentos de la planta (Storage) — full width */}
+      <div style={{ marginTop: 20, background: 'white', border: `1px solid ${COLORS.slate100}`, borderRadius: 12, padding: 18 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink, marginTop: 0, marginBottom: 14 }}>📁 Documentos de esta planta</h3>
+        <TabDocumentos scope="plantas" scopeId={planta.id} usuarioActual={usuario}/>
       </div>
     </div>
   )

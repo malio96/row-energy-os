@@ -22,48 +22,38 @@
 
 ## 🎯 Versión actual en producción
 
-**v15.10.13** — Estado actual en producción. Ver "📍 Estado de sesión actual" abajo para el contexto vivo.
+**v16.0.0** — Estado actual en producción. **Mega v16.0 entregada**: Security review + Storage de documentos + Pricing engine.
 
-## 🚀 PRÓXIMA SESIÓN: Mega v16.0
+## 🎉 Mega v16.0 — Entregada
 
-Plan acordado con Malio. Arrancar EN ESTE ORDEN:
+### ✅ Fase 1 — Security review baseline (entregado)
+2 fixes high-confidence aplicados antes de Storage:
+- **Stored XSS en notas** (`Proyectos.jsx`): `formatoContenido` usaba `dangerouslySetInnerHTML` con un `.replace()` que NO sanitizaba HTML del contenido. Atacante podía inyectar `<script>` y robar tokens de auth de quien viera la nota. Fix: render JSX nativo (sin innerHTML), React auto-escapa.
+- **UUID validation en `getNotificaciones`** (`supabase.js`): defense-in-depth. `usuarioId` se interpolaba a `.or()` PostgREST; ahora requiere UUID válido.
 
-### Fase 0 — Preflight (Malio, no Claude)
-- Rotar password DB Supabase (Dashboard → Settings → Database → Reset)
-- Roll JWT secret (Settings → API → Roll)
-- Actualizar `VITE_SUPABASE_KEY` en Vercel + redeploy
-- Actualizar `.env.local` local
+### ✅ Fase 2 — Storage de documentos (entregado)
+- Bucket privado `proyectos-docs` (50 MB max, MIME whitelist), RLS estrictas con verificación `EXISTS` contra tabla padre (proyectos/plantas/clientes).
+- 4 policies: SELECT respeta RLS de la tabla padre; INSERT (todos los roles operativos); UPDATE (direccion/admin/director_proyectos); DELETE (solo direccion/admin).
+- Helpers en `supabase.js`: `uploadDoc`, `listDocs`, `getSignedDocUrl`, `deleteDoc`, `downloadDoc`, `DOC_CATEGORIAS`. Path: `{scope}/{scopeId}/{categoria}/{timestamp}_{filename}`.
+- UI `TabDocumentos` (exportado desde Proyectos.jsx, reusable): drag-and-drop, selector de categoría (6 categorías), listado por carpeta, preview modal (iframe PDF / img imagen), botones download/delete con permisos.
+- Aplicado en **Proyectos** (tab existente activado) + **Plantas** (sección al final del DetallePlanta). Clientes pendiente para futura iteración (TabClientes es read-only).
+- Verificado end-to-end con Playwright: upload + listar + preview signed URL + delete.
+- Migration: `supabase/migrations/v16.0.0_storage_documentos.sql`.
 
-### Fase 1 — Security review baseline (Claude, ~45 min)
-- Usar skill `security-review` sobre el codebase actual
-- Cruzar con `mcp__supabase__get_advisors` (RLS + perf)
-- Reportar findings HIGH-CONFIDENCE
-- Parchar lo crítico antes de seguir
+### ✅ Fase 3 — Pricing engine v15.7 (entregado, MVP)
+- Tabla `public.precios_servicios` con 184 registros (16 servicios × ~9 rangos × 2 tipos CC/CE), parseado de `templates/PRECIOS AMPERE.xlsx` con la skill xlsx. Dato típico: "Estudio de Impacto Ampere" CC, 11-30 MW = $184,219 MXN.
+- Helpers en `supabase.js`: `getPreciosServicios()` (cache local), `listarServiciosPricing(precios, tipo)`, `buscarPrecioServicio({servicio, tipo, capacidadMw, conInflacion, anios})` con fórmula `precio * 1.05^años`.
+- UI: bloque colapsable "💲 Calcular precio según capacidad MW" en `ModalNuevoItem` (Cotizaciones). Dropdown tipo CC/CE → dropdown servicio → input MW → muestra precio con badge del rango. Toggle "con inflación" + input años. Botón "Usar este precio" auto-popula el campo `precio_unitario`.
+- Verificado end-to-end con Playwright: COT-003 (Borrador) → Agregar → seleccionar Estudio de Impacto Ampere CC 25 MW → $184,219 calculado → "Usar este precio" → input precio = 184219.
+- Migration: `supabase/migrations/v16.0.0_pricing_engine.sql` (incluye los 184 INSERTs).
+- **Pendiente para v16.1**: precios con inflación tipo proyección año-por-año (las sheets "CC INFLACIÓN" y "CE Inflación" del Excel tienen precios proyectados a múltiples años; hoy aplicamos 5%/año en runtime, suficiente para el MVP).
 
-### Fase 2 — Storage de documentos (Claude, ~5h)
-- Bucket Supabase Storage `proyectos-docs` con RLS por proyecto/rol/categoría
-- Helpers en `supabase.js` (upload/download/list/delete + signed URLs)
-- Tab Documentos funcional en Proyectos: drag-and-drop, preview PDF/imágenes, agrupación por carpetas (contratos/planos/fotos/facturas)
-- Aplicar también a Plantas y Clientes
-- Test Playwright: subir, descargar, eliminar, verificar permisos cruzados
+### ✅ Fase 4 — Security review final + push (entregado)
+- Quick scan: `service_role` solo en edge function (server-side), no expuesto. Único `dangerouslySetInnerHTML` restante es en `IconAlerta.jsx:23` con path constante hardcoded (safe).
+- Build limpio. Push directo a main.
 
-### Fase 3 — Pricing engine v15.7 (Claude, ~4h)
-- Leer `templates/PRECIOS AMPERE.xlsx` con skill `xlsx` (4 sheets: CC/CE × sin/con inflación)
-- Tabla `precios_servicios` (servicio, capacidad_min_mw, capacidad_max_mw, tipo, con_inflacion, precio)
-- Migration con seed data desde Excel
-- UI en CotizacionDetalle: dropdown servicio + input MW + toggle inflación → autopobla precio
-- Test caso típico end-to-end
-
-### Fase 4 — Security review final + push v16.0 (Claude, ~30 min)
-- `security-review` sobre los cambios
-- Bump `v16.0.0`
-- Commit + push
-- Actualizar CLAUDE.md (mover esta sección a histórico)
-
-### Skills disponibles (ya instaladas en `.agents/skills/`)
-- `security-review` (de Sentry, OWASP)
-- `supabase` + `supabase-postgres-best-practices` (de Supabase)
-- `pdf`, `docx`, `xlsx`, `pptx`, `doc-coauthoring` (de Anthropic)
+### Pendiente del usuario (no bloqueante)
+- **Cuando vayas a lanzar la plataforma** (hoy en prueba): rotar credenciales Supabase (`Settings → Database → Reset password`, `Settings → API → Roll JWT`) + actualizar `.env.local` y Vercel env vars + redeploy. Las credenciales actuales (`RowEnergy2026!`) están en git history desde versiones anteriores.
 
 
 

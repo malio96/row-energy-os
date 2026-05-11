@@ -312,7 +312,12 @@ export async function recalcularFechasDesde(actividadId) {
 // ============================================================
 // NOTIFICACIONES
 // ============================================================
+// v16.0.0 (security defense-in-depth): validar UUID antes de interpolar en .or().
+// usuarioId hoy viene de auth.getUser() (server-validated UUID), pero un refactor
+// futuro podría aceptarlo de un input — mejor blindarlo ahora.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export async function getNotificaciones(usuarioId) {
+  if (!usuarioId || !UUID_REGEX.test(String(usuarioId))) return []
   const { data } = await supabase.from('notificaciones').select('*').or(`destinatario_id.eq.${usuarioId},destinatario_id.is.null`).order('created_at', { ascending: false }).limit(20)
   return data || []
 }
@@ -1863,4 +1868,158 @@ export async function crearHito(payload) {
     .single()
   if (error) throw error
   return data
+}
+
+// ============================================================
+// STORAGE DE DOCUMENTOS (v16.0.0) — bucket privado proyectos-docs
+// Path convention: {scope}/{scopeId}/{categoria}/{timestamp}_{nombre}
+// scope     ∈ ('proyectos', 'plantas', 'clientes')
+// categoria ∈ ('contratos', 'planos', 'entregables', 'fotos', 'facturas', 'permisos')
+// ============================================================
+
+const DOCS_BUCKET = 'proyectos-docs'
+
+export const DOC_CATEGORIAS = [
+  { k: 'contratos',   l: 'Contratos',   icon: '📝' },
+  { k: 'planos',      l: 'Planos',      icon: '📐' },
+  { k: 'entregables', l: 'Entregables', icon: '📦' },
+  { k: 'fotos',       l: 'Fotos',       icon: '📷' },
+  { k: 'facturas',    l: 'Facturas',    icon: '🧾' },
+  { k: 'permisos',    l: 'Permisos',    icon: '📑' },
+]
+
+const SCOPES_VALIDOS = new Set(['proyectos', 'plantas', 'clientes'])
+const CATEGORIAS_VALIDAS = new Set(DOC_CATEGORIAS.map(c => c.k))
+
+function _validarScope(scope, scopeId, categoria) {
+  if (!SCOPES_VALIDOS.has(scope)) throw new Error(`scope inválido: ${scope}`)
+  if (!UUID_REGEX.test(String(scopeId))) throw new Error('scopeId inválido (debe ser UUID)')
+  if (categoria != null && !CATEGORIAS_VALIDAS.has(categoria)) throw new Error(`categoría inválida: ${categoria}`)
+}
+
+// Sanea el nombre del archivo: solo letras/dígitos/punto/guion/underscore
+function _sanitizarNombre(name) {
+  return String(name).replace(/[^\w.\-]/g, '_').slice(0, 200)
+}
+
+export async function uploadDoc({ scope, scopeId, categoria, file }) {
+  _validarScope(scope, scopeId, categoria)
+  if (!file) throw new Error('file es requerido')
+  const safe = _sanitizarNombre(file.name)
+  const path = `${scope}/${scopeId}/${categoria}/${Date.now()}_${safe}`
+  const { data, error } = await supabase.storage.from(DOCS_BUCKET).upload(path, file, {
+    upsert: false,
+    contentType: file.type || 'application/octet-stream',
+  })
+  if (error) throw error
+  return { path: data.path, name: file.name, size: file.size, type: file.type }
+}
+
+// Lista todos los archivos por categoría para un recurso. Retorna {categoria: [files]}
+export async function listDocs(scope, scopeId) {
+  _validarScope(scope, scopeId)
+  const result = {}
+  for (const cat of DOC_CATEGORIAS) {
+    const { data, error } = await supabase.storage.from(DOCS_BUCKET).list(
+      `${scope}/${scopeId}/${cat.k}`,
+      { limit: 200, sortBy: { column: 'created_at', order: 'desc' } }
+    )
+    if (error && error.statusCode !== 404 && error.statusCode !== '404') {
+      console.warn(`listDocs ${cat.k}:`, error)
+    }
+    result[cat.k] = (data || []).filter(f => f.id != null)  // filtrar carpetas/placeholder
+  }
+  return result
+}
+
+export async function getSignedDocUrl(path, expiresIn = 3600) {
+  if (!path) throw new Error('path requerido')
+  const { data, error } = await supabase.storage.from(DOCS_BUCKET).createSignedUrl(path, expiresIn)
+  if (error) throw error
+  return data.signedUrl
+}
+
+export async function deleteDoc(path) {
+  if (!path) throw new Error('path requerido')
+  const { error } = await supabase.storage.from(DOCS_BUCKET).remove([path])
+  if (error) throw error
+}
+
+// Helper de descarga: abre el archivo en una nueva pestaña con signed URL.
+export async function downloadDoc(path, filename) {
+  const url = await getSignedDocUrl(path, 60)  // 1 min, suficiente para click
+  const a = document.createElement('a')
+  a.href = url
+  if (filename) a.download = filename
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+// ============================================================
+// PRICING ENGINE v15.7 (MVP) — tabla precios_servicios
+// 16 servicios × 9 rangos de capacidad MW × 2 tipos (CC, CE).
+// El factor de inflación es opcional vía toggle en UI: precio * 1.05^años.
+// ============================================================
+
+export const PRICING_TIPOS = [
+  { k: 'CC', l: 'Centro de Carga (CC)' },
+  { k: 'CE', l: 'Central Eléctrica (CE)' },
+]
+
+// Cache simple en memoria (evita hits a BD repetidos en una sesión)
+let _preciosCache = null
+let _preciosCachePromise = null
+
+export async function getPreciosServicios(forceRefresh = false) {
+  if (!forceRefresh && _preciosCache) return _preciosCache
+  if (_preciosCachePromise) return _preciosCachePromise
+  _preciosCachePromise = supabase
+    .from('precios_servicios')
+    .select('servicio, tipo, capacidad_min_mw, capacidad_max_mw, precio')
+    .order('servicio')
+    .order('capacidad_min_mw')
+    .then(({ data, error }) => {
+      _preciosCachePromise = null
+      if (error) throw error
+      _preciosCache = data || []
+      return _preciosCache
+    })
+  return _preciosCachePromise
+}
+
+// Lista de servicios distintos para el dropdown (filtrados por tipo)
+export function listarServiciosPricing(precios, tipo) {
+  if (!precios || !tipo) return []
+  const set = new Set()
+  precios.forEach(p => { if (p.tipo === tipo) set.add(p.servicio) })
+  return [...set].sort()
+}
+
+// Busca el precio que aplica a (servicio, tipo, capacidad MW). Aplica inflación si pide.
+// Retorna {precio, rango: {min, max}} o null si no hay match.
+export function buscarPrecioServicio(precios, { servicio, tipo, capacidadMw, conInflacion = false, anios = 0, factorAnual = 0.05 }) {
+  if (!precios || !servicio || !tipo || capacidadMw == null || isNaN(capacidadMw)) return null
+  const cap = Number(capacidadMw)
+  // Buscar la fila cuyo rango incluya capacidadMw
+  const match = precios.find(p =>
+    p.servicio === servicio &&
+    p.tipo === tipo &&
+    cap >= Number(p.capacidad_min_mw) &&
+    (p.capacidad_max_mw == null || cap <= Number(p.capacidad_max_mw))
+  )
+  if (!match) return null
+  let precio = Number(match.precio)
+  if (conInflacion && anios > 0) {
+    precio = precio * Math.pow(1 + factorAnual, anios)
+  }
+  return {
+    precio: Math.round(precio),
+    rango: {
+      min: Number(match.capacidad_min_mw),
+      max: match.capacidad_max_mw == null ? null : Number(match.capacidad_max_mw),
+    },
+  }
 }
