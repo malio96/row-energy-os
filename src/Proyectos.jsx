@@ -1317,10 +1317,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     if (!act) return null
     const prev = previewActividad(act)
     const rect = timelineRef.current.getBoundingClientRect()
-    const scrollLeft = scrollRef.current?.scrollLeft || 0
-    // v15.9.4: el rubber-band sale del CENTRO EXACTO del dot que se arrastró.
-    // Antes el codo saltaba +12px del origen (STUB de buildOrthPath), por eso la línea
-    // del dot izquierdo se veía "metida" en el bar. Ahora línea recta del dot al cursor.
     const fromLeft = drag.from === 'left'
     // Dots de milestone están a ±20px del centro del rombo (rombo=20px de ancho + dot afuera)
     // Dots de barra normal están a ±8px del borde del bar
@@ -1330,7 +1326,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
           ? getX(prev.inicio) - 8
           : getX(prev.inicio) + getW(prev.inicio, prev.fin) + 8)
     const y1 = rowByActId[act.id] * ROW_HEIGHT + ROW_HEIGHT / 2
-    const x2 = dragStateRef.current.mouseX - rect.left + scrollLeft
+    // rect.left ya refleja el offset del scroll (el timelineRef se desplaza con scrollLeft).
+    // Sumar scrollLeft duplicaba el offset → la línea se "estiraba" hacia la derecha al hacer scroll.
+    const x2 = dragStateRef.current.mouseX - rect.left
     const y2 = dragStateRef.current.mouseY - rect.top
     return `M ${x1} ${y1} L ${x2} ${y2}`
   }, [drag, dragTick, actividades, rowByActId, previewActividad, DAY_WIDTH])
