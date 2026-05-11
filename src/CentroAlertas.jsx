@@ -4,6 +4,7 @@ import {
   getProyectos, getFacturas, getCuentasPorPagar, getLeads,
   getCotizaciones, getUsuarios, getAlertasConfig,
   calcularCargaPorColaborador,
+  getTareasPostCierrePendientes,  // v16.1
 } from './supabase'
 import {
   generarAlertasDetalladas, agruparPorCategoria,
@@ -34,7 +35,7 @@ export default function CentroAlertas({ usuario }) {
     const cargar = async () => {
       setLoading(true)
       try {
-        const [proyectos, facturas, cxp, leads, cotizaciones, usuarios, config] = await Promise.all([
+        const [proyectos, facturas, cxp, leads, cotizaciones, usuarios, config, tareasPostCierre] = await Promise.all([
           getProyectos(),
           getFacturas(),
           getCuentasPorPagar(),
@@ -42,6 +43,7 @@ export default function CentroAlertas({ usuario }) {
           getCotizaciones(),
           getUsuarios(),
           getAlertasConfig(usuario.id),
+          getTareasPostCierrePendientes(usuario.id),  // v16.1
         ])
         if (cancelled) return
 
@@ -56,6 +58,7 @@ export default function CentroAlertas({ usuario }) {
         const detalladas = generarAlertasDetalladas({
           usuario, config, usuarios,
           facturas, actividades, proyectos, cxp, leads, cotizaciones, carga,
+          tareasPostCierre,  // v16.1
         })
         if (!cancelled) {
           setItems(detalladas)

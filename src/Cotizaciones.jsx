@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS } from './supabase'
+import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS, getTareasPostCierre, completarTareaPostCierre, asignarTareaPostCierre, aprobarWorkflowPostCierre, DEPARTAMENTOS_POST_CIERRE, ESTADOS_TAREA_PC } from './supabase'
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 
@@ -143,10 +143,15 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
   const esBorrador = cot.estado === 'Borrador'
 
   const cambiarEstado = async (nuevo) => {
-    if (nuevo === 'Aprobada' && !confirm('Al aprobar se creará el proyecto automáticamente con los hitos 50/40/10. ¿Continuar?')) return
-    await actualizarCotizacion(cot.id, { estado: nuevo })
-    cargar()
-    if (nuevo === 'Aprobada') setTimeout(() => alert('✓ Proyecto creado. Revisa el módulo Proyectos.'), 500)
+    if (nuevo === 'Aprobada' && !confirm('Al aprobar se creará el proyecto automáticamente con los hitos 50/40/10 y se dispararán las 3 tareas post-cierre (Legal/Admin/Proyectos). ¿Continuar?')) return
+    try {
+      await actualizarCotizacion(cot.id, { estado: nuevo })
+      cargar()
+      if (nuevo === 'Aprobada') setTimeout(() => alert('✓ Proyecto creado y tareas post-cierre asignadas. Revisa el bloque Post-cierre abajo y el módulo Proyectos.'), 500)
+    } catch (e) {
+      // El trigger BEFORE UPDATE puede bloquear si el cliente no tiene RFC/dirección
+      alert('No se pudo cambiar de estado:\n\n' + (e.message || e))
+    }
   }
 
   const delItem = async (itemId) => { if (!confirm('¿Eliminar item?')) return; await eliminarCotizacionItem(itemId); cargar() }
@@ -277,6 +282,170 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
           )}
         </div>
       </div>
+
+      {/* v16.1: Workflow Post-Cierre — solo se muestra cuando la cotización está Aprobada */}
+      {cot.estado === 'Aprobada' && (
+        <WorkflowPostCierre cotizacion={cot} usuario={usuario} onCambio={cargar}/>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// v16.1: Workflow Post-Cierre — 3 tareas (Legal/Admin/Proyectos) tras aprobar cotización
+// ============================================================
+function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
+  const [tareas, setTareas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [completandoId, setCompletandoId] = useState(null)
+  const [archivos, setArchivos] = useState({})  // {tareaId: File}
+  const [notasMap, setNotasMap] = useState({})
+
+  const cargar = async () => {
+    setLoading(true)
+    try { setTareas(await getTareasPostCierre(cotizacion.id)) }
+    catch (e) { console.error(e); setTareas([]) }
+    setLoading(false)
+  }
+  useEffect(() => { cargar() }, [cotizacion.id])
+
+  const completar = async (tareaId) => {
+    if (!confirm('¿Marcar esta tarea como completada?')) return
+    setCompletandoId(tareaId)
+    try {
+      await completarTareaPostCierre(tareaId, {
+        notas: notasMap[tareaId] || null,
+        archivo: archivos[tareaId] || null,
+        cotizacionId: cotizacion.id,
+      })
+      cargar()
+    } catch (e) { alert('Error: ' + e.message) }
+    setCompletandoId(null)
+  }
+
+  const aprobarTodo = async () => {
+    if (!confirm('¿Confirmar que las 3 tareas están bien y arrancar el calendario de cobranza? Esta acción es definitiva.')) return
+    try {
+      await aprobarWorkflowPostCierre(cotizacion.id)
+      alert('✓ Workflow aprobado. Cobranza puede arrancar el calendario de pagos.')
+      onCambio?.()
+    } catch (e) { alert('Error: ' + e.message) }
+  }
+
+  const completadas = tareas.filter(t => t.estado === 'completada').length
+  const total = tareas.length
+  const todasOK = total > 0 && completadas === total
+  const yaAprobado = !!cotizacion.workflow_aprobado_en
+  const puedeAprobar = ['direccion', 'admin', 'ventas'].includes(usuario?.rol)
+
+  if (loading) return <div style={{ marginTop: 24, padding: 30, textAlign: 'center', color: COLORS.slate400 }}>Cargando workflow...</div>
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ background: 'white', border: `1px solid ${COLORS.slate100}`, borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: COLORS.navy, margin: 0 }}>🔄 Workflow Post-Cierre</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 12, color: COLORS.slate500, fontWeight: 600 }}>
+              {completadas} de {total} completadas
+            </span>
+            {yaAprobado && (
+              <span style={{ fontSize: 11, padding: '4px 10px', background: '#F0FDF4', color: '#16A34A', borderRadius: 12, fontWeight: 700 }}>
+                ✓ Aprobado · cobranza activa
+              </span>
+            )}
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: COLORS.slate500, margin: '4px 0 0' }}>
+          Tareas automáticas creadas al aprobar la cotización. Cada departamento tiene un plazo en días hábiles. Cuando las 3 estén completadas, Ventas debe confirmar para arrancar el calendario de cobranza.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+        {DEPARTAMENTOS_POST_CIERRE.map(dep => {
+          const t = tareas.find(x => x.departamento === dep.k)
+          if (!t) return (
+            <div key={dep.k} style={{ background: 'white', border: `1px solid ${COLORS.slate100}`, borderRadius: 10, padding: 14, opacity: 0.5 }}>
+              <div style={{ fontSize: 12, color: COLORS.slate400 }}>{dep.icon} {dep.l}</div>
+              <div style={{ fontSize: 11, color: COLORS.slate400, marginTop: 6 }}>(no asignada)</div>
+            </div>
+          )
+          const estCfg = ESTADOS_TAREA_PC[t.esta_vencida ? 'vencida' : t.estado] || ESTADOS_TAREA_PC.pendiente
+          const esResp = t.asignado?.id === usuario?.id || ['direccion','admin'].includes(usuario?.rol)
+          const yaCompletada = t.estado === 'completada'
+          return (
+            <div key={dep.k} style={{
+              background: 'white', border: `2px solid ${dep.color}`,
+              borderRadius: 10, padding: 14,
+              opacity: yaCompletada ? 0.7 : 1,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>{dep.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: dep.color }}>{dep.l}</span>
+                </div>
+                <span style={{ fontSize: 10, padding: '3px 8px', background: estCfg.bg, color: estCfg.color, borderRadius: 10, fontWeight: 700 }}>
+                  {estCfg.l}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: COLORS.ink, fontWeight: 500, marginBottom: 4 }}>{t.titulo}</div>
+              <div style={{ fontSize: 10, color: COLORS.slate500, marginBottom: 10, lineHeight: 1.4 }}>{t.descripcion}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: COLORS.slate500, fontFamily: 'var(--font-mono)', marginBottom: 8 }}>
+                <span>📅 {t.fecha_limite} ({t.plazo_dias_habiles}d hábiles)</span>
+                <span>👤 {t.asignado?.nombre || 'Sin asignar'}</span>
+              </div>
+              {yaCompletada ? (
+                <div style={{ fontSize: 10, color: COLORS.teal, fontWeight: 600 }}>
+                  ✓ Completada {t.completada_en ? new Date(t.completada_en).toLocaleDateString('es-MX', {day:'2-digit',month:'short'}) : ''}
+                  {t.completada_por_user?.nombre ? ` por ${t.completada_por_user.nombre}` : ''}
+                  {t.archivo_path && <div style={{ fontSize: 9, color: COLORS.slate500, marginTop: 4, fontFamily: 'var(--font-mono)' }}>📎 {t.archivo_path.split('/').pop().replace(/^\d+_/, '')}</div>}
+                  {t.notas && <div style={{ fontSize: 10, color: COLORS.slate600, marginTop: 6, padding: 6, background: COLORS.slate50, borderRadius: 4 }}>{t.notas}</div>}
+                </div>
+              ) : esResp ? (
+                <div>
+                  <input
+                    type="file"
+                    onChange={e => setArchivos(a => ({ ...a, [t.id]: e.target.files?.[0] || null }))}
+                    style={{ fontSize: 10, marginBottom: 6, width: '100%' }}
+                  />
+                  <textarea
+                    placeholder="Notas (opcional)"
+                    value={notasMap[t.id] || ''}
+                    onChange={e => setNotasMap(n => ({ ...n, [t.id]: e.target.value }))}
+                    rows={2}
+                    style={{ width: '100%', padding: '6px 8px', fontSize: 10, border: `1px solid ${COLORS.slate200}`, borderRadius: 4, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', marginBottom: 6 }}
+                  />
+                  <button
+                    onClick={() => completar(t.id)}
+                    disabled={completandoId === t.id}
+                    style={{ width: '100%', padding: '6px 10px', background: dep.color, color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {completandoId === t.id ? 'Subiendo...' : '✓ Marcar completada'}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, color: COLORS.slate400, fontStyle: 'italic' }}>
+                  Esperando que {t.asignado?.nombre || 'el responsable'} la complete.
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {todasOK && !yaAprobado && puedeAprobar && (
+        <button
+          onClick={aprobarTodo}
+          style={{ width: '100%', marginTop: 14, padding: 14, background: COLORS.teal, color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+        >
+          ✅ Aprobar workflow → arrancar calendario de cobranza
+        </button>
+      )}
+      {todasOK && !yaAprobado && !puedeAprobar && (
+        <div style={{ marginTop: 14, padding: 12, background: COLORS.slate50, borderRadius: 8, fontSize: 12, color: COLORS.slate600, textAlign: 'center' }}>
+          Las 3 tareas están listas. Ventas debe confirmar para arrancar el calendario de cobranza.
+        </div>
+      )}
     </div>
   )
 }

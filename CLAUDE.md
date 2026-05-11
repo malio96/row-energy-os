@@ -22,7 +22,33 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.0.0** — Estado actual en producción. **Mega v16.0 entregada**: Security review + Storage de documentos + Pricing engine.
+**v16.1.0** — Estado actual en producción. **Workflow Post-Cierre CRM** entregado tras la mega v16.0.
+
+## 🔄 v16.1.0 — Workflow Post-Cierre CRM (entregado)
+
+Spec del director de ventas: cuando una cotización se aprueba, dispara automáticamente 3 tareas (Legal/Admin/Proyectos) con plazos en días hábiles. Ventas confirma cuando todo OK → arranca cobranza.
+
+**Backend:**
+- Tabla `tareas_post_cierre` (cotizacion_id, departamento, plazo, fecha_limite, asignado_a, estado, archivo_path, completada_en/por). RLS por departamento.
+- Función `sumar_dias_habiles(fecha, n)` que salta sábados/domingos.
+- Trigger `BEFORE UPDATE ON cotizaciones`: cuando estado pasa a 'Aprobada':
+  - Valida que el cliente tenga RFC + dirección fiscal (sino bloquea con error legible).
+  - Crea las 3 tareas con plazos (Admin 2d, Legal 3d, Proyectos 5d) y auto-asigna al primer usuario activo de cada rol.
+- Columnas nuevas en cotizaciones: `workflow_aprobado_en`, `workflow_aprobado_por`.
+- Storage policies actualizadas: scope 'cotizaciones' agregado al bucket `proyectos-docs` para los entregables del workflow.
+
+**Frontend:**
+- Helpers en `supabase.js`: `getTareasPostCierre`, `getTareasPostCierrePendientes`, `completarTareaPostCierre` (con upload opcional al bucket), `aprobarWorkflowPostCierre`, `asignarTareaPostCierre`. Constantes: `DEPARTAMENTOS_POST_CIERRE`, `ESTADOS_TAREA_PC`.
+- Componente `WorkflowPostCierre` en `Cotizaciones.jsx`: timeline horizontal con 3 cards (legal/admin/proyectos), cada una con asignado + plazo + estado + adjuntar entregable + notas + botón "Marcar completada". Botón "Aprobar workflow → arrancar cobranza" cuando las 3 están OK (solo direccion/admin/ventas).
+- `cambiarEstado` en CotizacionDetalle ahora captura el error del trigger y lo muestra en alert (validación cliente).
+- `BandejaPostCierre` en Dashboard (vista Ejecutivo): muestra tareas pendientes del usuario actual, con drill-down a la cotización. Resalta vencidas en rojo.
+- Categoría alerta nueva `tareas_post_cierre_vencidas` (icon 🔄, severidad importante) integrada en `alertas.js`. Visible en banner Dashboard, Centro de Alertas, y campana sidebar.
+
+**Pendientes para v16.2** (cobranza automática desde el workflow): generación de hitos al confirmar workflow + recordatorio email cliente vía Edge Function programada.
+
+Migration: `supabase/migrations/v16.1.0_workflow_post_cierre.sql`. Verificado E2E con Playwright (validación bloquea, trigger crea 3 tareas, completar con archivo funciona, archivo en bucket, badge "Completada").
+
+## ✅ Mega v16.0.0 — Security review + Storage docs + Pricing engine (entregado)
 
 ## 🎉 Mega v16.0 — Entregada
 

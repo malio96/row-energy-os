@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getProyectos, getCotizaciones, getLeads, getHitos, getFacturas, getCompras, getPostventaTickets, getClientes, getUsuarios } from './supabase'
 // v12: helpers para vista Personas
-import { calcularCargaPorColaborador, identificarCuellosBotella } from './supabase'
+import { calcularCargaPorColaborador, identificarCuellosBotella, getTareasPostCierrePendientes, DEPARTAMENTOS_POST_CIERRE } from './supabase'
 // v12.5.4: CRUD gastos y cuentas por pagar (reemplaza localStorage)
 import {
   getGastosVariables, crearGasto, actualizarGasto, eliminarGasto,
@@ -290,6 +290,13 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
     return d !== null && d >= 0 && d <= 30
   })
 
+  // v16.1: cargar tareas post-cierre para alimentar tanto la bandeja como las alertas
+  const [tareasPostCierre, setTareasPostCierre] = useState([])
+  useEffect(() => {
+    if (!usuario?.id) return
+    getTareasPostCierrePendientes(usuario.id).then(setTareasPostCierre).catch(() => setTareasPostCierre([]))
+  }, [usuario?.id])
+
   // v12.5.9: generar alertas vía sistema nuevo en vez de hardcoded
   const alertas = useMemo(() => {
     if (!alertasConfig) return []
@@ -303,8 +310,9 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       leads,
       cotizaciones,
       carga: cargaColaboradores,
+      tareasPostCierre,  // v16.1
     })
-  }, [alertasConfig, usuario, facturas, actividades, proyectos, cxp, leads, cotizaciones, cargaColaboradores])
+  }, [alertasConfig, usuario, facturas, actividades, proyectos, cxp, leads, cotizaciones, cargaColaboradores, tareasPostCierre])
 
   // v15.1: cuellos de botella destacados
   const cuellos = useMemo(() => identificarCuellosBotella(actividades || []), [actividades])
@@ -330,6 +338,9 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       {cuellos.porEtapa.length > 0 && (
         <CuellosBotellaWidget cuellos={cuellos} isMobile={isMobile}/>
       )}
+
+      {/* v16.1: Bandeja Post-Cierre — tareas pendientes del usuario */}
+      <BandejaPostCierre usuario={usuario} onNavigate={onNavigate}/>
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
@@ -432,6 +443,73 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
 // por etapa-cuello → lista de proyectos afectados → "Abrir →" reusa el
 // drill-down existente (/proyectos?proyecto=X&actividad=Y).
 // ============================================================
+// v16.1: Bandeja de tareas Post-Cierre del usuario actual.
+// Filtra para mostrar SOLO tareas relevantes: asignadas al usuario o de su departamento.
+function BandejaPostCierre({ usuario, onNavigate }) {
+  const [tareas, setTareas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!usuario?.id) return
+    getTareasPostCierrePendientes(usuario.id).then(t => { setTareas(t); setLoading(false) }).catch(() => setLoading(false))
+  }, [usuario?.id])
+
+  // Filtrar las que aplican al usuario actual (asignado O de su departamento O direccion/admin/ventas que ven todas)
+  const verTodas = ['direccion', 'admin', 'ventas'].includes(usuario?.rol)
+  const depRol = usuario?.rol === 'admin' ? 'admin' : usuario?.rol === 'director_proyectos' ? 'proyectos' : usuario?.rol === 'direccion' ? 'legal' : null
+  const mias = tareas.filter(t => verTodas || t.asignado_a === usuario?.id || t.departamento === depRol)
+  if (loading) return null
+  if (mias.length === 0) return null
+
+  return (
+    <div style={{ background: 'white', border: `1px solid ${COLORS.slate100}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink, margin: 0 }}>
+          🔄 Tareas post-cierre {verTodas ? '(todas)' : 'pendientes'}
+        </h3>
+        <span style={{ fontSize: 11, color: COLORS.slate500, fontWeight: 600 }}>{mias.length} tarea{mias.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
+        {mias.slice(0, 6).map(t => {
+          const dep = DEPARTAMENTOS_POST_CIERRE.find(d => d.k === t.departamento)
+          return (
+            <div
+              key={t.id}
+              onClick={() => navigate(`/cotizaciones?cotizacion=${t.cotizacion_id}`)}
+              style={{
+                padding: 10, borderRadius: 8,
+                background: t.esta_vencida ? '#FEF2F2' : COLORS.slate50,
+                border: `1px solid ${t.esta_vencida ? COLORS.red : COLORS.slate100}`,
+                borderLeft: `3px solid ${dep?.color || COLORS.slate400}`,
+                cursor: 'pointer',
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+            >
+              <div style={{ fontSize: 10, color: dep?.color, fontWeight: 700, marginBottom: 2 }}>
+                {dep?.icon} {dep?.l}
+                {t.esta_vencida && <span style={{ marginLeft: 6, color: COLORS.red, fontWeight: 800 }}>· VENCIDA</span>}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.ink, marginBottom: 4 }}>{t.titulo}</div>
+              <div style={{ fontSize: 10, color: COLORS.slate500, fontFamily: 'var(--font-mono)' }}>
+                {t.cotizacion?.codigo || ''} · {t.cotizacion?.cliente?.razon_social || ''}
+              </div>
+              <div style={{ fontSize: 10, color: t.esta_vencida ? COLORS.red : COLORS.slate500, marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                📅 vence {t.fecha_limite}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {mias.length > 6 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.slate500, textAlign: 'center' }}>
+          ... y {mias.length - 6} más
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CuellosBotellaWidget({ cuellos, isMobile }) {
   const navigate = useNavigate()
   const [expandido, setExpandido] = useState(null)

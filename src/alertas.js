@@ -20,7 +20,7 @@ const ROLES_OPERATIVOS = ['ventas', 'equipo_proyectos']
 // ============================================================
 // GENERADOR PRINCIPAL — agrupado (banner Dashboard, sin cambios)
 // ============================================================
-export function generarAlertas({ usuario, config, facturas = [], actividades = [], proyectos = [], cxp = [], leads = [], cotizaciones = [], carga = [] }) {
+export function generarAlertas({ usuario, config, facturas = [], actividades = [], proyectos = [], cxp = [], leads = [], cotizaciones = [], carga = [], tareasPostCierre = [] }) {
   if (!config) return []
   const hoy = new Date()
   hoy.setHours(0, 0, 0, 0)
@@ -213,6 +213,28 @@ export function generarAlertas({ usuario, config, facturas = [], actividades = [
     }
   }
 
+  // ---------- v16.1: Tareas post-cierre vencidas ----------
+  // Trigger: cualquier tarea pendiente con fecha_limite < hoy.
+  // Audiencia: direccion/admin/ventas (siempre); el responsable directo (siempre).
+  if (config.tareas_post_cierre_vencidas !== false) {
+    const hoyStr = hoy.toISOString().split('T')[0]
+    const vencidas = tareasPostCierre.filter(t =>
+      ['pendiente', 'en_curso'].includes(t.estado) && t.fecha_limite < hoyStr
+    )
+    if (vencidas.length > 0) {
+      alertas.push({
+        id: 'tareas_post_cierre_vencidas',
+        tipo: 'tareas_post_cierre_vencidas',
+        severidad: 'importante',
+        mensaje: `${vencidas.length} tarea(s) post-cierre vencida(s)`,
+        modulo: 'cotizaciones',
+        modulo_ruta: '/cotizaciones',
+        fecha: hoy.toISOString(),
+        data: vencidas.slice(0, 10),
+      })
+    }
+  }
+
   // Orden: crítica → importante → info
   const orden = { critica: 0, importante: 1, info: 2 }
   alertas.sort((a, b) => orden[a.severidad] - orden[b.severidad])
@@ -353,6 +375,24 @@ export function generarAlertasDetalladas(params) {
           fecha_relevante: null,
         })
       })
+    } else if (grupo.tipo === 'tareas_post_cierre_vencidas') {
+      // v16.1: cada tarea vencida es un item
+      data.forEach(t => {
+        const dias = diasDesde(t.fecha_limite)
+        items.push({
+          id: `tarea-pc-${t.id}`,
+          categoria: 'tareas_post_cierre_vencidas',
+          severidad: 'importante',
+          titulo: `${t.departamento.toUpperCase()}: ${t.titulo}`,
+          detalle: `${dias} día${dias !== 1 ? 's' : ''} de retraso`,
+          contexto: t.cotizacion?.codigo ? `${t.cotizacion.codigo} · ${t.cotizacion?.cliente?.razon_social || ''}` : '',
+          modulo: 'cotizaciones',
+          modulo_ruta: t.cotizacion_id ? `/cotizaciones?cotizacion=${t.cotizacion_id}` : '/cotizaciones',
+          entidad_id: t.cotizacion_id,
+          entidad_secundaria_id: t.id,
+          fecha_relevante: t.fecha_limite,
+        })
+      })
     }
   })
 
@@ -440,6 +480,7 @@ export const ETIQUETAS_ALERTAS = {
   leads_sin_actividad:           { label: 'Leads sin actividad', descripcion: 'Leads sin movimiento en más de 7 días' },
   cotizaciones_sin_respuesta:    { label: 'Cotizaciones sin respuesta', descripcion: 'Cotizaciones enviadas sin respuesta en 5+ días' },
   colaborador_sobrecargado:      { label: 'Colaborador sobrecargado', descripcion: 'Miembros del equipo con >100% carga' },
+  tareas_post_cierre_vencidas:   { label: 'Tareas post-cierre vencidas', descripcion: 'Tareas (Legal/Admin/Proyectos) que pasaron su plazo' },  // v16.1
 }
 
 // Iconos emoji por categoría (legacy — mantener para banner Dashboard)
@@ -452,6 +493,7 @@ export const ICONOS_ALERTAS = {
   leads_sin_actividad:           '🌱',
   cotizaciones_sin_respuesta:    '📑',
   colaborador_sobrecargado:      '👥',
+  tareas_post_cierre_vencidas:   '🔄',  // v16.1
 }
 
 // v15.8.6: SVG paths por categoría para Centro de Alertas + tab Mis alertas.
@@ -483,6 +525,9 @@ export const SVG_PATHS_ALERTAS = {
   // Users (colaborador sobrecargado)
   colaborador_sobrecargado:
     '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  // RefreshCw / Workflow (tareas post-cierre vencidas) - v16.1
+  tareas_post_cierre_vencidas:
+    '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
 }
 
 // ============================================================

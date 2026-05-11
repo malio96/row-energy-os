@@ -2023,3 +2023,141 @@ export function buscarPrecioServicio(precios, { servicio, tipo, capacidadMw, con
     },
   }
 }
+
+// ============================================================
+// WORKFLOW POST-CIERRE v16.1
+// Tabla tareas_post_cierre: 3 tareas (legal/admin/proyectos) que se crean
+// automáticamente cuando una cotización pasa a "Aprobada" (vía trigger SQL).
+// Validación previa: el cliente debe tener RFC + dirección fiscal.
+// ============================================================
+
+export const DEPARTAMENTOS_POST_CIERRE = [
+  { k: 'legal',     l: 'Legal',          icon: '⚖️', color: '#7C3AED' },  // purple
+  { k: 'admin',     l: 'Administración', icon: '📋', color: '#EA580C' },  // orange
+  { k: 'proyectos', l: 'Proyectos',      icon: '🛠️', color: '#0F6E56' },  // teal (Row green)
+]
+
+export const ESTADOS_TAREA_PC = {
+  pendiente:  { l: 'Pendiente',  color: '#64748B', bg: '#F1F5F9' },
+  en_curso:   { l: 'En curso',   color: '#0F6E56', bg: '#E1F5EE' },
+  completada: { l: 'Completada', color: '#16A34A', bg: '#F0FDF4' },
+  vencida:    { l: 'Vencida',    color: '#DC2626', bg: '#FEF2F2' },
+}
+
+// Lista las tareas post-cierre de UNA cotización.
+export async function getTareasPostCierre(cotizacionId) {
+  if (!cotizacionId || !UUID_REGEX.test(String(cotizacionId))) return []
+  const { data, error } = await supabase
+    .from('tareas_post_cierre')
+    .select(`
+      *,
+      asignado:usuarios!asignado_a(id, nombre, email),
+      completada_por_user:usuarios!completada_por(id, nombre)
+    `)
+    .eq('cotizacion_id', cotizacionId)
+    .order('departamento')
+  if (error) throw error
+  // Marcar visualmente las vencidas (status=vencida si pendiente y fecha_limite < hoy)
+  const hoy = new Date().toISOString().split('T')[0]
+  return (data || []).map(t => ({
+    ...t,
+    esta_vencida: t.estado === 'pendiente' && t.fecha_limite < hoy,
+  }))
+}
+
+// Lista las tareas pendientes/vencidas que le corresponden al usuario actual
+// (por asignación o por rol del departamento). Usado para Bandeja Dashboard.
+export async function getTareasPostCierrePendientes(usuarioId) {
+  if (!usuarioId || !UUID_REGEX.test(String(usuarioId))) return []
+  const { data, error } = await supabase
+    .from('tareas_post_cierre')
+    .select(`
+      *,
+      cotizacion:cotizaciones(id, codigo, nombre_proyecto, cliente:clientes(razon_social))
+    `)
+    .in('estado', ['pendiente', 'en_curso'])
+    .order('fecha_limite', { ascending: true })
+  if (error) throw error
+  const hoy = new Date().toISOString().split('T')[0]
+  return (data || []).map(t => ({
+    ...t,
+    esta_vencida: t.fecha_limite < hoy,
+  }))
+}
+
+// Marca una tarea como completada. Opcionalmente recibe un archivo entregable
+// que se sube al bucket proyectos-docs y se asocia a la tarea.
+export async function completarTareaPostCierre(tareaId, { notas, archivo, cotizacionId } = {}) {
+  if (!tareaId || !UUID_REGEX.test(String(tareaId))) throw new Error('tareaId inválido')
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No autenticado')
+  const { data: usuarioRow } = await supabase.from('usuarios').select('id').eq('email', user.email.toLowerCase()).single()
+
+  let archivoPath = null
+  if (archivo && cotizacionId) {
+    // Subir el entregable al bucket de docs en categoría 'contratos' (la más natural para los entregables del workflow)
+    const safe = _sanitizarNombre(archivo.name)
+    const path = `cotizaciones/${cotizacionId}/contratos/${Date.now()}_${safe}`
+    const { data, error } = await supabase.storage.from(DOCS_BUCKET).upload(path, archivo, {
+      upsert: false, contentType: archivo.type || 'application/octet-stream',
+    })
+    if (error) throw error
+    archivoPath = data.path
+  }
+
+  const update = {
+    estado: 'completada',
+    completada_en: new Date().toISOString(),
+    completada_por: usuarioRow?.id || null,
+    updated_at: new Date().toISOString(),
+  }
+  if (archivoPath) update.archivo_path = archivoPath
+  if (notas != null) update.notas = notas
+
+  const { data, error } = await supabase
+    .from('tareas_post_cierre')
+    .update(update)
+    .eq('id', tareaId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Asignar/reasignar manualmente
+export async function asignarTareaPostCierre(tareaId, usuarioId) {
+  if (!tareaId || !UUID_REGEX.test(String(tareaId))) throw new Error('tareaId inválido')
+  const { data, error } = await supabase
+    .from('tareas_post_cierre')
+    .update({ asignado_a: usuarioId, updated_at: new Date().toISOString() })
+    .eq('id', tareaId)
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+// Aprobar el workflow completo (Ventas confirma que las 3 tareas están bien)
+// Esto desbloquea la generación del calendario de cobranza.
+export async function aprobarWorkflowPostCierre(cotizacionId) {
+  if (!cotizacionId || !UUID_REGEX.test(String(cotizacionId))) throw new Error('cotizacionId inválido')
+  // Verificar que las 3 tareas estén completadas
+  const tareas = await getTareasPostCierre(cotizacionId)
+  const incompletas = tareas.filter(t => t.estado !== 'completada')
+  if (incompletas.length > 0) {
+    throw new Error(`Faltan ${incompletas.length} tarea(s) por completar: ${incompletas.map(t => t.departamento).join(', ')}`)
+  }
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: usuarioRow } = await supabase.from('usuarios').select('id').eq('email', user.email.toLowerCase()).single()
+
+  const { data, error } = await supabase
+    .from('cotizaciones')
+    .update({
+      workflow_aprobado_en: new Date().toISOString(),
+      workflow_aprobado_por: usuarioRow?.id || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', cotizacionId)
+    .select().single()
+  if (error) throw error
+  return data
+}
