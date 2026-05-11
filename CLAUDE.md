@@ -22,7 +22,7 @@
 
 ## 🎯 Versión actual en producción
 
-**v15.10.10** — Estado actual en producción (10 may 2026). Ver "📍 Estado de sesión actual" abajo para el contexto vivo.
+**v15.10.12** — Estado actual en producción (10 may 2026). Ver "📍 Estado de sesión actual" abajo para el contexto vivo.
 
 La versión visible está en `package.json` y se renderiza en el Sidebar como "OS · v{version}". **REGLA**: bumpear `package.json.version` antes de cada commit visible.
 
@@ -66,11 +66,13 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
   - **v15.10.8 (lateral)** — CSP en `vercel.json` ahora permite Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`). Antes bloqueaba la fuente Geist.
   - **v15.10.9** — Sidebar fijo cuando se scrollea (`height:100vh + overflow:hidden` en outer; solo el `<main>` scrolea).
   - **v15.10.10** — REVERT QUIRÚRGICO de `src/Proyectos.jsx` al estado de v15.10.4 (commit `913c9de`). Los otros archivos (App.jsx sidebar fijo, Dashboard.jsx alertas, vercel.json CSP fonts) se mantienen como mejoras válidas.
+  - **v15.10.11** — Intento parcial de fix del rubber-band: mover a SVG flotante con `zIndex:20` (antes `zIndex:2`, las barras lo tapaban) + quitar `requestAnimationFrame` (volver a setDragTick directo). Mejoró el visual pero el bug real persistía.
+  - **v15.10.12 — FIX DEFINITIVO del rubber-band Gantt.** Causa raíz: `dragDepPath` calculaba `x2 = mouseX - rect.left + scrollLeft` pero `rect.left` del timelineRef YA reflejaba el offset del scroll (el SVG se mueve con su parent). Sumar `scrollLeft` adicional duplicaba el offset → la línea se "estiraba" hacia la derecha al hacer scroll. Fix: quitar `+ scrollLeft`. Validado con Playwright en localhost (scroll=0/500/1500, delta_x=0 en los 3). Bug existía desde v15.9.x pero se notó a partir de v15.9.4 cuando se cambió `buildOrthPath` por línea recta diagonal (la diagonal exagera visualmente el offset).
 
 ## 📍 Estado de sesión actual (10 may 2026)
 
-### 🚨 Bug abierto que NO he podido reproducir
-**Rubber-band Gantt en actividades "Sin iniciar" (gris)**: el usuario reporta que al arrastrar desde el dot derecho de una barra gris, la línea verde se "congela" o no sigue al cursor. En completadas (verde) funciona bien. Tras 4 intentos fallidos (v15.10.5 a v15.10.8), revertimos a v15.10.4 en v15.10.10. **No reproducir el bug en mi entorno me imposibilita arreglarlo a ciegas.** Próximo paso: instalar Playwright MCP para ver el `<path>` SVG en vivo en `app.row.energy` y diagnosticar con evidencia.
+### ✅ Bug del rubber-band Gantt RESUELTO (v15.10.12)
+3 versiones tomó cerrar este bug crónico (15.10.6 → 15.10.12). El diagnóstico final salió de una pista clave de Malio: "scroll=0 funciona, con scroll se estira". Mirando la fórmula de `x2`, era un doble-conteo del scroll. Validado matemáticamente con Playwright + dev local antes del push.
 
 ### ✅ Features de esta sesión (ya en producción)
 1. Security Hardening completo BD (v15.9.0): 35 → 6 advisors. Migraciones en `supabase/migrations/`.
