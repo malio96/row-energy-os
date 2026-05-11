@@ -22,7 +22,7 @@
 
 ## 🎯 Versión actual en producción
 
-**v15.9.1** — Bugfixes funcionales (sub-actividades, Gantt deps, carga, desviación, agrupación)
+**v15.10.10** — Estado actual en producción (10 may 2026). Ver "📍 Estado de sesión actual" abajo para el contexto vivo.
 
 La versión visible está en `package.json` y se renderiza en el Sidebar como "OS · v{version}". **REGLA**: bumpear `package.json.version` antes de cada commit visible.
 
@@ -53,6 +53,76 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
   - **#4 Desviación 0**: SQL migration `v15.9.1_actividades_fechas_reales.sql` agrega `fecha_inicio_real` y `fecha_fin_real` con trigger automático (estado→'Completada' set fecha_fin_real=hoy). Backfill desde updated_at para completadas existentes. `calcularCargaPorColaborador` ahora calcula desviación real = avg((real_fin - planeado_fin) / duracion_planeada × 100).
   - **#5 Error al crear sub-actividades**: bug crítico — `crearActividad(proyectoId, actividad)` en supabase.js esperaba 2 args pero el caller en Proyectos.jsx pasaba 1 objeto. Refactor a single-arg `crearActividad(actividad)`.
   - **#6 Gantt dependencia invertida**: dot izquierdo y derecho llamaban a `iniciarDrag` con misma signature, sin distinguir sentido. Agregado parámetro `from = 'left' | 'right'`. Si `from === 'left'`, en mouseup se invierte: predecesora = donde soltaste, sucesora = de donde arrastraste. Tooltips actualizados ("Cuando termine esta, empieza la que vincules" vs "Esta inicia DESPUÉS de la que vincules").
+- **v15.9.2 — v15.10.10 — Sesión de Q&A + features (28 abr - 10 may 2026):**
+  - **v15.9.2 / v15.9.4** — Refinamientos del rubber-band (fromLeft/Right, salir del centro del dot).
+  - **v15.9.3** — Fix crear cliente: `email`/`telefono` → `contacto_email`/`contacto_telefono` en `FormClienteInline`.
+  - **v15.10.0** — Flujo "Olvidé contraseña" self-service: link en Login, ruta `/reset-password`, `signOut({scope:'others'})` para invalidar otras sesiones al cambiar password.
+  - **v15.10.1** — Matriz de permisos ajustada por feedback de Malio: `director_proyectos` pierde cotizaciones/contratos/compras; `ventas` ve todo (excepto config); `cobranza` agrega contratos/compras/cierre. RLS alineada en migration `v15.10.1_align_rls_with_role_changes.sql`.
+  - **v15.10.2** — `postventa_tickets` RLS endurecida (antes era `authenticated` libre): read = direccion/admin/director_proyectos/ventas/cobranza, write = direccion/admin/director_proyectos. Migration `v15.10.2_postventa_tickets_harden.sql`.
+  - **v15.10.3** — **Ctrl+Z en Gantt** (move/resize/dep/create/delete). Stack 30 acciones, RAM, sesión local. Toast feedback. No dispara en inputs. `equipo_proyectos` ahora solo ve dashboard + proyectos.
+  - **v15.10.4** — `recalcularFechasDesde` ahora respeta lag positivo manual. Antes pegaba siempre la sucesora al fin de la predecesora; ahora solo si su inicio actual viola el mínimo. Comportamiento estándar MS Project / Primavera.
+  - **v15.10.5** — Banner alertas Dashboard compacto (top 3 + "ver más" + link al Centro). Click colaborador sobrecargado → cambia a vista Personas y expande la card.
+  - **v15.10.6 - v15.10.8** — Intentos de mejorar la animación del rubber-band en Gantt. **TODOS FALLARON** según feedback del usuario (línea se congelaba en barras "Sin iniciar"). Probé DOM directo, state simple, listeners always-on. **Sin éxito.**
+  - **v15.10.8 (lateral)** — CSP en `vercel.json` ahora permite Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`). Antes bloqueaba la fuente Geist.
+  - **v15.10.9** — Sidebar fijo cuando se scrollea (`height:100vh + overflow:hidden` en outer; solo el `<main>` scrolea).
+  - **v15.10.10** — REVERT QUIRÚRGICO de `src/Proyectos.jsx` al estado de v15.10.4 (commit `913c9de`). Los otros archivos (App.jsx sidebar fijo, Dashboard.jsx alertas, vercel.json CSP fonts) se mantienen como mejoras válidas.
+
+## 📍 Estado de sesión actual (10 may 2026)
+
+### 🚨 Bug abierto que NO he podido reproducir
+**Rubber-band Gantt en actividades "Sin iniciar" (gris)**: el usuario reporta que al arrastrar desde el dot derecho de una barra gris, la línea verde se "congela" o no sigue al cursor. En completadas (verde) funciona bien. Tras 4 intentos fallidos (v15.10.5 a v15.10.8), revertimos a v15.10.4 en v15.10.10. **No reproducir el bug en mi entorno me imposibilita arreglarlo a ciegas.** Próximo paso: instalar Playwright MCP para ver el `<path>` SVG en vivo en `app.row.energy` y diagnosticar con evidencia.
+
+### ✅ Features de esta sesión (ya en producción)
+1. Security Hardening completo BD (v15.9.0): 35 → 6 advisors. Migraciones en `supabase/migrations/`.
+2. 6 bugfixes funcionales (v15.9.1): sub-actividades, dependencia invertida, peso/horas, desviación real, etc.
+3. Fix crear cliente columnas (v15.9.3).
+4. Flujo "Olvidé contraseña" en login (v15.10.0). Requiere config en Auth dashboard.
+5. Matriz permisos rebalanceada (v15.10.1, v15.10.2).
+6. **Ctrl+Z en Gantt** (v15.10.3) — move, resize, dep, create, delete. Stack RAM 30 acciones.
+7. Dependencias respetan lag positivo (v15.10.4).
+8. Dashboard alertas top 3 + ver más + click colaborador sobrecargado → vista Personas (v15.10.5).
+9. CSP permite Google Fonts (v15.10.8). Sidebar fijo en scroll (v15.10.9).
+
+### ⚠️ Pendientes de acción del usuario (NO se pueden hacer vía MCP)
+
+**Auth Dashboard Supabase (5 min):**
+- [ ] Site URL: `https://app.row.energy`
+- [ ] Redirect URLs: agregar `https://app.row.energy/reset-password`
+- [ ] Disable signups (solo invitación)
+- [ ] Min password length: 12
+- [ ] Required chars: lower + upper + digit + symbol
+- [ ] (Pro plan) Leaked password protection: ON
+
+**Probar flujo "Olvidé contraseña" end-to-end:**
+- [ ] Logout → "¿Olvidaste tu contraseña?" → email → click link → poner password real
+- [ ] Confirmar que `Row2026!Mali` queda inválida (sesiones revocadas)
+
+**Rotación crítica** (`RowEnergy2026!` aún en git history + temporales en chat):
+- [ ] Dashboard → Settings → Database → Reset password
+- [ ] Settings → API → Roll JWT secret
+- [ ] Actualizar `.env.local`
+- [ ] Actualizar Vercel env vars
+- [ ] Redeploy
+
+**Edgar (doperaciones@row.energy):**
+- [ ] Le pasaste por canal seguro: él entra a `app.row.energy` → "Olvidaste tu contraseña?" → email `doperaciones@row.energy` → setea password real
+- [ ] Una vez hecho, `Row2026!Edgar` queda muerta
+
+### 🔧 Setup de MCP pendiente
+
+**Playwright MCP** (para que pueda ver/navegar la app y diagnosticar el bug del Gantt):
+```bash
+claude mcp add playwright -- npx -y @playwright/mcp@latest
+```
+Reiniciar Claude Code después. Cuando regreses, tendré tools `browser_*` para navegar, ver DOM, hacer screenshots, ejecutar JS.
+
+### 🎯 Próxima mega: Storage de documentos
+Cuando el bug del Gantt esté diagnosticado/cerrado, arrancamos con:
+- Bucket Supabase Storage con RLS por proyecto/rol
+- Tab "Documentos" funcional en Proyectos (hoy está pero no hace nada)
+- Upload con drag-and-drop, preview de PDFs/imágenes, signed URLs
+
+---
 
 ## 🗺️ Roadmap pendiente
 
