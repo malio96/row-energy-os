@@ -2134,7 +2134,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
             <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
               {fmtDate(act.inicio)} → {fmtDate(act.fin)}
               {esRoot
-                ? ` · ${hijos.length} sub-actividades`
+                ? ` · ${hijos.length} ${hijos.length === 1 ? 'sub-actividad' : 'sub-actividades'}`
                 : ` · ${diffDays(act.inicio, act.fin) + 1}d`}
               {esRoot && tieneHijos && sumaPesos > 0 && (
                 <span style={{ marginLeft:10, padding:'1px 7px', borderRadius:4, background: sumaOk ? '#E1F5EE' : '#FEF2F2', color: sumaOk ? '#0F6E56' : '#DC2626', fontWeight:700 }}>
@@ -2180,13 +2180,13 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
         {/* v16.1.2: botón "+ sub-actividad" para CADA actividad (no solo root).
             Permite sub-sub-actividades y más profundidad. */}
         {creandoBajo === act.id ? (
-          <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, border:`1px solid ${COLORS.slate100}`, borderTop:'none', marginLeft: nivel * 20, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
+          <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, borderLeft:`1px solid ${COLORS.slate100}`, borderRight:`1px solid ${COLORS.slate100}`, borderBottom:`1px solid ${COLORS.slate100}`, marginLeft: nivel * 20, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
             <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearBajo(act.id)} autoFocus placeholder="Nombre de la sub-actividad..." style={{...inputStyle, flex:1}}/>
             <button onClick={() => crearBajo(act.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px'}}>{creando ? '...' : 'Crear'}</button>
             <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
           </div>
         ) : (
-          <div onClick={() => setCreandoBajo(act.id)} style={{ padding:'8px 16px', background:COLORS.slate50, border:`1px dashed ${COLORS.slate200}`, borderTop:'none', marginLeft: nivel * 20, fontSize:11, color:COLORS.slate500, cursor:'pointer', display:'flex', alignItems:'center', gap:6, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
+          <div onClick={() => setCreandoBajo(act.id)} style={{ padding:'8px 16px', background:COLORS.slate50, borderLeft:`1px dashed ${COLORS.slate200}`, borderRight:`1px dashed ${COLORS.slate200}`, borderBottom:`1px dashed ${COLORS.slate200}`, marginLeft: nivel * 20, fontSize:11, color:COLORS.slate500, cursor:'pointer', display:'flex', alignItems:'center', gap:6, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
             <Icon.Plus/> Agregar sub-actividad a "{act.nombre}"
           </div>
         )}

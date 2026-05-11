@@ -22,7 +22,16 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.1.2** — Estado actual en producción. **Bugfix: sub-actividades + jerarquía ilimitada.**
+**v16.1.3** — Estado actual en producción. **2 bugs cosméticos detectados en E2E exhaustivo.**
+
+## 🧪 v16.1.3 — Bugfixes cosméticos detectados en E2E completo (entregado)
+
+E2E exhaustivo Playwright sobre v16.1.2 (crear cliente → proyecto → sub × 4 niveles → eliminar → Kanban → cotización + pricing engine 25 MW = $184,219 → estado Aprobada → workflow post-cierre 3 tareas → Documentos UI). Todo el pipeline funciona end-to-end. Detectados solo 2 issues menores:
+
+- **#1 Plural mal**: "1 sub-actividades" → "1 sub-actividad" (singular cuando count===1).
+- **#2 React warning**: mezcla de shorthand `border` + non-shorthand `borderTop:'none'` en el wrapper del botón "+ Agregar sub-actividad". Fixed: split en `borderLeft/Right/Bottom` separados.
+
+**No** son blockers funcionales pero salen en console.error y se ven raros visualmente. Build limpio. Sin migración SQL.
 
 ## 🌳 v16.1.2 — Jerarquía ilimitada de actividades (entregado)
 
