@@ -1115,7 +1115,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
   const actividadesPropRef = useRef(actividadesProp)
   const onUndoPushRef = useRef(null)
   const dayWidthRef = useRef(DAY_WIDTH)
-  const rafRef = useRef(null)
   useEffect(() => { creariaCicloRef.current = creariaCiclo }, [creariaCiclo])
   useEffect(() => { onRecargarRef.current = onRecargar }, [onRecargar])
   useEffect(() => { actividadesPropRef.current = actividadesProp }, [actividadesProp])
@@ -1128,12 +1127,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       if (!dragStateRef.current) return
       dragStateRef.current.mouseX = e.clientX
       dragStateRef.current.mouseY = e.clientY
-      // v15.10.3: usar requestAnimationFrame para coalescer updates (smoother + no batching issues)
-      if (rafRef.current) return
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null
-        setDragTick(t => t + 1)
-      })
+      setDragTick(t => t + 1)
       if (drag.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
         const targetId = el?.closest('[data-act-id]')?.getAttribute('data-act-id')
@@ -1146,19 +1140,16 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
         }
       }
     }
-    const cleanupRaf = () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
     const onKey = (e) => {
       // Escape cancela el drag actual sin aplicar cambios
       if (e.key === 'Escape' && dragStateRef.current) {
         dragStateRef.current = null
         setDrag(null); setDropTargetId(null)
-        cleanupRaf()
       }
     }
     const onUp = async (e) => {
       const d = dragStateRef.current
       setDrag(null); setDropTargetId(null)
-      cleanupRaf()
       if (!d) return
       if (d.tipo === 'dep') {
         const el = document.elementFromPoint(e.clientX, e.clientY)
@@ -1235,7 +1226,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       window.removeEventListener('keydown', onKey)
-      cleanupRaf()
     }
   }, [drag])
 
@@ -1582,31 +1572,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                     </g>
                   )
                 })}
-                {/* v13.2: Rubber-band mejorado — cambia color según haya target válido */}
-                {dragDepPath && (
-                  <>
-                    {/* Línea gruesa base, semi-transparente */}
-                    <path
-                      d={dragDepPath}
-                      fill="none"
-                      stroke={dropTargetId ? '#16A34A' : COLORS.teal}
-                      strokeWidth={4}
-                      strokeDasharray="6 4"
-                      opacity={dropTargetId ? 0.35 : 0.2}
-                      style={{ pointerEvents:'none' }}
-                    />
-                    {/* Línea principal */}
-                    <path
-                      d={dragDepPath}
-                      fill="none"
-                      stroke={dropTargetId ? '#16A34A' : COLORS.teal}
-                      strokeWidth={2}
-                      strokeDasharray="6 4"
-                      markerEnd={dropTargetId ? 'url(#dep-dot-valid)' : 'url(#dep-dot-ghost)'}
-                      style={{ pointerEvents:'none' }}
-                    />
-                  </>
-                )}
               </svg>
               {actOrdenadas.map((act, rowIdx) => {
                 const estadoCfg = ESTADOS[act.estado] || ESTADOS['Sin iniciar']
@@ -1897,6 +1862,24 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                   </div>
                 )
               })}
+              {/* Rubber-band en SVG flotante encima de las barras (zIndex alto + pointer-events:none).
+                  Antes estaba en la SVG de fondo con zIndex:2, las barras (zIndex:3) lo tapaban
+                  y la línea parecía "perderse" cerca del cursor. */}
+              {dragDepPath && (
+                <svg style={{ position:'absolute', inset:0, width:totalWidth, height:totalHeight, zIndex:20, overflow:'visible', pointerEvents:'none' }}>
+                  <defs>
+                    <marker id="rb-valid" markerWidth="12" markerHeight="12" refX="6" refY="6" markerUnits="userSpaceOnUse">
+                      <circle cx="6" cy="6" r="5" fill="#16A34A"/>
+                      <circle cx="6" cy="6" r="2.5" fill="white"/>
+                    </marker>
+                    <marker id="rb-ghost" markerWidth="8" markerHeight="8" refX="4" refY="4" markerUnits="userSpaceOnUse">
+                      <circle cx="4" cy="4" r="3" fill={COLORS.teal}/>
+                    </marker>
+                  </defs>
+                  <path d={dragDepPath} fill="none" stroke={dropTargetId ? '#16A34A' : COLORS.teal} strokeWidth={4} strokeDasharray="6 4" opacity={dropTargetId ? 0.35 : 0.2}/>
+                  <path d={dragDepPath} fill="none" stroke={dropTargetId ? '#16A34A' : COLORS.teal} strokeWidth={2} strokeDasharray="6 4" markerEnd={dropTargetId ? 'url(#rb-valid)' : 'url(#rb-ghost)'}/>
+                </svg>
+              )}
             </div>
           </div>
         </div>
