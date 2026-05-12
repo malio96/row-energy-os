@@ -1567,6 +1567,30 @@ export async function invitarUsuarioViaEdge({ nombre, email, rol, telefono = nul
   return data
 }
 
+// v16.1.4: Reinvitar usuario huérfano (existe en BD sin auth_id)
+// La edge function v2 detecta huérfano y solo dispara el invite + linkea auth_id
+// sin recrear el row (preserva FKs).
+export async function reinvitarUsuario(email) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Debes estar autenticado para reinvitar usuarios')
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL no configurado')
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/invitar-usuario`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+  })
+
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status}`)
+  return data
+}
+
 // ============================================================
 // PATCH SUPABASE v12.5.9 — CRUD Alertas Config
 // ============================================================

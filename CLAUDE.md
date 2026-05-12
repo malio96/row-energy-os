@@ -22,7 +22,22 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.1.3** — Estado actual en producción. **2 bugs cosméticos detectados en E2E exhaustivo.**
+**v16.1.4** — Estado actual en producción. **Usuarios huérfanos visibles + botón Reinvitar.**
+
+## 👤 v16.1.4 — Estado real de auth en TabUsuarios (entregado)
+
+Bug grave detectado mientras Malio pedía agregar a Regino: la lista de usuarios mostraba "✓ Activo" para **todos** los 9 usuarios, pero solo 3 (Malio, Edgar, Regino) tenían cuenta auth real. Los otros 6 estaban en tabla `usuarios` con `auth_id NULL` — huérfanos que no podían loguearse. UX silenciaba el problema.
+
+**Fixes:**
+- `estadoAuth(u)` deriva 3 estados visuales: `✓ Activo` (verde, tiene auth), `⚠ Sin invitar` (rojo, sin auth), `○ Inactivo` (gris).
+- Badge en columna estado (no plain text) con color según estado.
+- Botón **`✉ Invitar`** primario (navy) para usuarios sin auth — sólo aparece si `activo && !auth_id`.
+- Banner rojo al top de la lista cuenta huérfanos con instrucciones para invitarlos.
+- Helper `reinvitarUsuario(email)` en `supabase.js` llama a la Edge Function `invitar-usuario` solo con email.
+
+**Edge Function v2** (deployada antes en esta sesión): detecta usuario huérfano (existe en tabla `usuarios` sin `auth_id`) y solo dispara `inviteUserByEmail` + linkea `auth_id` SIN recrear el row (preserva FKs en actividades/leads/cotizaciones, 14 referencias para Regino).
+
+Sin migración SQL. Probado en producción: Regino fue invitado con éxito desde el flujo de re-invite.
 
 ## 🧪 v16.1.3 — Bugfixes cosméticos detectados en E2E completo (entregado)
 

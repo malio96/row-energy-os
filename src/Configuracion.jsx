@@ -3,7 +3,7 @@ import {
   getTodosUsuarios, getClientes,
   actualizarUsuario, eliminarUsuario,
   desactivarUsuario, activarUsuario, cambiarRolUsuario,
-  invitarUsuarioViaEdge,  // v12.5.8
+  invitarUsuarioViaEdge, reinvitarUsuario,  // v12.5.8, v16.1.4
   getAlertasConfig, actualizarAlertasConfig, resetearAlertasConfig,  // v12.5.9e
 } from './supabase'
 import { COLORS, Avatar, Icon } from './helpers'
@@ -198,7 +198,36 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
     }
   }
 
+  // v16.1.4: enviar/re-enviar invitación a un usuario que existe en BD pero sin auth
+  const reinvitar = async (u) => {
+    const ok = await modal.confirm({
+      titulo: 'Enviar invitación',
+      mensaje: `Se enviará un email a ${u.email} con el link para crear su contraseña. ¿Continuar?`,
+      textoBoton: 'Enviar invitación',
+      icono: 'Plus',
+    })
+    if (!ok) return
+    try {
+      const r = await reinvitarUsuario(u.email)
+      await modal.alert({
+        titulo: '✉️ Invitación enviada',
+        mensaje: r.mensaje || `Email enviado a ${u.email}.`,
+        icono: 'Check',
+      })
+      recargar()
+    } catch (err) {
+      await modal.alert({ titulo: 'Error al invitar', mensaje: err.message || String(err), icono: 'Alert' })
+    }
+  }
+
   const esYo = (u) => u.id === usuarioActual.id
+
+  // v16.1.4: estado real de auth — derivado de auth_id en la tabla usuarios
+  const estadoAuth = (u) => {
+    if (!u.activo) return { label: '○ Inactivo', color: COLORS.slate400, badgeBg: COLORS.slate50 }
+    if (!u.auth_id) return { label: '⚠ Sin invitar', color: COLORS.red, badgeBg: '#FEF2F2' }
+    return { label: '✓ Activo', color: COLORS.teal, badgeBg: '#E1F5EE' }
+  }
 
   return (
     <>
@@ -218,14 +247,35 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
         </button>
       </div>
 
+      {/* v16.1.4: banner advertencia si hay usuarios huérfanos (sin auth) */}
+      {(() => {
+        const huerfanos = usuarios.filter(u => u.activo && !u.auth_id)
+        if (huerfanos.length === 0) return null
+        return (
+          <div style={{
+            background:'#FEF2F2', border:`1px solid #FECACA`, borderRadius:10,
+            padding:'12px 16px', marginBottom:16, display:'flex', alignItems:'center', gap:10,
+            fontSize:12, color:'#991B1B',
+          }}>
+            <span style={{ fontSize:16 }}>⚠</span>
+            <div style={{ flex:1 }}>
+              <strong>{huerfanos.length} usuario(s) sin invitar</strong> — están en la BD pero todavía no pueden iniciar sesión. Usa el botón <em>Invitar</em> en cada uno para enviarles el email con el link de setup de contraseña.
+            </div>
+          </div>
+        )
+      })()}
+
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden', marginBottom:20 }}>
         {usuarios.length === 0 && (
           <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin usuarios</div>
         )}
-        {usuarios.map(u => (
+        {usuarios.map(u => {
+          const auth = estadoAuth(u)
+          const sinInvitar = u.activo && !u.auth_id
+          return (
           <div key={u.id} style={{
             display:'grid',
-            gridTemplateColumns:'40px 1fr 160px 130px 90px auto',
+            gridTemplateColumns:'40px 1fr 160px 130px 130px auto',
             padding:'14px 20px',
             borderBottom:`1px solid ${COLORS.slate100}`,
             alignItems:'center', fontSize:13, gap:12,
@@ -243,10 +293,25 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
               <BadgeRol rol={u.rol}/>
             </div>
             <div style={{ fontSize:11, color:COLORS.slate500 }}>{u.telefono || '—'}</div>
-            <div style={{ fontSize:11, fontWeight:600, color: u.activo ? COLORS.teal : COLORS.slate400 }}>
-              {u.activo ? '✓ Activo' : '○ Inactivo'}
+            <div>
+              <span style={{
+                fontSize:10, fontWeight:700, padding:'4px 10px', borderRadius:10,
+                background: auth.badgeBg, color: auth.color, textTransform:'uppercase', letterSpacing:'0.04em',
+                whiteSpace:'nowrap',
+              }}>
+                {auth.label}
+              </span>
             </div>
             <div style={{ display:'flex', gap:4 }}>
+              {sinInvitar && !esYo(u) && (
+                <button onClick={() => reinvitar(u)} title="Enviar invitación por email" style={{
+                  padding:'6px 12px', background:COLORS.navy, color:'white',
+                  border:'none', borderRadius:6, fontSize:11, fontWeight:600,
+                  cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4,
+                }}>
+                  ✉ Invitar
+                </button>
+              )}
               <button onClick={() => abrirModalEditar(u)} title="Editar" style={botonIcon()}
                 onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}>
@@ -271,7 +336,7 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
               )}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       <MatrizPermisos/>
