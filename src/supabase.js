@@ -565,8 +565,7 @@ export async function actualizarTicket(id, cambios) {
 }
 
 // ============================================================
-// AGREGAR ESTAS FUNCIONES A tu src/supabase.js
-// Al final del archivo, antes del último export si lo hay.
+// v7 — HITOS DE COBRO + NOTAS DE PROYECTO
 // ============================================================
 
 // ----- HITOS DE COBRO (lectura para panel Proyecto) -----
@@ -663,7 +662,7 @@ export function extraerMenciones(contenido, usuarios) {
   return Array.from(mentions)
 }
 // ============================================================
-// v8: AGREGAR AL FINAL DE tu src/supabase.js
+// v8 — ACTIVIDADES: duplicar, milestone, importancia, peso
 // ============================================================
 
 // Duplicar actividad (mantiene props, nombre + " (copia)")
@@ -695,8 +694,7 @@ export async function cambiarImportancia(actividadId, importancia) {
 }
 
 // ============================================================
-// v12 + v13.3 — AGREGAR AL FINAL DE tu src/supabase.js
-// (copia TODO este bloque y pégalo al final del archivo)
+// v12 + v13.3 — DUPLICAR PROYECTO + PESO + RECALCULAR PADRE
 // ============================================================
 
 // ----- v12: DUPLICAR PROYECTO COMPLETO -----
@@ -839,24 +837,9 @@ export async function recalcularPadre(padreId) {
 }
 
 // ============================================================
-// PATCH SUPABASE v12 — calcularCargaPorColaborador + identificarCuellosBotella
-// ============================================================
-//
-// ERROR QUE ARREGLA:
-//   Uncaught SyntaxError: The requested module '/src/supabase.js'
-//   does not provide an export named 'calcularCargaPorColaborador'
-//   (at Dashboard.jsx:4:10)
-//
-// CÓMO APLICAR:
-//   1. Abre src/supabase.js
-//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
-//   3. Pega TODO este bloque (desde la línea "// ============")
-//   4. Guarda (Cmd+S)
-//   5. Vite recarga solo, la app vuelve a cargar
-//
-// NOTA:
-//   Son funciones puras — no requieren tablas SQL nuevas.
-//   Trabajan sobre las actividades y usuarios que ya cargas.
+// v12 — CARGA POR COLABORADOR + CUELLOS DE BOTELLA
+// Funciones puras (no requieren tablas SQL). Operan sobre
+// actividades y usuarios ya cargados en memoria.
 // ============================================================
 
 // ============================================================
@@ -999,18 +982,8 @@ export function identificarCuellosBotella(actividades = []) {
 }
 
 // ============================================================
-// PATCH SUPABASE v12.5.4 — CRUD Gastos + Cuentas por Pagar
-// ============================================================
-//
-// CÓMO APLICAR:
-//   1. Abre src/supabase.js
-//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
-//   3. Pega TODO este bloque después de identificarCuellosBotella()
-//   4. Guarda (Cmd+S)
-//
-// NOTA:
-//   Son funciones 100% aditivas. No toca ningún código existente.
-//   Usan las 2 tablas nuevas: gastos_variables y cuentas_por_pagar
+// v12.5.4 — CRUD GASTOS VARIABLES + CUENTAS POR PAGAR
+// Usa tablas gastos_variables y cuentas_por_pagar.
 // ============================================================
 
 
@@ -1264,18 +1237,8 @@ export async function cancelarCuentaPorPagar(id, motivo = null) {
 }
 
 // ============================================================
-// PATCH SUPABASE v12.5.6 — CRUD de Usuarios
-// ============================================================
-//
-// CÓMO APLICAR:
-//   1. Abre src/supabase.js
-//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
-//   3. Pega TODO este bloque
-//   4. Guarda (Cmd+S)
-//
-// NOTA:
-//   - 100% aditivo, no toca código existente
-//   - Incluye reglas duras para proteger integridad del sistema
+// v12.5.6 — CRUD DE USUARIOS
+// Incluye reglas duras para proteger integridad del sistema.
 // ============================================================
 
 
@@ -1520,14 +1483,7 @@ export async function cambiarRolUsuario(id, nuevoRol, idSolicitante) {
 }
 
 // ============================================================
-// PATCH SUPABASE v12.5.8 — Invitación de usuarios via Edge Function
-// ============================================================
-//
-// CÓMO APLICAR:
-//   1. Abre src/supabase.js
-//   2. Ve hasta el FINAL del archivo (Cmd + flecha abajo)
-//   3. Pega TODO este bloque
-//   4. Guarda
+// v12.5.8 — INVITACIÓN DE USUARIOS VÍA EDGE FUNCTION
 // ============================================================
 
 
@@ -1592,19 +1548,7 @@ export async function reinvitarUsuario(email) {
 }
 
 // ============================================================
-// PATCH SUPABASE v12.5.9 — CRUD Alertas Config
-// ============================================================
-//
-// CÓMO APLICAR:
-//   1. Abre src/supabase.js
-//   2. Ve hasta el FINAL del archivo
-//   3. Pega TODO este bloque
-//   4. Guarda
-// ============================================================
-
-
-// ============================================================
-// v12.5.9: Alertas config (por usuario)
+// v12.5.9 — CRUD ALERTAS CONFIG (por usuario)
 // ============================================================
 
 // Obtiene la config de alertas del usuario actual
