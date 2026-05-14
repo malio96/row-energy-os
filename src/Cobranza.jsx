@@ -192,7 +192,7 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:10 }}>
             {Object.entries(aging).map(([bucket, monto]) => {
               const pct = kpis.vencido > 0 ? (monto / kpis.vencido * 100) : 0
-              const colorBucket = bucket === '+90' ? COLORS.red : bucket === '61-90' ? COLORS.amber : bucket === '31-60' ? '#F59E0B' : COLORS.teal
+              const colorBucket = bucket === '+90' ? COLORS.red : bucket === '61-90' ? COLORS.amber : bucket === '31-60' ? COLORS.amberSemaforo : COLORS.teal
               return (
                 <div key={bucket} style={{ padding:12, background:COLORS.slate50, borderRadius:8 }}>
                   <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', marginBottom:4 }}>{bucket} días</div>
@@ -381,7 +381,7 @@ function ClienteRow({ cliente, onClick, isMobile, destacado }) {
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
           <span style={{ fontSize:14, color:COLORS.ink, fontWeight:600 }}>{cliente.nombre}</span>
           {destacado && <span style={{ fontSize:9, padding:'2px 6px', background:COLORS.navy, color:'white', borderRadius:4, fontWeight:700 }}>WATCH</span>}
-          {tieneProblema && <span style={{ fontSize:9, padding:'2px 6px', background:'#FEF2F2', color:COLORS.red, borderRadius:4, fontWeight:700 }}>VENCIDO</span>}
+          {tieneProblema && <span style={{ fontSize:9, padding:'2px 6px', background:COLORS.redLight, color:COLORS.red, borderRadius:4, fontWeight:700 }}>VENCIDO</span>}
         </div>
         <div style={{ fontSize:11, color:COLORS.slate500 }}>
           {cliente.hitos.length} hito(s)
@@ -632,7 +632,7 @@ function VistaSemana({ enriquecidos, isMobile }) {
                 </div>
               </div>
               <div style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4,
-                background: h.diasVence === 0 ? '#FEF2F2' : '#FEF3C7',
+                background: h.diasVence === 0 ? COLORS.redLight : COLORS.amberLight,
                 color: h.diasVence === 0 ? COLORS.red : COLORS.amber }}>
                 {h.diasVence === 0 ? 'hoy' : `${h.diasVence}d`}
               </div>
@@ -660,7 +660,7 @@ function VistaSemana({ enriquecidos, isMobile }) {
                   {h.nombre}
                 </div>
               </div>
-              <div style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:'#FEF2F2', color:COLORS.red }}>
+              <div style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:COLORS.redLight, color:COLORS.red }}>
                 {h.diasVencido}d
               </div>
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.red, fontWeight:700, minWidth:80, textAlign:'right' }}>
@@ -800,7 +800,7 @@ function PanelHito({ hito, usuario, onClose, onCambio }) {
             <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
               <Badge texto={hito.estado} mapa={ESTADOS_HITO}/>
               <span style={{ fontSize:18, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(Number(hito.monto || 0), true)}</span>
-              {hito.esVencido && <span style={{ fontSize:11, fontWeight:700, color:COLORS.red, padding:'3px 8px', background:'#FEF2F2', borderRadius:4 }}>{hito.diasVencido}d vencido</span>}
+              {hito.esVencido && <span style={{ fontSize:11, fontWeight:700, color:COLORS.red, padding:'3px 8px', background:COLORS.redLight, borderRadius:4 }}>{hito.diasVencido}d vencido</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>

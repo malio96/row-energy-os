@@ -892,6 +892,9 @@ export async function recalcularPadre(padreId) {
 // ============================================================
 // v12: Cálculo de carga por colaborador (para VistaPersonas de Luis)
 // ============================================================
+// v16.5.0: constante para evitar magic number repetido
+const MS_PER_DAY = 86400000
+
 export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
   // Rango de "esta semana" (lunes-domingo de la semana actual)
   const hoy = new Date()
@@ -927,11 +930,11 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
       const fin = new Date(a.fin); fin.setHours(23,59,59,999)
       const interIni = ini > lunes ? ini : lunes
       const interFin = fin < domingo ? fin : new Date(domingo.getTime() - 1)
-      const diasTraslape = Math.max(1, Math.ceil((interFin - interIni) / (1000*60*60*24)))
+      const diasTraslape = Math.max(1, Math.ceil((interFin - interIni) / MS_PER_DAY))
       const horasEst = Number(a.horas_estimadas || 0)
       if (horasEst > 0) {
         // Prorratear horas_estimadas por días que caen en esta semana
-        const duracionDias = Math.max(1, Math.ceil((fin - ini) / (1000*60*60*24)))
+        const duracionDias = Math.max(1, Math.ceil((fin - ini) / MS_PER_DAY))
         horasSemana += (horasEst / duracionDias) * diasTraslape
       } else {
         // v15.10.13: fallback a 2h/día (antes 8h/día). Razón: 8h/día asumía
@@ -954,7 +957,7 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
         const fini = a.fecha_inicio_real || a.inicio
         const ffin = a.fecha_fin_real || a.fin
         if (!fini || !ffin) return null
-        return Math.ceil((new Date(ffin) - new Date(fini)) / (1000*60*60*24))
+        return Math.ceil((new Date(ffin) - new Date(fini)) / MS_PER_DAY)
       }).filter(d => d !== null && d > 0)
       if (dias.length > 0) {
         tiempoPromedioDias = Math.round(dias.reduce((s,d) => s+d, 0) / dias.length)
@@ -969,8 +972,8 @@ export function calcularCargaPorColaborador(actividades = [], usuarios = []) {
       const planFin = new Date(a.fin)
       const realFin = new Date(a.fecha_fin_real)
       const planIni = new Date(a.inicio)
-      const duracionPlan = Math.max(1, Math.ceil((planFin - planIni) / (1000*60*60*24)))
-      const diferenciaDias = Math.round((realFin - planFin) / (1000*60*60*24))
+      const duracionPlan = Math.max(1, Math.ceil((planFin - planIni) / MS_PER_DAY))
+      const diferenciaDias = Math.round((realFin - planFin) / MS_PER_DAY)
       return Math.round((diferenciaDias / duracionPlan) * 100)
     }).filter(d => d !== null)
     if (desvs.length > 0) {
@@ -1005,7 +1008,7 @@ export function identificarCuellosBotella(actividades = []) {
     if (!a.fin) return false
     return new Date(a.fin) < hoy
   }).map(a => {
-    const diasRetraso = Math.ceil((hoy - new Date(a.fin)) / (1000*60*60*24))
+    const diasRetraso = Math.ceil((hoy - new Date(a.fin)) / MS_PER_DAY)
     return { ...a, diasRetraso }
   })
 

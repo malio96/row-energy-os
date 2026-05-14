@@ -20,6 +20,9 @@ export const COLORS = {
   navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56', tealLight:'#E1F5EE',
   gold:'#C89B3C', red:'#DC2626', redLight:'#FEF2F2',
   amber:'#D97706', amberLight:'#FEF3C7',
+  // v16.5.0: tonos extras para reducir hex hardcoded en Compras/Cobranza/Cotizaciones
+  amberBorder:'#FDE68A', amberInk:'#92400E', amberSemaforo:'#F59E0B',
+  successLight:'#F0FDF4', successInk:'#16A34A',
   purple:'#6B4C9A', blue:'#3B82F6', green:'#10B981',
   slate50:'#F8FAFC', slate100:'#F1F5F9', slate200:'#E2E8F0',
   slate300:'#CBD5E1', slate400:'#94A3B8', slate500:'#64748B',
@@ -205,6 +208,43 @@ export function EmptyState({ icon, titulo, descripcion, accion }) {
 
 export function LoadingState() {
   return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Cargando...</div>
+}
+
+// v16.5.0: ModalShell — overlay + dialog frame reutilizable.
+// Centraliza el patrón que estaba duplicado en 5+ modales de Proyectos.jsx,
+// Cotizaciones, etc. Click en overlay cierra; ESC también si onClose lo maneja.
+// Migración progresiva: los modales existentes pueden seguir funcionando con
+// su markup actual; los nuevos deberían usar ModalShell.
+//
+// Props:
+//   - title: string (header del modal)
+//   - onClose: function (handler de cierre — usado en overlay click y botón X)
+//   - width: number | string (default 560)
+//   - top: string (default '5%')
+//   - children: contenido del modal
+//   - footer: opcional, contenido del footer (typically los botones de acción)
+export function ModalShell({ title, onClose, width = 560, top = '5%', children, footer }) {
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(10,37,64,0.35)', zIndex: 1001 }}/>
+      <div style={{ position: 'fixed', top, left: '50%', transform: 'translateX(-50%)', width, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: 16, zIndex: 1002, boxShadow: '0 20px 60px rgba(10,37,64,0.2)' }}>
+        {title && (
+          <div style={{ padding: '20px 28px', borderBottom: `1px solid ${COLORS.slate100}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0, color: COLORS.navy, fontFamily: 'var(--font-sans)' }}>{title}</h2>
+            <button onClick={onClose} aria-label="Cerrar" style={{ width: 30, height: 30, border: 'none', background: COLORS.slate50, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: COLORS.slate500 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        )}
+        <div style={{ padding: 24, overflow: 'auto', flex: 1 }}>{children}</div>
+        {footer && (
+          <div style={{ padding: '16px 28px', borderTop: `1px solid ${COLORS.slate100}`, display: 'flex', justifyContent: 'flex-end', gap: 10, flexShrink: 0 }}>
+            {footer}
+          </div>
+        )}
+      </div>
+    </>
+  )
 }
 
 // ============================================================

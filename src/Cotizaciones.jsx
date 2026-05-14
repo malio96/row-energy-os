@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS, getTareasPostCierre, completarTareaPostCierre, asignarTareaPostCierre, aprobarWorkflowPostCierre, DEPARTAMENTOS_POST_CIERRE, ESTADOS_TAREA_PC } from './supabase'
-import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
@@ -43,13 +43,14 @@ export default function Cotizaciones({ usuario }) {
         </button>
       </div>
 
-      {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Cargando...</div>}
+      {loading && <LoadingState/>}
 
       {!loading && cots.length === 0 && (
-        <div style={{ padding:'60px 30px', background:'white', border:`1px dashed ${COLORS.slate200}`, borderRadius:12, textAlign:'center' }}>
-          <div style={{ fontSize:14, color:COLORS.slate500 }}>Aún no hay cotizaciones</div>
-          <button onClick={() => setModalNuevo(true)} style={{ marginTop:16, padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>+ Crear primera cotización</button>
-        </div>
+        <EmptyState
+          titulo="Aún no hay cotizaciones"
+          descripcion="Crea la primera para empezar"
+          accion={<button onClick={() => setModalNuevo(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>+ Crear primera cotización</button>}
+        />
       )}
 
       {!loading && cots.length > 0 && (
@@ -322,14 +323,20 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
 function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
   const [tareas, setTareas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [errorCarga, setErrorCarga] = useState(null)  // v16.5.0: feedback visible
   const [completandoId, setCompletandoId] = useState(null)
   const [archivos, setArchivos] = useState({})  // {tareaId: File}
   const [notasMap, setNotasMap] = useState({})
 
   const cargar = async () => {
     setLoading(true)
+    setErrorCarga(null)
     try { setTareas(await getTareasPostCierre(cotizacion.id)) }
-    catch (e) { console.error(e); setTareas([]) }
+    catch (e) {
+      console.error('getTareasPostCierre:', e)
+      setTareas([])
+      setErrorCarga(e.message || 'No se pudieron cargar las tareas del workflow')
+    }
     setLoading(false)
   }
   useEffect(() => { cargar() }, [cotizacion.id])
@@ -364,6 +371,12 @@ function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
   const puedeAprobar = puedeAprobarCotizacion(usuario)
 
   if (loading) return <div style={{ marginTop: 24, padding: 30, textAlign: 'center', color: COLORS.slate400 }}>Cargando workflow...</div>
+  if (errorCarga) return (
+    <div style={{ marginTop:24, padding:14, background:COLORS.redLight, border:`1px solid ${COLORS.red}`, borderRadius:10, color:COLORS.red, fontSize:12 }}>
+      ⚠ {errorCarga}
+      <button onClick={cargar} style={{ marginLeft:10, padding:'4px 10px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:6, fontSize:11, cursor:'pointer' }}>Reintentar</button>
+    </div>
+  )
 
   return (
     <div style={{ marginTop: 24 }}>
@@ -375,7 +388,7 @@ function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
               {completadas} de {total} completadas
             </span>
             {yaAprobado && (
-              <span style={{ fontSize: 11, padding: '4px 10px', background: '#F0FDF4', color: '#16A34A', borderRadius: 12, fontWeight: 700 }}>
+              <span style={{ fontSize: 11, padding: '4px 10px', background: COLORS.successLight, color: COLORS.successInk, borderRadius: 12, fontWeight: 700 }}>
                 ✓ Aprobado · cobranza activa
               </span>
             )}
@@ -606,7 +619,7 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
                     </button>
                   </div>
                 ) : (form.servicio && pricingCap) ? (
-                  <div style={{ padding: '8px 12px', background: '#FEF3C7', borderRadius: 6, fontSize: 11, color: COLORS.amber }}>
+                  <div style={{ padding: '8px 12px', background: COLORS.amberLight, borderRadius: 6, fontSize: 11, color: COLORS.amber }}>
                     No hay precio en el catálogo para "{form.servicio}" ({pricingTipo}) a {pricingCap} MW.
                   </div>
                 ) : (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getFacturas, crearFactura, actualizarFactura, eliminarFactura, getHitos, getClientes } from './supabase'
-import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState } from './helpers'
 import { puedeEliminar } from './permisos'  // v16.4.0
 
 export default function Facturacion({ usuario }) {
@@ -63,9 +63,9 @@ export default function Facturacion({ usuario }) {
         ))}
       </div>
 
-      {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
+      {loading && <LoadingState/>}
 
-      {!loading && facturas.length === 0 && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, background:'white', borderRadius:12 }}>Sin facturas. Crea la primera desde un hito cobrable.</div>}
+      {!loading && facturas.length === 0 && <EmptyState titulo="Sin facturas" descripcion="Crea la primera desde un hito cobrable."/>}
 
       {!loading && facturas.length > 0 && (
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
@@ -82,7 +82,7 @@ export default function Facturacion({ usuario }) {
                 display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px',
                 padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`,
                 alignItems:'center', fontSize:12,
-                background: highlightId === f.id ? '#FEF3C7' : 'transparent',
+                background: highlightId === f.id ? COLORS.amberLight : 'transparent',
                 transition:'background 0.3s', cursor:'pointer',
               }}
               onMouseEnter={e => { if (highlightId !== f.id) e.currentTarget.style.background = COLORS.slate50 }}

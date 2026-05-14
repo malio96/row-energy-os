@@ -2533,11 +2533,15 @@ export function TabDocumentos({ proyecto, scope = 'proyectos', scopeId, usuarioA
     if (!cat) { alert('Selecciona primero una categoría'); return }
     if (!archivos || archivos.length === 0) return
     setUploading(true)
-    let exitos = 0, fallos = 0
-    for (const file of archivos) {
-      try { await uploadDoc({ scope, scopeId: realScopeId, categoria: cat, file }); exitos++ }
-      catch (e) { console.error(`upload ${file.name}:`, e); fallos++ }
-    }
+    // v16.5.0: paralelo con Promise.allSettled — antes era for serial (5 archivos = 5×latencia)
+    const resultados = await Promise.allSettled(
+      Array.from(archivos).map(file => uploadDoc({ scope, scopeId: realScopeId, categoria: cat, file }))
+    )
+    const exitos = resultados.filter(r => r.status === 'fulfilled').length
+    const fallos = resultados.length - exitos
+    resultados.forEach((r, i) => {
+      if (r.status === 'rejected') console.error(`upload ${archivos[i].name}:`, r.reason)
+    })
     setUploading(false)
     if (fallos > 0) alert(`Subidos: ${exitos} · Fallaron: ${fallos}.\nÚltimo error en consola.`)
     cargar()

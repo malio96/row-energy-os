@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getCompras, crearCompra, actualizarCompra, eliminarCompra, getProyectos, getUsuarios } from './supabase'
-import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState } from './helpers'
 import { puedeEliminar } from './permisos'  // v16.4.0
 
 export default function Compras({ usuario }) {
@@ -54,14 +54,14 @@ export default function Compras({ usuario }) {
       </div>
 
       {pendientes > 0 && (
-        <div style={{ padding:14, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10, marginBottom:16, fontSize:12, color:'#92400E' }}>
+        <div style={{ padding:14, background:COLORS.amberLight, border:`1px solid ${COLORS.amberBorder}`, borderRadius:10, marginBottom:16, fontSize:12, color:COLORS.amberInk }}>
           <strong>{fmtMoney(pendientes)}</strong> en solicitudes pendientes de aprobación
         </div>
       )}
 
-      {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
+      {loading && <LoadingState/>}
 
-      {!loading && compras.length === 0 && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, background:'white', borderRadius:12 }}>Sin solicitudes de compra</div>}
+      {!loading && compras.length === 0 && <EmptyState titulo="Sin solicitudes de compra"/>}
 
       {!loading && compras.length > 0 && (
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
@@ -85,7 +85,7 @@ export default function Compras({ usuario }) {
                   display:'grid', gridTemplateColumns:'100px 180px 1fr 140px 120px 130px 140px',
                   padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`,
                   alignItems:'center', fontSize:12,
-                  background: highlightId === c.id ? '#FEF3C7' : 'transparent',
+                  background: highlightId === c.id ? COLORS.amberLight : 'transparent',
                   transition:'background 0.3s', cursor:'pointer',
                 }}
                 onMouseEnter={e => { if (highlightId !== c.id) e.currentTarget.style.background = COLORS.slate50 }}

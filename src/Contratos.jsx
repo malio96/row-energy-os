@@ -51,7 +51,7 @@ export default function Contratos({ usuario }) {
       </div>
 
       {kpis.porVencer > 0 && (
-        <div style={{ padding:12, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10, marginBottom:12, fontSize:12, color:'#92400E', display:'flex', alignItems:'center', gap:8 }}>
+        <div style={{ padding:12, background:COLORS.amberLight, border:`1px solid ${COLORS.amberBorder}`, borderRadius:10, marginBottom:12, fontSize:12, color:COLORS.amberInk, display:'flex', alignItems:'center', gap:8 }}>
           {Icon('Alert')}
           <span><strong>{kpis.porVencer}</strong> contrato(s) vencen en los próximos 60 días. Inicia proceso de renovación.</span>
         </div>
