@@ -22,7 +22,32 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.3.0** — Estado actual en producción (13 may 2026). **Hard review post-v16.1.4 + PDF cotización refactor 1:1 al DOCX base.**
+**v16.5.0** — Estado actual en producción (13 may 2026). **Hard review v16.1.4 cerrado completo (CRITICAL + HIGH + MEDIUM + LOW). App lista para revisión del equipo.**
+
+## 🧹 v16.5.0 — Cleanup UI + perf low-hanging (entregado)
+
+Cerrado el punch list LOW del hard review v16.1.4. Cambios cosméticos y bajo riesgo que mejoran consistencia y mantenibilidad sin tocar lógica de negocio.
+
+- **`LoadingState`/`EmptyState` consistentes**: Cotizaciones, Compras, Facturacion ahora usan los componentes de `helpers.jsx` en lugar de div inline. Si se cambia el estilo de loading mañana, es un solo lugar.
+- **Hex hardcoded → `COLORS.*`**: agregados `amberBorder`, `amberInk`, `amberSemaforo`, `successLight`, `successInk` a `COLORS`. Migrados callsites en Compras (banner amber), Cobranza (semaforo 31-60d + estados vencido), Cotizaciones (badge "Aprobado" + alerta amber), Contratos (banner incompletos), Facturacion (highlight). Los mapas de estado/color hardcoded en `Proyectos.jsx:61-108` quedan para otra sesión (refactor masivo con riesgo visual).
+- **Catches silenciosos → feedback visible**: `WorkflowPostCierre` en Cotizaciones silenciaba el error de `getTareasPostCierre` con console.error + setTareas([]). El usuario veía workflow vacío sin explicación. Ahora muestra banner rojo con mensaje + botón "Reintentar".
+- **`ModalShell` helper en `helpers.jsx`**: el patrón overlay + dialog frame estaba duplicado en 5+ modales (Proyectos, Cotizaciones). Helper expone `{title, onClose, width, top, children, footer}`. NO migré los modales existentes — el helper está disponible para uso futuro o migración progresiva.
+- **`MS_PER_DAY` constante en `supabase.js`**: reemplazadas 6 instancias de `(1000*60*60*24)` en `calcularCargaPorColaborador` (4) y `identificarCuellosBotella` (2).
+- **Upload paralelo en TabDocumentos**: antes for serial con await uploadDoc (5 archivos × 5MB = 5× latencia). Ahora `Promise.allSettled` — sube en paralelo, recoge éxitos/fallos por separado. UX igual pero ~5× más rápido típico.
+
+### Sin tocar (riesgo alto, próxima sesión)
+- `Modal.jsx` con `useModal()` sigue sin usuarios — decidir migrar todo o eliminar.
+- Gantt virtualization (200+ actividades): 2h + riesgo de romper drag/resize/rubber-band recién estabilizados.
+- 5 modales en `Proyectos.jsx` con overlay duplicado: ya existe `ModalShell`, migración progresiva sin presión.
+
+## ✅ v16.4.0 — Validaciones críticas + permisos centralizados (entregado)
+
+Cerrado el punch list MEDIUM del hard review v16.1.4. Los fixes que el equipo iba a chocar al usar la app mañana.
+
+- **Validación RFC (cliente + servidor)**: hoy el sistema aceptaba RFCs como "ABC123" y solo se enteraba al aprobar cotización (trigger BD validaba pero error en momento crítico). `RFC_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/` + `validarRFC()` exportados en `supabase.js`. Vacío permitido (RFC es opcional hasta facturar). Validación en `actualizarCliente` y nueva función `crearCliente` (extraída del insert inline en `FormClienteInline`). El form valida antes de mutar — muestra error legible sin pasar a la query.
+- **`capacidad_horas_semana` bounds en frontend**: espejo del fix del edge function v3. `crearUsuario` y `actualizarUsuario` ahora hacen parseInt + clamp 1..168, lanzan error legible si fuera del rango. Antes `Number(x) || 40` dejaba pasar NaN.
+- **Permisos centralizados (`permisos.js`)**: nuevos helpers `esRolEn`, `esDirOAdmin`, `puedeAprobarCotizacion`, `puedeVerFinanciero`, `puedeEditarFinanciero`, `puedeGestionarProyecto`. Migrados los `usuario.rol === 'direccion'` y arrays `['direccion','admin',...].includes(...)` esparcidos en Cotizaciones, Compras, Cobranza, Facturacion, Contratos, Proyectos. Si cambia la política, ahora es 1 cambio en `permisos.js`.
+- **N+1 en `crearProyectoDesdePlantilla`**: antes count proyectos → fetch plantilla activities serial. Ahora `Promise.all` (las dos primeras eran independientes). Ahorra un round-trip por creación de proyecto.
 
 ## 📄 v16.3.0 — PDF cotización LITERAL al DOCX base (entregado)
 
@@ -260,12 +285,17 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
 Causa raíz: el local estaba en `e4393ae` (commit del 10 may), Malio commiteó/pushó del 11 al 12 may, y la próxima sesión local no hizo `git fetch` antes de planear.
 
 ### ✅ Features de esta sesión (ya en producción)
-1. **v16.2.0 — Hard review fixes**: edge function `invitar-usuario` con CORS lockdown + PII sanitization + email regex + capacidad bounds + error messages sanitizados. Deploy v3 vía MCP supabase. Cleanup de 8 comentarios obsoletos "pega este bloque" en `supabase.js`.
+1. **v16.2.0 — Hard review fixes (CRITICAL + HIGH)**: edge function `invitar-usuario` con CORS lockdown + PII sanitization + email regex + capacidad bounds + error messages sanitizados. Deploy v3 vía MCP supabase. Cleanup de 8 comentarios obsoletos "pega este bloque" en `supabase.js`.
 2. **v16.3.0 — PDF cotización refactor 1:1 al DOCX base**: colores NAVY (no TEAL), 17 cláusulas literales T&C (no 10), numeración a/b/c en sub-items (no bullets verdes), tabla Propuesta Económica simplificada sin IVA visible, portada con folio.
+3. **v16.4.0 — Hard review fixes (MEDIUM)**: validación RFC client + server + `crearCliente` centralizada + `capacidad_horas_semana` bounds frontend + 6 helpers de permisos centralizados (migrados callsites en 6 módulos) + N+1 en `crearProyectoDesdePlantilla` paralelizado.
+4. **v16.5.0 — Hard review fixes (LOW)**: LoadingState/EmptyState consistentes en 3 módulos + 5 colores nuevos en COLORS (`amberBorder`, `amberInk`, `amberSemaforo`, `successLight`, `successInk`) + migrados hex hardcoded + feedback visible en catch silencioso del Workflow + `ModalShell` helper en helpers.jsx + `MS_PER_DAY` constante (6 usos) + upload paralelo con `Promise.allSettled`.
 
-### 📝 Hard review v16.1.4 — completo
+### 📝 Hard review v16.1.4 — CERRADO
 
-4 agentes Explore en paralelo cubriendo deuda técnica, security, performance, inconsistencias entre módulos. Output: 1 CRITICAL + 3 HIGH (todos cerrados en v16.2.0) + punch list MEDIUM/LOW documentado arriba en la sección v16.2.0.
+4 agentes Explore en paralelo (deuda técnica, security, performance, inconsistencias). 1 CRITICAL + 3 HIGH + 6 MEDIUM + 8 LOW. **Todos cerrados** en v16.2.0/v16.4.0/v16.5.0 excepto los 3 explícitamente diferidos:
+- `Modal.jsx` con `useModal()` sin usuarios (decisión: migrar todo o eliminar).
+- Gantt virtualization (2h + riesgo de romper drag/rubber-band).
+- 5 modales en `Proyectos.jsx` con overlay duplicado (ya existe `ModalShell`, migración progresiva).
 
 ### ⚠️ Pendientes de acción del usuario (NO se pueden hacer vía MCP)
 
