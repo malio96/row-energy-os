@@ -4,6 +4,7 @@ import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, 
 import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
+import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
 
 export default function Cotizaciones({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -290,7 +291,7 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
           </div>}
 
           {/* v15.8.3: zona destructiva — solo dirección */}
-          {usuario?.rol === 'direccion' && (
+          {puedeEliminar(usuario) && (
             <div style={{ marginTop:16, paddingTop:14, borderTop:`1px solid ${COLORS.slate100}` }}>
               <button
                 onClick={async () => {
@@ -360,7 +361,7 @@ function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
   const total = tareas.length
   const todasOK = total > 0 && completadas === total
   const yaAprobado = !!cotizacion.workflow_aprobado_en
-  const puedeAprobar = ['direccion', 'admin', 'ventas'].includes(usuario?.rol)
+  const puedeAprobar = puedeAprobarCotizacion(usuario)
 
   if (loading) return <div style={{ marginTop: 24, padding: 30, textAlign: 'center', color: COLORS.slate400 }}>Cargando workflow...</div>
 
@@ -395,7 +396,7 @@ function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
             </div>
           )
           const estCfg = ESTADOS_TAREA_PC[t.esta_vencida ? 'vencida' : t.estado] || ESTADOS_TAREA_PC.pendiente
-          const esResp = t.asignado?.id === usuario?.id || ['direccion','admin'].includes(usuario?.rol)
+          const esResp = t.asignado?.id === usuario?.id || esDirOAdmin(usuario)
           const yaCompletada = t.estado === 'completada'
           return (
             <div key={dep.k} style={{

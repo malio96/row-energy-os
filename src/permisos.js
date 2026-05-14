@@ -119,3 +119,41 @@ export function labelRol(rol) {
 export function descripcionRol(rol) {
   return PERMISOS_POR_ROL[rol]?.descripcion || ''
 }
+
+// ============================================================
+// v16.4.0 — HELPERS GRANULARES POR ACCIÓN
+// Centralizan los chequeos `usuario.rol === 'X'` que estaban
+// dispersos en los módulos (Cotizaciones, Compras, etc.).
+// Si cambia la política, se modifica acá una sola vez.
+// ============================================================
+
+// ¿El usuario tiene alguno de los roles indicados?
+export function esRolEn(usuario, roles) {
+  if (!usuario || !usuario.rol || !Array.isArray(roles)) return false
+  return roles.includes(usuario.rol)
+}
+
+// Atajo: dirección o admin (cobertura amplia para operaciones de gestión)
+export function esDirOAdmin(usuario) {
+  return esRolEn(usuario, ['direccion', 'admin'])
+}
+
+// ¿Puede aprobar cotizaciones (cambiar estado a Aprobada)?
+export function puedeAprobarCotizacion(usuario) {
+  return esRolEn(usuario, ['direccion', 'admin', 'ventas'])
+}
+
+// ¿Puede VER el tab financiero de un proyecto (totales, hitos)?
+export function puedeVerFinanciero(usuario) {
+  return esRolEn(usuario, ['direccion', 'admin', 'cobranza', 'ventas'])
+}
+
+// ¿Puede EDITAR el tab financiero (crear/editar hitos, marcar cobrado)?
+export function puedeEditarFinanciero(usuario) {
+  return esRolEn(usuario, ['direccion', 'admin', 'cobranza'])
+}
+
+// ¿Puede gestionar operaciones de proyecto (estado, plantilla, fechas)?
+export function puedeGestionarProyecto(usuario) {
+  return esRolEn(usuario, ['direccion', 'admin', 'director_proyectos'])
+}

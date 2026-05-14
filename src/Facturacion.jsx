@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getFacturas, crearFactura, actualizarFactura, eliminarFactura, getHitos, getClientes } from './supabase'
 import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { puedeEliminar } from './permisos'  // v16.4.0
 
 export default function Facturacion({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -97,7 +98,7 @@ export default function Facturacion({ usuario }) {
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>{f.fecha_emision}</div>
               <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>
                 <select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select>
-                {usuario?.rol === 'direccion' && (
+                {puedeEliminar(usuario) && (
                   <button
                     onClick={async (ev) => {
                       ev.stopPropagation()
@@ -181,7 +182,7 @@ function PanelFactura({ factura: f, usuario, onClose, onCambio }) {
   const [fechaPago, setFechaPago] = useState(f.fecha_pago || '')
   const [uuid, setUuid] = useState(f.uuid_sat || '')
   const [guardando, setGuardando] = useState(false)
-  const puedeBorrar = usuario?.rol === 'direccion'
+  const puedeBorrar = puedeEliminar(usuario)
 
   const guardar = async () => {
     setGuardando(true)

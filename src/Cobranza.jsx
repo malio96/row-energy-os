@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getHitos, actualizarHito, eliminarHito } from './supabase'
 import { COLORS, ESTADOS_HITO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
+import { puedeEliminar } from './permisos'  // v16.4.0
 
 // ============================================================
 // CONFIG — lo que pidió la jefa de admin
@@ -763,7 +764,7 @@ function PanelHito({ hito, usuario, onClose, onCambio }) {
   const [fechaFacturacion, setFechaFacturacion] = useState(hito.fecha_facturacion || '')
   const [notas, setNotas] = useState(hito.notas || '')
   const [guardando, setGuardando] = useState(false)
-  const puedeBorrar = usuario?.rol === 'direccion'
+  const puedeBorrar = puedeEliminar(usuario)
 
   const guardar = async () => {
     setGuardando(true)

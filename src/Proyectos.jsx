@@ -24,7 +24,18 @@ import {
   DOC_CATEGORIAS, uploadDoc, listDocs, getSignedDocUrl, deleteDoc, downloadDoc,
   // v16.1.1: actualización de clientes
   actualizarCliente,
+  // v16.4.0: validación RFC + crear cliente centralizado
+  crearCliente, validarRFC,
 } from './supabase'
+// v16.4.0: helpers de permisos centralizados
+import {
+  puedeEliminar,
+  esDirOAdmin,
+  esRolEn,
+  puedeVerFinanciero as canViewFinanciero,
+  puedeEditarFinanciero,
+  puedeGestionarProyecto,
+} from './permisos'
 
 // v14.1: helpers para persistir preferencias simples en localStorage
 const loadPref = (key, fallback) => {
@@ -812,7 +823,7 @@ function PanelProyecto({ proyecto, clientes, usuarios, usuarioActual, onClose, o
   const [guardando, setGuardando] = useState(false)
   const [plantas, setPlantas] = useState([])  // v15.8.0
   const isMobile = useIsMobile()
-  const puedeBorrar = usuarioActual?.rol === 'direccion'  // v15.8.3
+  const puedeBorrar = puedeEliminar(usuarioActual)  // v15.8.3 / v16.4.0 centralizado
 
   const handleEliminar = async () => {
     if (!confirm(`¿Eliminar el proyecto "${proyecto.nombre}"? Se borrarán todas sus actividades, hitos, notas y vinculaciones. Esta acción no se puede deshacer.`)) return
@@ -2505,8 +2516,9 @@ export function TabDocumentos({ proyecto, scope = 'proyectos', scopeId, usuarioA
   const dragCounterRef = useRef(0)
   const [dragActive, setDragActive] = useState(false)
 
-  const puedeEliminar = ['direccion', 'admin'].includes(usuarioActual?.rol)
-  const puedeSubir = ['direccion','admin','director_proyectos','ventas','cobranza','equipo_proyectos'].includes(usuarioActual?.rol)
+  // v16.4.0: helpers centralizados (renombro local para no shadowear el import puedeEliminar)
+  const puedeBorrarDoc = esDirOAdmin(usuarioActual)
+  const puedeSubir = esRolEn(usuarioActual, ['direccion','admin','director_proyectos','ventas','cobranza','equipo_proyectos'])
 
   const cargar = async () => {
     if (!realScopeId) return
@@ -2654,7 +2666,7 @@ export function TabDocumentos({ proyecto, scope = 'proyectos', scopeId, usuarioA
                         </div>
                         <button onClick={() => verArchivo(f, c.k)} title="Vista previa" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: COLORS.teal, padding: 4 }}>👁</button>
                         <button onClick={() => bajarArchivo(f, c.k)} title="Descargar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: COLORS.navy, padding: 4 }}>⬇</button>
-                        {puedeEliminar && (
+                        {puedeBorrarDoc && (
                           <button onClick={() => eliminar(f, c.k)} title="Eliminar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: COLORS.red, padding: 4 }}>✕</button>
                         )}
                       </div>
@@ -2827,7 +2839,7 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero, usuarioActual, onC
   const pendiente = hitos.filter(h => !esCompleto(h.estado) && h.estado !== 'Cancelado').reduce((s,h) => s + Number(h.monto || 0), 0)
   const total = (proyecto.monto_total || proyecto.monto || 0) || (cobrado + pendiente)
 
-  const puedeEditar = ['direccion', 'admin', 'cobranza'].includes(usuarioActual?.rol)
+  const puedeEditar = puedeEditarFinanciero(usuarioActual)
 
   return (
     <div>
@@ -3143,6 +3155,12 @@ export function FormClienteInline({ cliente, onCancel, onCreated, onUpdated }) {
       setError('La razón social es obligatoria')
       return
     }
+    // v16.4.0: validar RFC client-side (también server-side en supabase.js)
+    const rfcTrim = form.rfc.trim().toUpperCase()
+    if (rfcTrim && !validarRFC(rfcTrim)) {
+      setError('RFC inválido. Debe ser tipo XAXX010101000 (12-13 caracteres: letras + AAMMDD + homoclave).')
+      return
+    }
     setGuardando(true)
     setError(null)
     try {
@@ -3150,25 +3168,7 @@ export function FormClienteInline({ cliente, onCancel, onCreated, onUpdated }) {
         const data = await actualizarCliente(cliente.id, form)
         onUpdated?.(data)
       } else {
-        // Crear: generar código CLI-XXX
-        const { count } = await supabase.from('clientes').select('*', { count:'exact', head:true })
-        const codigo = `CLI-${String((count || 0) + 1).padStart(3, '0')}`
-        const { data, error: insertError } = await supabase
-          .from('clientes')
-          .insert({
-            codigo,
-            razon_social: form.razon_social.trim(),
-            rfc: form.rfc.trim() || null,
-            contacto_nombre: form.contacto_nombre.trim() || null,
-            contacto_email: form.contacto_email.trim() || null,
-            contacto_telefono: form.contacto_telefono.trim() || null,
-            direccion: form.direccion.trim() || null,
-            industria: form.industria.trim() || null,
-            notas: form.notas.trim() || null,
-          })
-          .select()
-          .single()
-        if (insertError) throw insertError
+        const data = await crearCliente(form)
         onCreated?.(data)
       }
     } catch (e) {
@@ -3505,13 +3505,10 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   const undoStackRef = useRef([])
   const MAX_UNDO = 30
 
-  const puedeVerFinanciero = usuarioActual?.rol
-    ? ['direccion', 'admin', 'cobranza', 'ventas'].includes(usuarioActual.rol)
-    : true
-
-  const esDirOAdmin = usuarioActual?.rol
-    ? ['direccion', 'admin', 'director_proyectos'].includes(usuarioActual.rol)
-    : true
+  // v16.4.0: helpers centralizados. Fallback `true` cuando aún no hay usuarioActual
+  // (fetch en curso) — evita esconder UI durante el render inicial.
+  const puedeVerFinanciero = !usuarioActual?.rol || canViewFinanciero(usuarioActual)
+  const esDirOAdmin = !usuarioActual?.rol || puedeGestionarProyecto(usuarioActual)
 
   const cargar = useCallback(async () => {
     try {

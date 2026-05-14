@@ -26,12 +26,56 @@ export async function getClientes() {
   return data || []
 }
 
+// v16.4.0: validación de RFC mexicano (persona moral 12 chars, física 13 chars).
+// Formato: 3-4 letras + 6 dígitos (AAMMDD) + 3 alfanumérico (homoclave).
+export const RFC_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/
+export function validarRFC(rfc) {
+  if (!rfc) return true // vacío permitido (es opcional hasta que se quiera facturar)
+  return RFC_REGEX.test(rfc.trim().toUpperCase())
+}
+
+// v16.4.0: extraído de FormClienteInline para centralizar validación.
+// Genera código CLI-XXX automáticamente.
+export async function crearCliente(payload) {
+  const rfcTrim = payload.rfc?.trim().toUpperCase() || null
+  if (rfcTrim && !validarRFC(rfcTrim)) {
+    throw new Error('RFC inválido. Formato esperado: XAXX010101000 (3-4 letras + 6 dígitos AAMMDD + 3 alfanuméricos).')
+  }
+  if (!payload.razon_social?.trim()) {
+    throw new Error('Razón social requerida.')
+  }
+  const { count } = await supabase.from('clientes').select('*', { count: 'exact', head: true })
+  const codigo = `CLI-${String((count || 0) + 1).padStart(3, '0')}`
+  const { data, error } = await supabase
+    .from('clientes')
+    .insert({
+      codigo,
+      razon_social: payload.razon_social.trim(),
+      rfc: rfcTrim,
+      contacto_nombre: payload.contacto_nombre?.trim() || null,
+      contacto_email: payload.contacto_email?.trim() || null,
+      contacto_telefono: payload.contacto_telefono?.trim() || null,
+      direccion: payload.direccion?.trim() || null,
+      industria: payload.industria?.trim() || null,
+      notas: payload.notas?.trim() || null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 // v16.1.1: actualizar cliente — necesario para completar campos faltantes
 // (especialmente RFC y dirección fiscal, requeridos por el trigger de aprobar cotización).
+// v16.4.0: valida RFC si está presente.
 export async function actualizarCliente(id, cambios) {
+  const rfcTrim = cambios.rfc?.trim().toUpperCase() || null
+  if (rfcTrim && !validarRFC(rfcTrim)) {
+    throw new Error('RFC inválido. Formato esperado: XAXX010101000 (3-4 letras + 6 dígitos AAMMDD + 3 alfanuméricos).')
+  }
   const limpio = {
     razon_social: cambios.razon_social?.trim() || undefined,
-    rfc: cambios.rfc?.trim() || null,
+    rfc: rfcTrim,
     contacto_nombre: cambios.contacto_nombre?.trim() || null,
     contacto_email: cambios.contacto_email?.trim() || null,
     contacto_telefono: cambios.contacto_telefono?.trim() || null,
@@ -86,9 +130,12 @@ export async function getProyectoConActividades(proyectoId) {
 }
 
 export async function crearProyectoDesdePlantilla({ plantillaId, nombre, clienteId, directorId, inicioFecha, capacidadMw, ubicacion }) {
-  const { count } = await supabase.from('proyectos').select('*', { count: 'exact', head: true })
-  const codigo = `PRY-${String((count || 0) + 1).padStart(3, '0')}`
-  const plantillaActs = await getPlantillaActividades(plantillaId)
+  // v16.4.0: paralelizar count + fetch de plantilla (independientes)
+  const [countResult, plantillaActs] = await Promise.all([
+    supabase.from('proyectos').select('*', { count: 'exact', head: true }),
+    getPlantillaActividades(plantillaId),
+  ])
+  const codigo = `PRY-${String((countResult.count || 0) + 1).padStart(3, '0')}`
   const actividadesConFechas = calcularFechasCascada(plantillaActs, inicioFecha)
   const fechaCierre = actividadesConFechas.reduce((max, a) => a.fin > max ? a.fin : max, inicioFecha)
 
@@ -1264,6 +1311,10 @@ export async function crearUsuario({ nombre, email, rol, telefono = null, capaci
   if (!nombre?.trim()) throw new Error('El nombre es obligatorio')
   if (!email?.trim()) throw new Error('El email es obligatorio')
   if (!rol) throw new Error('El rol es obligatorio')
+  // v16.4.0: bounds en capacidad (espejo del edge function v3)
+  const capRaw = parseInt(String(capacidad_horas_semana ?? ''), 10)
+  if (!Number.isFinite(capRaw)) throw new Error('Capacidad horas/semana inválida')
+  if (capRaw < 1 || capRaw > 168) throw new Error('Capacidad horas/semana debe estar entre 1 y 168')
 
   const emailLower = email.toLowerCase().trim()
 
@@ -1285,7 +1336,7 @@ export async function crearUsuario({ nombre, email, rol, telefono = null, capaci
       email: emailLower,
       rol,
       telefono: telefono?.trim() || null,
-      capacidad_horas_semana: Number(capacidad_horas_semana) || 40,
+      capacidad_horas_semana: capRaw,
       activo,
     })
     .select()
@@ -1320,7 +1371,13 @@ export async function actualizarUsuario(id, cambios) {
   // Normalizar strings
   if (cambios.nombre) cambios.nombre = cambios.nombre.trim()
   if (cambios.telefono !== undefined) cambios.telefono = cambios.telefono?.trim() || null
-  if (cambios.capacidad_horas_semana !== undefined) cambios.capacidad_horas_semana = Number(cambios.capacidad_horas_semana) || 40
+  // v16.4.0: bounds en capacidad (espejo del edge function v3)
+  if (cambios.capacidad_horas_semana !== undefined) {
+    const cap = parseInt(String(cambios.capacidad_horas_semana), 10)
+    if (!Number.isFinite(cap)) throw new Error('Capacidad horas/semana inválida')
+    if (cap < 1 || cap > 168) throw new Error('Capacidad horas/semana debe estar entre 1 y 168')
+    cambios.capacidad_horas_semana = cap
+  }
 
   const { data, error } = await supabase
     .from('usuarios')

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getCompras, crearCompra, actualizarCompra, eliminarCompra, getProyectos, getUsuarios } from './supabase'
 import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { puedeEliminar } from './permisos'  // v16.4.0
 
 export default function Compras({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -69,8 +70,9 @@ export default function Compras({ usuario }) {
           </div>
           {compras.map(c => {
             // v15.8.4: dirección siempre puede modificar el estado; admin solo si Solicitada y <50k
+            // v15.8.4: dirección siempre puede modificar el estado; admin solo si Solicitada y <50k
             const puedeAprobar = (
-              usuario?.rol === 'direccion' ||
+              puedeEliminar(usuario) ||  // dirección
               (c.estado === 'Solicitada' && usuario?.rol === 'admin' && Number(c.monto) < 50000)
             )
             return (
@@ -101,7 +103,7 @@ export default function Compras({ usuario }) {
                       {Object.keys(ESTADOS_COMPRA).map(e => <option key={e}>{e}</option>)}
                     </select>
                   ) : <Badge texto={c.estado} mapa={ESTADOS_COMPRA}/>}
-                  {usuario?.rol === 'direccion' && (
+                  {puedeEliminar(usuario) && (
                     <button
                       onClick={async (ev) => {
                         ev.stopPropagation()
@@ -173,7 +175,7 @@ function PanelCompra({ compra: c, usuario, onClose, onCambio }) {
   const [notas, setNotas] = useState(c.notas || '')
   const [fechaPago, setFechaPago] = useState(c.fecha_pago || '')
   const [guardando, setGuardando] = useState(false)
-  const puedeBorrar = usuario?.rol === 'direccion'
+  const puedeBorrar = puedeEliminar(usuario)
 
   const guardar = async () => {
     setGuardando(true)

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getContratos, crearContrato, actualizarContrato, getProyectos } from './supabase'
 import { COLORS, ESTADOS_CONTRATO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
+import { esDirOAdmin } from './permisos'  // v16.4.0
 
 export default function Contratos({ usuario }) {
   const [contratos, setContratos] = useState([])
@@ -9,7 +10,7 @@ export default function Contratos({ usuario }) {
   const [filtro, setFiltro] = useState(loadPref('ctr_filtro', 'Todos'))
   const [busqueda, setBusqueda] = useState('')
   const isMobile = useIsMobile()
-  const puedeEditar = usuario.rol === 'direccion' || usuario.rol === 'admin'
+  const puedeEditar = esDirOAdmin(usuario)
 
   const cargar = async () => { setLoading(true); setContratos(await getContratos()); setLoading(false) }
   useEffect(() => { cargar() }, [])
