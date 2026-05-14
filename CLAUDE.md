@@ -22,7 +22,42 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.5.0** — Estado actual en producción (13 may 2026). **Hard review v16.1.4 cerrado completo (CRITICAL + HIGH + MEDIUM + LOW). App lista para revisión del equipo.**
+**v16.6.0** — Estado actual en producción (14 may 2026). **Security hardening playbook aplicado** (auditoría tipo hacker portada de row-energy-construction): privilege escalation cerrada, Turnstile preparado, uploadDoc reforzado.
+
+## 🛡️ v16.6.0 — Security hardening playbook (entregado)
+
+Auditoría externa (playbook en `../row-energy-construction/docs/SECURITY_HARDENING_PLAYBOOK.md`) detectó 3 CRIT + 3 HIGH + 3 MED + 1 LOW. Análisis cruzado contra Row Energy OS: 2 ya cerrados (v16.2.0), 1 manual pendiente, 3 diferidos por riesgo, **3 cerrados en v16.6.0**.
+
+### Cerrado en v16.6.0
+
+- **CRIT-1/HIGH-1: Policy `usuarios_update` extendida.** Antes, el `with_check` solo bloqueaba cambios a `rol` en self-update. Faltaba `activo`, `email`, `auth_id`. Un user auth podía cambiar su `auth_id` (impersonation) o `email` (lockout + takeover por email lookup). Migration `v16_6_0_harden_usuarios_self_update` agrega los 4 chequeos. Direccion/admin siguen pudiendo editar todo (branch admin del OR los exenta).
+
+- **CRIT-3: Cloudflare Turnstile (modo dormido).** Login + reset password expuestos a brute force. `mmartinez@row.energy` es público en repos/docs. Componente `src/Turnstile.jsx` + integración en `Login.jsx`. `captchaToken` se pasa a `signInWithPassword` y `resetPasswordForEmail`. **Sin `VITE_TURNSTILE_SITE_KEY` está dormido** (componente devuelve null, `TURNSTILE_ENABLED=false`, login funciona normal). Activación end-to-end pendiente manual de Malio (ver sección 🔐 más abajo).
+
+- **LOW-1: `uploadDoc` deriva extensión del MIME.** Antes el path usaba `file.name` (controlado por cliente). Si subes `evil.svg.exe` quedaba como `.exe` en el path. Ahora hay `MIME_TO_EXT` whitelist + `_basename()` que quita la ext del nombre. Default `bin` si MIME no está en whitelist. Defense in depth (el bucket ya tiene `allowed_mime_types` que filtra MIME en sí).
+
+### Ya hecho / no aplica
+
+- **CRIT-2 (cron functions anónimas)**: no hay cron functions en Row Energy OS. `invitar-usuario` ya valida JWT desde v16.2.0.
+- **HIGH-2 (CORS wildcard)**: cerrado en v16.2.0.
+- **HIGH-3 (Auth defaults Dashboard)**: pendiente manual de Malio (Site URL, Disable signups, Min password 12, Required chars, Leaked password protection, JWT expiry 1800s).
+
+### Diferido (documentado)
+
+- **MED-1 (CSP `unsafe-eval`)**: el playbook dice "fácil, sin breaking changes en Vite prod". **Confirmé que NO es así**: `pdfMake` (export cotización) y `exceljs` (export Gantt) usan `new Function()` que requiere `unsafe-eval`. Removerlo sin probar rompe el export. Pendiente: testear con CSP estricto en build local antes de aplicar.
+- **MED-2 (`dangerouslySetInnerHTML` en `IconAlerta`)**: paths son constantes hardcoded, safe hoy. Refactor a componentes SVG es defensive only. Bajo ROI.
+- **MED-3 (MFA TOTP forzado admins)**: ~2-3h UI nueva, decisión de producto (¿fricción aceptable para admin?).
+
+### 🔐 Activación Turnstile (pendiente manual de Malio)
+
+Cuando decida activarlo:
+
+1. **Cloudflare** (5 min): https://dash.cloudflare.com → Turnstile → Add site → dominio `app.row.energy` → mode "Managed" → copiar **Site Key** y **Secret Key**.
+2. **Vercel** (2 min): Settings → Environment Variables → agregar `VITE_TURNSTILE_SITE_KEY=<site_key>` para Production.
+3. **Supabase Dashboard** (2 min): Authentication → Settings → CAPTCHA Protection → enable → paste **Secret Key** → guardar.
+4. **Vercel** (auto): redeploy. Login y reset password ya pedirán captcha.
+
+**Importante**: si pegas el Secret en Supabase pero NO seteas la env var en Vercel, los logins se rompen (Supabase exige captcha pero frontend no lo manda). Orden seguro: var en Vercel + redeploy → luego Secret en Supabase.
 
 ## 🧹 v16.5.0 — Cleanup UI + perf low-hanging (entregado)
 
@@ -289,6 +324,7 @@ Causa raíz: el local estaba en `e4393ae` (commit del 10 may), Malio commiteó/p
 2. **v16.3.0 — PDF cotización refactor 1:1 al DOCX base**: colores NAVY (no TEAL), 17 cláusulas literales T&C (no 10), numeración a/b/c en sub-items (no bullets verdes), tabla Propuesta Económica simplificada sin IVA visible, portada con folio.
 3. **v16.4.0 — Hard review fixes (MEDIUM)**: validación RFC client + server + `crearCliente` centralizada + `capacidad_horas_semana` bounds frontend + 6 helpers de permisos centralizados (migrados callsites en 6 módulos) + N+1 en `crearProyectoDesdePlantilla` paralelizado.
 4. **v16.5.0 — Hard review fixes (LOW)**: LoadingState/EmptyState consistentes en 3 módulos + 5 colores nuevos en COLORS (`amberBorder`, `amberInk`, `amberSemaforo`, `successLight`, `successInk`) + migrados hex hardcoded + feedback visible en catch silencioso del Workflow + `ModalShell` helper en helpers.jsx + `MS_PER_DAY` constante (6 usos) + upload paralelo con `Promise.allSettled`.
+5. **v16.6.0 — Security hardening playbook (3 ítems)**: Policy `usuarios_update` extendida (bloquea cambios a rol/activo/email/auth_id en self-update) + Cloudflare Turnstile preparado en modo dormido (activación manual pendiente) + `uploadDoc` deriva extensión del MIME en lugar del nombre cliente.
 
 ### 📝 Hard review v16.1.4 — CERRADO
 
