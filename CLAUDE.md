@@ -22,7 +22,69 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.1.4** — Estado actual en producción. **Usuarios huérfanos visibles + botón Reinvitar.**
+**v16.3.0** — Estado actual en producción (13 may 2026). **Hard review post-v16.1.4 + PDF cotización refactor 1:1 al DOCX base.**
+
+## 📄 v16.3.0 — PDF cotización LITERAL al DOCX base (entregado)
+
+v15.8.2 había usado `templates/COTIZACION_REFERENCIA.pdf` como referencia pero divergía del DOCX real. Malio reportó: "el output actual NO se parece al doc base". Esta versión hace el match 1:1 con `templates/COTIZACIÓN BASE CC (1).docx`.
+
+**Cambios en `src/exportCotizacion.js`:**
+- Color títulos: TEAL verde (#0F6E56) → **NAVY profundo (#1F3864)**. El verde Row Energy queda fuera del PDF — sigue en el resto de la app.
+- Sub-items de descripciones de servicios: bullets verdes → **numeración a) b) c)** (`subItemLetra` reemplaza `bulletVerde`).
+- T&C: 10 → **17 cláusulas literales** del DOCX. Agregadas: Aceptación, Inicio de servicio, Condiciones (con 8 sub-items a-h), Vigencia, Negociación, Límites (con sub Forma de pago), Pago. `TC_CLAUSULAS` ahora soporta `subitems` array (strings simples o `{titulo, texto}` para "6a. Forma de pago"). Renderer `renderClausula` maneja ambos casos.
+- **Tabla Propuesta Económica simplificada**: N° / NOMBRE SERVICIO / CANTIDAD / PRECIO UNITARIO / SUBTOTAL. Sin IVA visible (queda en cláusula 11 Impuestos de T&C). Sin "Condiciones de pago" separadas (en cláusula 6 Límites → Forma de pago). Sin "Vigencia" (en cláusula 4). Sin "Observaciones". Header fondo navy claro #D9E1F2.
+- Portada: "ROW Energy" 16pt → 24pt bold. Folio CO--XX explícito debajo del título.
+
+Sin cambios funcionales adicionales — sigue lazy-loaded en `Cotizaciones.jsx:274`. Imágenes de `templates/` no cambian (banner-turbinas, cot-hero, cot-mapa, cot-alcance, firma-malio, row-logo).
+
+**Pendiente del director**: validar visualmente el PDF generado vs `/Users/maliomartinez/Downloads/COTIZACIÓN BASE CC (1).pdf`. Si hay diferencias, ajustar en próxima iteración.
+
+## 🔐 v16.2.0 — Hard review post-v16.1.4 (entregado)
+
+Hard review multi-agente (4 agentes Explore en paralelo cubriendo deuda técnica, security, performance, inconsistencias). Detectó 1 CRITICAL + 3 HIGH + varios MEDIUM/LOW. Esta versión cierra todo lo HIGH del bucket "edge function".
+
+**CRITICAL: Edge function `invitar-usuario` con CORS abierto + PII leak.**
+- Antes: `Access-Control-Allow-Origin: '*'` + retornaba `usuarioRow` completo (id, nombre, email, rol) en el response success. Cualquier origin externo podía enumerar usuarios.
+- Fix: allowlist de origins (`app.row.energy` + localhost dev), Vary: Origin agregado. Response success ahora es `{ok, reinvited, mensaje}` — sin objeto usuario. Frontend en `Configuracion.jsx` ya usaba solo `respuesta.mensaje`, así que es backward-compatible.
+
+**HIGH: validación + sanitización en la misma edge function.**
+- Email regex `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` bloquea formatos inválidos antes de tocar Auth.
+- `capacidad_horas_semana` ahora `parseInt` + clamp 1..168 (antes `Number(x)||40` permitía NaN llegar a la BD).
+- Error messages internos (`errorInsert.message`, `errorInvite.message`) sanitizados — se loguean server-side, cliente recibe mensaje genérico.
+
+Deployada como **v3** vía MCP supabase. Status ACTIVE.
+
+**Cleanup `supabase.js`**: 8 secciones tenían encabezados tipo "PATCH SUPABASE / CÓMO APLICAR: pega este bloque al final" — instrucciones obsoletas (el código ya estaba integrado). Reemplazados por encabezados simples ("v12.5.6 — CRUD DE USUARIOS"). Sin cambios funcionales.
+
+**Falsos positivos del audit** (sin cambio): "lazy-load pdfMake" — `exportCotizacion.js` ya estaba lazy-loaded en `Cotizaciones.jsx:274`.
+
+### 📋 Punch list pendiente del hard review v16.1.4
+
+Documentado para decidir con el equipo qué priorizar. NO atacado en v16.2.0/v16.3.0 (acuerdo explícito: "no agregar cosas que no usemos o compliquen").
+
+**MEDIUM:**
+- RFC validation regex en clientes (hoy acepta "ABC123") → trigger cierre cotización lo deja pasar hasta el momento de aprobar.
+- 5 modales en `Proyectos.jsx` con overlay + close button duplicados (líneas 593, 845, 2958, 3330, 3443).
+- `Modal.jsx` con `useModal()` hook existe pero **nadie lo usa** — todos los módulos hacen modales inline. Decidir: migrar gradualmente o eliminar `Modal.jsx`.
+- Permisos hardcoded `usuario.rol === 'direccion'` en Cotizaciones, Compras, Facturacion, Contratos. Centralizar con `puede()` de `permisos.js`.
+- N+1 en `crearProyectoDesdePlantilla` (`supabase.js:88-113`) — 3 queries serial. Cambiar a RPC o `Promise.all`.
+- Gantt sin virtualización con 100+ actividades (`Proyectos.jsx:1041, 1115, 1282`) — lag visible si los proyectos crecen.
+
+**LOW:**
+- 6× `(d1-d2)/(1000*60*60*24)` → `MS_PER_DAY` constante.
+- Hex hardcoded vs `COLORS.*` en Compras/Cotizaciones/Cobranza (#FDE68A, #F59E0B, #16A34A).
+- `LoadingState`/`EmptyState` reusables pero algunos módulos hacen div inline (Cotizaciones, Compras, Facturacion).
+- `alert()` vs catch silencioso inconsistente (`Cotizaciones.jsx:106` muestra, `:331` silencia).
+- Upload de archivos en for loop síncrono — `Promise.allSettled` mejora con multiple files.
+
+**Confirmado seguro** (sin acción):
+- XSS en notas (v16.0.0 ya arreglado): JSX nativo OK.
+- UUID validation en `getNotificaciones`: regex correcto.
+- `service_role` solo en edge function (no en frontend).
+- `signOut` limpia sesión bien.
+- Storage RLS valida scope/scopeId con regex.
+- Reset password usa Supabase recovery session, no tokens en URL.
+- RLS habilitado en TODAS las tablas.
 
 ## 👤 v16.1.4 — Estado real de auth en TabUsuarios (entregado)
 
@@ -189,21 +251,21 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
   - **v15.10.11** — Intento parcial de fix del rubber-band: mover a SVG flotante con `zIndex:20` (antes `zIndex:2`, las barras lo tapaban) + quitar `requestAnimationFrame` (volver a setDragTick directo). Mejoró el visual pero el bug real persistía.
   - **v15.10.12 — FIX DEFINITIVO del rubber-band Gantt.** Causa raíz: `dragDepPath` calculaba `x2 = mouseX - rect.left + scrollLeft` pero `rect.left` del timelineRef YA reflejaba el offset del scroll (el SVG se mueve con su parent). Sumar `scrollLeft` adicional duplicaba el offset → la línea se "estiraba" hacia la derecha al hacer scroll. Fix: quitar `+ scrollLeft`. Validado con Playwright en localhost (scroll=0/500/1500, delta_x=0 en los 3). Bug existía desde v15.9.x pero se notó a partir de v15.9.4 cuando se cambió `buildOrthPath` por línea recta diagonal (la diagonal exagera visualmente el offset).
 
-## 📍 Estado de sesión actual (10 may 2026)
+## 📍 Estado de sesión actual (13 may 2026)
 
-### ✅ Bug del rubber-band Gantt RESUELTO (v15.10.12)
-3 versiones tomó cerrar este bug crónico (15.10.6 → 15.10.12). El diagnóstico final salió de una pista clave de Malio: "scroll=0 funciona, con scroll se estira". Mirando la fórmula de `x2`, era un doble-conteo del scroll. Validado matemáticamente con Playwright + dev local antes del push.
+### 🚨 Lección clave de la sesión
+
+**Antes de implementar features grandes, hacer `git fetch` y revisar `git log HEAD..origin/main`.** Arranqué la sesión leyendo el CLAUDE.md local que decía "próxima sesión: Storage docs + Pricing + ..." y empecé a implementarlo. Después de un commit local v15.12.0 descubrí que el remote ya tenía v16.0.0 (commit del 11 may) con literalmente los mismos features entregados — Storage docs, Pricing engine, Security review. Y v16.1.0-v16.1.4 encima. Mi commit local quedó en branch `backup-v15.12.0-local` y reset hard a origin/main, replanificación de la sesión.
+
+Causa raíz: el local estaba en `e4393ae` (commit del 10 may), Malio commiteó/pushó del 11 al 12 may, y la próxima sesión local no hizo `git fetch` antes de planear.
 
 ### ✅ Features de esta sesión (ya en producción)
-1. Security Hardening completo BD (v15.9.0): 35 → 6 advisors. Migraciones en `supabase/migrations/`.
-2. 6 bugfixes funcionales (v15.9.1): sub-actividades, dependencia invertida, peso/horas, desviación real, etc.
-3. Fix crear cliente columnas (v15.9.3).
-4. Flujo "Olvidé contraseña" en login (v15.10.0). Requiere config en Auth dashboard.
-5. Matriz permisos rebalanceada (v15.10.1, v15.10.2).
-6. **Ctrl+Z en Gantt** (v15.10.3) — move, resize, dep, create, delete. Stack RAM 30 acciones.
-7. Dependencias respetan lag positivo (v15.10.4).
-8. Dashboard alertas top 3 + ver más + click colaborador sobrecargado → vista Personas (v15.10.5).
-9. CSP permite Google Fonts (v15.10.8). Sidebar fijo en scroll (v15.10.9).
+1. **v16.2.0 — Hard review fixes**: edge function `invitar-usuario` con CORS lockdown + PII sanitization + email regex + capacidad bounds + error messages sanitizados. Deploy v3 vía MCP supabase. Cleanup de 8 comentarios obsoletos "pega este bloque" en `supabase.js`.
+2. **v16.3.0 — PDF cotización refactor 1:1 al DOCX base**: colores NAVY (no TEAL), 17 cláusulas literales T&C (no 10), numeración a/b/c en sub-items (no bullets verdes), tabla Propuesta Económica simplificada sin IVA visible, portada con folio.
+
+### 📝 Hard review v16.1.4 — completo
+
+4 agentes Explore en paralelo cubriendo deuda técnica, security, performance, inconsistencias entre módulos. Output: 1 CRITICAL + 3 HIGH (todos cerrados en v16.2.0) + punch list MEDIUM/LOW documentado arriba en la sección v16.2.0.
 
 ### ⚠️ Pendientes de acción del usuario (NO se pueden hacer vía MCP)
 
@@ -238,24 +300,18 @@ claude mcp add playwright -- npx -y @playwright/mcp@latest
 ```
 Reiniciar Claude Code después. Cuando regreses, tendré tools `browser_*` para navegar, ver DOM, hacer screenshots, ejecutar JS.
 
-### 🎯 Próxima mega: Storage de documentos
-Cuando el bug del Gantt esté diagnosticado/cerrado, arrancamos con:
-- Bucket Supabase Storage con RLS por proyecto/rol
-- Tab "Documentos" funcional en Proyectos (hoy está pero no hace nada)
-- Upload con drag-and-drop, preview de PDFs/imágenes, signed URLs
-
 ---
 
 ## 🗺️ Roadmap pendiente
 
 ### ⏸️ Pausados — retomar cuando se decida
 - **Email diario alertas (Commit E original)** — Edge Function scheduled + UI de `email_diario` / `email_dias` / `email_hora` en tab Mis alertas. Necesita decidir formato real de `email_dias` (consultar schema vivo de `alertas_config`).
-- **v15.7 Pricing engine** — importar matriz Excel `templates/PRECIOS AMPERE.xlsx` (4 sheets: CC sin/con inflación, CE sin/con inflación; ~25 servicios × 18 rangos de capacidad). Vendedor selecciona servicio + capacidad MW + toggle inflación → autopobla precio. Ya existe el catálogo de NOMBRES (v15.6.0); falta el motor de precios.
 
-### ⏳ Próximos features grandes
-- **Storage de documentos** (Supabase Storage): tab "Documentos" en Proyectos hoy no funciona. Por proyecto/planta/cliente: subir contratos firmados, planos, fotos de obra, facturas escaneadas. Permisos por rol. Estimado ~3-5 días.
+### ⏳ Próximos features grandes (no urgentes)
 - **Reportes ejecutivos PDF** (board pack mensual/trimestral): KPIs consolidados, comparativo vs mes anterior/meta, lista de proyectos en riesgo, auto-enviado por email. Estimado ~1 semana.
 - **Profundizar módulos básicos:** Postventa (SLA tracking, dashboard tickets), Cierre (checklist con docs requeridos, lecciones aprendidas), Contratos (gestión documental, vencimientos automáticos, alertas de renovación). Cada uno ~1-2 días.
+- **Pricing engine v16.1** — proyecciones año-por-año (las sheets "CC INFLACIÓN" y "CE Inflación" del Excel tienen precios pre-calculados a múltiples años; hoy aplicamos 5%/año en runtime, suficiente para MVP entregado en v16.0.0).
+- **Cobranza automática desde workflow Post-Cierre v16.1.0** — generación de hitos al confirmar workflow + recordatorio email cliente vía Edge Function programada.
 
 ### 🔌 Integraciones externas (cuando haga sentido)
 - WhatsApp Business para mandar cotización al cliente
@@ -268,11 +324,7 @@ Cuando el bug del Gantt esté diagnosticado/cerrado, arrancamos con:
 - Auditoría / log de cambios (compliance)
 - Mobile UX polish, especialmente Gantt
 - Buscador global mejorado (CommandPalette puede buscar dentro de notas/descripciones)
-
-### 🤔 Sugerencia de orden para próxima sesión
-1. **Storage de documentos** — gran feature que el equipo usa día a día y hoy no funciona
-2. **v15.7 Pricing engine** — cierra el ciclo de cotizaciones; alto valor para ventas
-3. **Reportes ejecutivos** al final cuando ya haya data real fluyendo de los puntos 1-2
+- Punch list MEDIUM/LOW del hard review v16.1.4 (ver sección v16.2.0 arriba)
 
 ## 🏗️ Arquitectura clave
 
@@ -410,11 +462,11 @@ src/
 
 ## 🚀 Próximos pasos cuando arranque la sesión
 
-1. Leer este archivo (CLAUDE.md)
-2. Confirmar con `git status` y `git log -1` que estamos en **v15.8.6** pusheado.
-3. Verificar que Malio aplicó el SQL `supabase/migrations/v15.8.0_plantas_electricas.sql` (el de SIM v15.7.0 ya lo aplicó). Si Plantas no carga, ese SQL es la causa.
-4. **Si Malio configuró el MCP de Supabase** (ver sección "🔌 MCP Supabase" abajo): usarlo para futuras migraciones automáticas, schema lookups y queries directas. No volver a pedir SQL manual.
-5. Preguntar a Malio qué prioriza para la sesión. Mi sugerencia: Storage de documentos → v15.7 Pricing engine → Reportes ejecutivos.
+1. Leer este archivo (CLAUDE.md).
+2. **`git fetch origin && git log --oneline HEAD..origin/main`** — verificar si remote tiene commits que no tengo. **No saltarse este paso** antes de planear features grandes (lección del 13 may: terminé re-implementando v15.12.0 redundante con v16.0.0 que ya estaba en remote).
+3. Confirmar que la versión local matchea producción. Hoy: **v16.3.0**.
+4. MCPs activos: supabase, playwright, context7. Skill superpowers habilitado.
+5. Preguntar a Malio qué prioriza. Si pide validación del PDF cotización v16.3.0, generar uno y comparar con `/Users/maliomartinez/Downloads/COTIZACIÓN BASE CC (1).pdf` antes de tocar el generador.
 
 ## 🔌 MCP Supabase (configuración futura)
 
