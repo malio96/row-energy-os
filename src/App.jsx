@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom'
 import { supabase } from './supabase'
 import { COLORS, useIsMobile } from './helpers'
 import { puede } from './permisos'
+import Turnstile, { TURNSTILE_ENABLED } from './Turnstile'  // v16.6.0: captcha login
 import Sidebar from './Sidebar'
 import Proyectos from './Proyectos'
 import Cotizaciones from './Cotizaciones'
@@ -55,15 +56,22 @@ function Login({ onLogin }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  // v16.6.0: Cloudflare Turnstile. Si VITE_TURNSTILE_SITE_KEY no está set,
+  // TURNSTILE_ENABLED=false y captchaToken queda '' (signIn lo ignora).
+  const [captchaToken, setCaptchaToken] = useState('')
+  const handleCaptcha = useCallback((token) => setCaptchaToken(token || ''), [])
+  const captchaListo = !TURNSTILE_ENABLED || !!captchaToken
 
   const login = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     const emailLower = email.toLowerCase().trim()
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email: emailLower, password })
+    const authOptions = captchaToken ? { captchaToken } : undefined
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email: emailLower, password, options: authOptions })
     if (authError) {
       setError(authError.message)
+      setCaptchaToken('')  // token de Turnstile es one-shot
       setLoading(false)
       return
     }
@@ -85,11 +93,14 @@ function Login({ onLogin }) {
     setError('')
     setInfo('')
     const emailLower = email.toLowerCase().trim()
-    const { error: recError } = await supabase.auth.resetPasswordForEmail(emailLower, {
+    const resetOpts = {
       redirectTo: `${window.location.origin}/reset-password`,
-    })
+      ...(captchaToken ? { captchaToken } : {}),
+    }
+    const { error: recError } = await supabase.auth.resetPasswordForEmail(emailLower, resetOpts)
     if (recError) {
       setError(recError.message)
+      setCaptchaToken('')
     } else {
       setInfo('Si el email existe, recibirás un link de recuperación en los próximos minutos. Revisa también la carpeta de spam.')
     }
@@ -101,6 +112,7 @@ function Login({ onLogin }) {
     setError('')
     setInfo('')
     setPassword('')
+    setCaptchaToken('')
   }
 
   return (
@@ -128,8 +140,9 @@ function Login({ onLogin }) {
               </button>
             </div>
             {error && <div style={{ padding:10, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>{error}</div>}
-            <button type="submit" disabled={loading} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:loading?'wait':'pointer', opacity:loading?0.7:1 }}>
-              {loading ? 'Entrando...' : 'Iniciar sesión'}
+            <Turnstile onVerify={handleCaptcha}/>
+            <button type="submit" disabled={loading || !captchaListo} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:(loading || !captchaListo)?'not-allowed':'pointer', opacity:(loading || !captchaListo)?0.7:1 }}>
+              {loading ? 'Entrando...' : (TURNSTILE_ENABLED && !captchaToken ? 'Completa la verificación' : 'Iniciar sesión')}
             </button>
           </form>
         ) : (
@@ -143,8 +156,9 @@ function Login({ onLogin }) {
             </div>
             {error && <div style={{ padding:10, background:'#FEF2F2', color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>{error}</div>}
             {info && <div style={{ padding:10, background:'#F0FDF4', color:COLORS.teal, borderRadius:8, fontSize:12, marginBottom:14, border:`1px solid #86EFAC` }}>{info}</div>}
-            <button type="submit" disabled={loading} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:loading?'wait':'pointer', opacity:loading?0.7:1, marginBottom:10 }}>
-              {loading ? 'Enviando...' : 'Enviar link de recuperación'}
+            <Turnstile onVerify={handleCaptcha}/>
+            <button type="submit" disabled={loading || !captchaListo} style={{ width:'100%', padding:'12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:(loading || !captchaListo)?'not-allowed':'pointer', opacity:(loading || !captchaListo)?0.7:1, marginBottom:10 }}>
+              {loading ? 'Enviando...' : (TURNSTILE_ENABLED && !captchaToken ? 'Completa la verificación' : 'Enviar link de recuperación')}
             </button>
             <button type="button" onClick={() => switchMode('login')} style={{ width:'100%', padding:'10px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate100}`, borderRadius:8, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
               ← Volver a iniciar sesión

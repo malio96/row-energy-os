@@ -1951,11 +1951,38 @@ function _sanitizarNombre(name) {
   return String(name).replace(/[^\w.\-]/g, '_').slice(0, 200)
 }
 
+// v16.6.0: derivar extensión del MIME type (server-verifiable) en lugar del
+// nombre del cliente. Defense in depth — el bucket ya tiene allowed_mime_types
+// whitelist, esto solo asegura que el path final no tenga una extensión engañosa
+// (ej. `evil.svg.exe` queda como `<ts>_evil_svg.bin`).
+const MIME_TO_EXT = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/zip': 'zip', 'application/x-zip-compressed': 'zip',
+  'text/plain': 'txt', 'text/csv': 'csv',
+}
+function _extDesdeMime(mime) {
+  return MIME_TO_EXT[(mime || '').toLowerCase()] || 'bin'
+}
+// Quita la extensión final del nombre del archivo (para no duplicarla en el path).
+function _basename(name) {
+  const sin = String(name).replace(/\.[^.]+$/, '')
+  return sin || 'archivo'
+}
+
 export async function uploadDoc({ scope, scopeId, categoria, file }) {
   _validarScope(scope, scopeId, categoria)
   if (!file) throw new Error('file es requerido')
-  const safe = _sanitizarNombre(file.name)
-  const path = `${scope}/${scopeId}/${categoria}/${Date.now()}_${safe}`
+  // v16.6.0: ext desde MIME (no desde file.name); base sin extensión + sanitizado
+  const base = _sanitizarNombre(_basename(file.name))
+  const ext = _extDesdeMime(file.type)
+  const path = `${scope}/${scopeId}/${categoria}/${Date.now()}_${base}.${ext}`
   const { data, error } = await supabase.storage.from(DOCS_BUCKET).upload(path, file, {
     upsert: false,
     contentType: file.type || 'application/octet-stream',
