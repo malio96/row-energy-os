@@ -1551,7 +1551,7 @@ export async function cambiarRolUsuario(id, nuevoRol, idSolicitante) {
 // v12.5.8: Invitar usuario vía Edge Function
 // Crea usuario en tabla + envía email con magic link en UN SOLO PASO
 // ============================================================
-export async function invitarUsuarioViaEdge({ nombre, email, rol, telefono = null, capacidad_horas_semana = 40 }) {
+export async function invitarUsuarioViaEdge({ nombre, email, rol, telefono = null, capacidad_horas_semana = 40, generar_password_temporal = false }) {
   // Obtener el JWT del usuario actual (para autenticar la llamada)
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Debes estar autenticado para invitar usuarios')
@@ -1571,6 +1571,7 @@ export async function invitarUsuarioViaEdge({ nombre, email, rol, telefono = nul
       rol,
       telefono,
       capacidad_horas_semana,
+      generar_password_temporal,  // v16.7.0
     }),
   })
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
+  supabase,
   getTodosUsuarios, getClientes,
   actualizarUsuario, eliminarUsuario,
   desactivarUsuario, activarUsuario, cambiarRolUsuario,
@@ -46,6 +47,7 @@ export default function Configuracion({ usuario }) {
     ...(puedeGestionar ? [{ k:'usuarios', l:'Usuarios' }] : []),
     { k:'clientes', l:'Clientes' },
     { k:'alertas', l:'Mis alertas' },
+    { k:'cuenta', l:'Mi cuenta' },  // v16.7.0: cambio de contraseña
     { k:'sistema', l:'Sistema' },
   ]
 
@@ -76,6 +78,7 @@ export default function Configuracion({ usuario }) {
 
       {tab === 'clientes' && <TabClientes clientes={clientes}/>}
       {tab === 'alertas' && <TabMisAlertas usuario={usuario} modal={modal}/>}
+      {tab === 'cuenta' && <TabMiCuenta usuario={usuario} modal={modal}/>}
       {tab === 'sistema' && <TabSistema usuario={usuario}/>}
     </div>
   )
@@ -87,21 +90,29 @@ export default function Configuracion({ usuario }) {
 function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
 
   // v12.5.8: crear usuario con invitación automática
+  // v16.7.0: dos métodos: invitar por email o crear con password temporal
   const abrirModalCrear = async () => {
     const resultado = await modal.editor({
-      titulo: 'Invitar nuevo usuario',
-      mensaje: 'Se creará el registro en la BD y se enviará un email de invitación automáticamente. El usuario podrá iniciar sesión después de crear su contraseña desde el email.',
+      titulo: 'Nuevo usuario',
+      mensaje: 'Crea el registro en la BD. Elige cómo darle acceso: invitación por email (más seguro, el destinatario crea su password) o password temporal (instantáneo, comparte por canal seguro y pídele que la cambie).',
       icono: 'Plus',
-      textoBoton: 'Crear e invitar',
+      textoBoton: 'Crear',
       campos: [
         { key: 'nombre',   label: 'Nombre completo', tipo: 'text',   required: true, placeholder: 'Ej: Juan Pérez' },
         { key: 'email',    label: 'Email',            tipo: 'text',   required: true, placeholder: 'juan@row.energy' },
         { key: 'rol',      label: 'Rol',              tipo: 'select', required: true, defaultValue: 'ventas', opciones: OPCIONES_ROL },
         { key: 'telefono', label: 'Teléfono',         tipo: 'text',   placeholder: 'Opcional' },
         { key: 'capacidad_horas_semana', label: 'Capacidad horas/semana', tipo: 'number', defaultValue: 40 },
+        { key: 'metodo',   label: 'Método de acceso', tipo: 'select', required: true, defaultValue: 'invite_email',
+          opciones: [
+            { value: 'invite_email', label: 'Invitar por email (recomendado)' },
+            { value: 'password_temporal', label: 'Crear con password temporal' },
+          ] },
       ],
     })
     if (!resultado) return
+
+    const usarPasswordTemporal = resultado.metodo === 'password_temporal'
 
     try {
       const respuesta = await invitarUsuarioViaEdge({
@@ -110,13 +121,25 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
         rol: resultado.rol,
         telefono: resultado.telefono,
         capacidad_horas_semana: resultado.capacidad_horas_semana,
+        generar_password_temporal: usarPasswordTemporal,
       })
 
-      await modal.alert({
-        titulo: '✉️ Invitación enviada',
-        mensaje: respuesta.mensaje || `Usuario creado. Invitación enviada a ${resultado.email}.`,
-        icono: 'Check',
-      })
+      if (usarPasswordTemporal && respuesta.password_temporal) {
+        // Mostrar password una sola vez con opción de copiar
+        const pwd = respuesta.password_temporal
+        try { await navigator.clipboard?.writeText(pwd) } catch { /* no-op */ }
+        await modal.alert({
+          titulo: '🔑 Password temporal creada',
+          mensaje: `Usuario: ${resultado.email}\nPassword: ${pwd}\n\n${navigator.clipboard ? '✓ Copiada al portapapeles.\n\n' : ''}IMPORTANTE: esta password no se mostrará de nuevo. Cómprtela por canal seguro (WhatsApp, en persona) y pídele al usuario que la cambie en su primer login desde Configuración → Mi cuenta.`,
+          icono: 'Check',
+        })
+      } else {
+        await modal.alert({
+          titulo: '✉️ Invitación enviada',
+          mensaje: respuesta.mensaje || `Usuario creado. Invitación enviada a ${resultado.email}.`,
+          icono: 'Check',
+        })
+      }
       recargar()
     } catch (err) {
       await modal.alert({
@@ -520,6 +543,122 @@ function TabClientes({ clientes: clientesProp }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ============================================================
+// TAB MI CUENTA — v16.7.0
+// Permite al usuario logueado cambiar su contraseña sin pasar por
+// el flujo "Olvidé contraseña" (que requiere email).
+// ============================================================
+function TabMiCuenta({ usuario, modal }) {
+  const [actual, setActual] = useState('')
+  const [nueva, setNueva] = useState('')
+  const [confirmar, setConfirmar] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+  const [exito, setExito] = useState(false)
+
+  const cambiar = async (e) => {
+    e.preventDefault()
+    setError('')
+    setExito(false)
+
+    if (nueva.length < 12) {
+      setError('La nueva contraseña debe tener al menos 12 caracteres.')
+      return
+    }
+    if (nueva !== confirmar) {
+      setError('La nueva contraseña y su confirmación no coinciden.')
+      return
+    }
+    if (nueva === actual) {
+      setError('La nueva contraseña debe ser distinta a la actual.')
+      return
+    }
+
+    setGuardando(true)
+    try {
+      // Re-auth para verificar identidad del que está cambiando la password
+      const { error: reauthErr } = await supabase.auth.signInWithPassword({
+        email: usuario.email,
+        password: actual,
+      })
+      if (reauthErr) {
+        setError('La contraseña actual es incorrecta.')
+        setGuardando(false)
+        return
+      }
+
+      // Actualizar password
+      const { error: upErr } = await supabase.auth.updateUser({ password: nueva })
+      if (upErr) {
+        setError(upErr.message || 'No se pudo actualizar la contraseña.')
+        setGuardando(false)
+        return
+      }
+
+      // Revocar otras sesiones (mantiene solo la actual)
+      try { await supabase.auth.signOut({ scope: 'others' }) } catch { /* no-op */ }
+
+      setActual('')
+      setNueva('')
+      setConfirmar('')
+      setExito(true)
+    } catch (err) {
+      setError(err.message || String(err))
+    }
+    setGuardando(false)
+  }
+
+  const inputStyle = {
+    width:'100%', padding:'10px 12px', border:`1px solid ${COLORS.slate200}`,
+    borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box',
+  }
+  const labelStyle = {
+    fontSize:11, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase',
+    letterSpacing:'0.06em', display:'block', marginBottom:6,
+  }
+
+  return (
+    <div style={{ display:'grid', gap:16 }}>
+      {/* Info del usuario */}
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:24 }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, marginBottom:16 }}>Mis datos</h3>
+        <div style={{ display:'grid', gap:12, fontSize:13 }}>
+          <InfoRow label="Nombre" valor={usuario.nombre}/>
+          <InfoRow label="Email" valor={usuario.email}/>
+          <InfoRow label="Rol" valor={labelRol(usuario.rol)}/>
+        </div>
+      </div>
+
+      {/* Cambio de contraseña */}
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:24, maxWidth:520 }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, marginBottom:6 }}>Cambiar contraseña</h3>
+        <p style={{ fontSize:12, color:COLORS.slate500, marginBottom:18 }}>
+          Mínimo 12 caracteres. Cambiarla cerrará sesión en otros dispositivos donde estés conectado.
+        </p>
+        <form onSubmit={cambiar}>
+          <div style={{ marginBottom:14 }}>
+            <label style={labelStyle}>Contraseña actual</label>
+            <input type="password" value={actual} onChange={e => setActual(e.target.value)} required style={inputStyle} autoComplete="current-password"/>
+          </div>
+          <div style={{ marginBottom:14 }}>
+            <label style={labelStyle}>Nueva contraseña</label>
+            <input type="password" value={nueva} onChange={e => setNueva(e.target.value)} required style={inputStyle} autoComplete="new-password" placeholder="Al menos 12 caracteres"/>
+          </div>
+          <div style={{ marginBottom:14 }}>
+            <label style={labelStyle}>Confirmar nueva contraseña</label>
+            <input type="password" value={confirmar} onChange={e => setConfirmar(e.target.value)} required style={inputStyle} autoComplete="new-password"/>
+          </div>
+          {error && <div style={{ padding:10, background:COLORS.redLight, color:COLORS.red, borderRadius:8, fontSize:12, marginBottom:14 }}>⚠ {error}</div>}
+          {exito && <div style={{ padding:10, background:COLORS.successLight, color:COLORS.successInk, borderRadius:8, fontSize:12, marginBottom:14 }}>✓ Contraseña actualizada. Las otras sesiones fueron cerradas.</div>}
+          <button type="submit" disabled={guardando} style={{ padding:'10px 22px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: guardando ? 'wait' : 'pointer', opacity: guardando ? 0.7 : 1 }}>
+            {guardando ? 'Actualizando...' : 'Cambiar contraseña'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

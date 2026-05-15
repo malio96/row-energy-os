@@ -1,26 +1,24 @@
 // ============================================================
 // Edge Function: invitar-usuario
 // ============================================================
-// Crea un usuario en la tabla 'usuarios' Y envía invitación por email
-// vía Supabase Auth (inviteUserByEmail).
+// Crea un usuario en la tabla 'usuarios' Y le da acceso vía Supabase Auth
+// (dos modos: invitación por email O password temporal generada).
 //
-// v3 (2026-05-13): security hardening tras hard review
-// - CORS restringido a allowlist (app.row.energy + localhost dev)
-// - Response sanitizada (no PII en respuesta; solo {ok, message, reinvited})
-// - Email regex validation
-// - Bounds en capacidad_horas_semana
-// - Error messages internos no se exponen al cliente
+// v4 (2026-05-14): soporta password temporal
+// - generar_password_temporal:true en el body → crea auth user con password
+//   aleatoria segura (CSPRNG). Retorna la password en respuesta UNA vez al
+//   admin (no se loguea, no se guarda en BD).
+// - default sigue siendo inviteUserByEmail (más seguro porque el destinatario
+//   crea su propia password).
 //
-// v2 (2026-05): además del caso normal de crear desde cero, ahora
-// soporta el caso 'usuario huérfano' — ya existe en tabla usuarios
-// pero sin auth_id. En ese caso, solo dispara el invite y linkea.
-// Útil para usuarios precargados en la BD antes de existir en Auth.
+// v3 (2026-05-13): security hardening (CORS allowlist + PII sanitization +
+// email regex + capacidad bounds + sanitized error messages).
+//
+// v2 (2026-05): soporta usuario huérfano (existe en tabla usuarios sin
+// auth_id) — solo dispara invite y linkea auth_id sin recrear el row.
 //
 // Requiere que quien llama tenga rol 'direccion' en la tabla usuarios.
 // El service_role key vive como secret en Supabase, nunca toca el frontend.
-//
-// DEPLOY:
-//   supabase functions deploy invitar-usuario
 // ============================================================
 
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts'
@@ -42,6 +40,29 @@ function corsHeadersFor(origin: string | null) {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Vary': 'Origin',
   }
+}
+
+// v16.7.0: password temporal segura (CSPRNG). 12 chars, sin caracteres
+// ambiguos (0/O/l/1/I), garantiza 1 símbolo + mezcla.
+function generarPasswordTemporal(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  const symbols = '!@#$%&*'
+  const totalLen = 12
+  const buf = new Uint8Array(totalLen)
+  crypto.getRandomValues(buf)
+  const result: string[] = []
+  for (let i = 0; i < totalLen - 1; i++) {
+    result.push(chars[buf[i] % chars.length])
+  }
+  result.push(symbols[buf[totalLen - 1] % symbols.length])
+  // Mezclar el orden (para que el símbolo no quede siempre al final)
+  const shuffle = new Uint8Array(totalLen)
+  crypto.getRandomValues(shuffle)
+  return result
+    .map((c, i) => ({ c, k: shuffle[i] }))
+    .sort((a, b) => a.k - b.k)
+    .map(x => x.c)
+    .join('')
 }
 
 serve(async (req) => {
@@ -80,7 +101,8 @@ serve(async (req) => {
     }
 
     const body = await req.json()
-    const { nombre, email, rol, telefono, capacidad_horas_semana } = body
+    const { nombre, email, rol, telefono, capacidad_horas_semana, generar_password_temporal } = body
+    const usarPasswordTemporal = generar_password_temporal === true
 
     if (!email?.trim()) return json({ error: 'Email requerido' }, 400, cors)
     const emailLower = email.toLowerCase().trim()
@@ -88,11 +110,9 @@ serve(async (req) => {
 
     const ROLES_VALIDOS = ['direccion', 'admin', 'director_proyectos', 'ventas', 'cobranza', 'equipo_proyectos']
 
-    // Bounds en capacidad: entero entre 1 y 168 (horas en una semana)
     const capRaw = parseInt(String(capacidad_horas_semana ?? ''), 10)
     const capacidad = Number.isFinite(capRaw) ? Math.min(Math.max(capRaw, 1), 168) : 40
 
-    // Check if user already exists in usuarios table
     const { data: existente } = await supabaseAdmin
       .from('usuarios')
       .select('id, auth_id, nombre, rol')
@@ -106,10 +126,8 @@ serve(async (req) => {
       if (existente.auth_id) {
         return json({ error: `Ya existe un usuario con auth activo para ${emailLower}` }, 409, cors)
       }
-      // Huérfano — solo necesita auth + invite
       usuarioRow = existente
     } else {
-      // Caso normal: crear desde cero — requiere nombre+rol
       if (!nombre?.trim()) return json({ error: 'Nombre requerido' }, 400, cors)
       if (!rol) return json({ error: 'Rol requerido' }, 400, cors)
       if (!ROLES_VALIDOS.includes(rol)) {
@@ -137,7 +155,46 @@ serve(async (req) => {
       creadoAhora = true
     }
 
-    // Enviar invitación por email vía Auth
+    // ============================================================
+    // CASO 1: Crear con password temporal (v16.7.0)
+    // ============================================================
+    if (usarPasswordTemporal) {
+      const passwordTemporal = generarPasswordTemporal()
+      const { data: authData, error: errorCreate } = await supabaseAdmin.auth.admin.createUser({
+        email: emailLower,
+        password: passwordTemporal,
+        email_confirm: true,  // marca como verificado (no requiere click en email)
+        user_metadata: {
+          nombre: usuarioRow.nombre,
+          rol: usuarioRow.rol,
+        },
+      })
+
+      if (errorCreate) {
+        console.error('Error creando auth user:', errorCreate)
+        // Rollback: si recién creamos el row en usuarios, removerlo para no dejar huérfano
+        if (creadoAhora) await supabaseAdmin.from('usuarios').delete().eq('id', usuarioRow.id)
+        return json({ error: 'No se pudo crear el acceso. Reintenta en unos minutos.' }, 500, cors)
+      }
+
+      if (authData?.user?.id) {
+        await supabaseAdmin
+          .from('usuarios')
+          .update({ auth_id: authData.user.id })
+          .eq('id', usuarioRow.id)
+      }
+
+      return json({
+        ok: true,
+        modo: 'password_temporal',
+        password_temporal: passwordTemporal,
+        mensaje: `Acceso creado para ${emailLower}. Comparte la contraseña temporal por canal seguro (WhatsApp, en persona). Recomienda al usuario cambiarla en su primer login desde Configuración.`,
+      }, 200, cors)
+    }
+
+    // ============================================================
+    // CASO 2 (default): Invitar por email
+    // ============================================================
     const { data: invitacion, error: errorInvite } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       emailLower,
       {
@@ -161,9 +218,9 @@ serve(async (req) => {
         .eq('id', usuarioRow.id)
     }
 
-    // Response mínima: no devolvemos el objeto usuario para evitar leakage de PII
     return json({
       ok: true,
+      modo: 'invite_email',
       reinvited: !creadoAhora,
       mensaje: creadoAhora
         ? 'Invitación enviada. El destinatario recibirá un email para crear su contraseña.'
