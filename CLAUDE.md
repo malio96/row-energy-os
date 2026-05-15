@@ -22,7 +22,47 @@
 
 ## 🎯 Versión actual en producción
 
-**v16.6.0** — Estado actual en producción (14 may 2026). **Security hardening playbook aplicado** (auditoría tipo hacker portada de row-energy-construction): privilege escalation cerrada, Turnstile preparado, uploadDoc reforzado.
+**v16.7.0** — Estado actual en producción (14 may 2026). **Onboarding y self-service de contraseñas completo**: crear usuarios con password temporal + cambio de contraseña en Configuración → Mi cuenta. Site URL de Auth corregida (bug de reset password resuelto).
+
+## 🔑 v16.7.0 — Password temporal + Mi cuenta (entregado)
+
+### Crear usuario con password temporal (Configuración → Usuarios)
+
+El flujo de invitación por email seguía siendo el default, pero faltaba un fallback rápido para cuando:
+- El email no llega (spam, bloqueo del servidor del destinatario)
+- El admin quiere darle acceso inmediato sin esperar email
+- El user no maneja bien email y necesita "aquí está tu password, cámbiala después"
+
+Modal "Nuevo usuario" ahora tiene campo "Método de acceso" con 2 opciones:
+- **Invitar por email** (default, más seguro): el destinatario crea su propia password
+- **Crear con password temporal**: admin recibe la password, la copia al portapapeles automáticamente, comparte por canal seguro
+
+Password generada en edge function con CSPRNG (`crypto.getRandomValues`), 12 chars, sin caracteres ambiguos (`0/O/l/1/I`), garantiza 1 símbolo. Se muestra una vez al admin (no se loguea, no se guarda en BD).
+
+Edge function `invitar-usuario` v4 acepta `generar_password_temporal:true` en body. Si true, usa `auth.admin.createUser({password, email_confirm:true})` en lugar de `inviteUserByEmail`. Default sigue siendo invite.
+
+### Cambio de contraseña self-service (Configuración → Mi cuenta — nuevo tab)
+
+Disponible para **todos los roles**. Antes solo se podía cambiar la password via "Olvidé contraseña" desde el login (requiere email). Ahora cualquier usuario logueado puede ir a Configuración → Mi cuenta y cambiarla en el sitio.
+
+Form: password actual + nueva + confirmar. Validaciones:
+- Min 12 caracteres (alineado con HIGH-3 del Security Hardening Playbook)
+- Nueva debe ser distinta a la actual
+- Confirmar debe matchear
+
+Flujo:
+1. Re-auth con `signInWithPassword(email, actual)` para verificar identidad
+2. `updateUser({password: nueva})` aplica el cambio
+3. `signOut({scope:'others'})` cierra cualquier otra sesión activa del usuario (defensa contra session hijacking)
+
+El tab también muestra los datos del usuario (nombre, email, rol) como referencia.
+
+### Fix manual aplicado por Malio (14 may)
+
+- ✅ **Site URL** de Supabase Auth corregida a `https://app.row.energy` (antes apuntaba a `localhost:3000`, causaba "No se puede acceder a este sitio" al hacer click en email de reset password).
+- ✅ **Redirect URLs** agregadas: `https://app.row.energy/**` + `https://app.row.energy/reset-password`.
+
+Esto desbloquea el flow "Olvidé contraseña" del login (que existe desde v15.10.0 pero no funcionaba sin esta config).
 
 ## 🛡️ v16.6.0 — Security hardening playbook (entregado)
 
@@ -40,7 +80,7 @@ Auditoría externa (playbook en `../row-energy-construction/docs/SECURITY_HARDEN
 
 - **CRIT-2 (cron functions anónimas)**: no hay cron functions en Row Energy OS. `invitar-usuario` ya valida JWT desde v16.2.0.
 - **HIGH-2 (CORS wildcard)**: cerrado en v16.2.0.
-- **HIGH-3 (Auth defaults Dashboard)**: pendiente manual de Malio (Site URL, Disable signups, Min password 12, Required chars, Leaked password protection, JWT expiry 1800s).
+- **HIGH-3 (Auth defaults Dashboard)**: parcialmente hecho (Site URL + Redirect URLs aplicados 14 may). Pendientes: Disable signups, Min password 12, Required chars (lower+upper+digit+symbol), Leaked password protection (HIBP, requiere Pro), JWT expiry 1800s.
 
 ### Diferido (documentado)
 
@@ -325,6 +365,7 @@ Causa raíz: el local estaba en `e4393ae` (commit del 10 may), Malio commiteó/p
 3. **v16.4.0 — Hard review fixes (MEDIUM)**: validación RFC client + server + `crearCliente` centralizada + `capacidad_horas_semana` bounds frontend + 6 helpers de permisos centralizados (migrados callsites en 6 módulos) + N+1 en `crearProyectoDesdePlantilla` paralelizado.
 4. **v16.5.0 — Hard review fixes (LOW)**: LoadingState/EmptyState consistentes en 3 módulos + 5 colores nuevos en COLORS (`amberBorder`, `amberInk`, `amberSemaforo`, `successLight`, `successInk`) + migrados hex hardcoded + feedback visible en catch silencioso del Workflow + `ModalShell` helper en helpers.jsx + `MS_PER_DAY` constante (6 usos) + upload paralelo con `Promise.allSettled`.
 5. **v16.6.0 — Security hardening playbook (3 ítems)**: Policy `usuarios_update` extendida (bloquea cambios a rol/activo/email/auth_id en self-update) + Cloudflare Turnstile preparado en modo dormido (activación manual pendiente) + `uploadDoc` deriva extensión del MIME en lugar del nombre cliente.
+6. **v16.7.0 — Password temporal + Mi cuenta**: edge function `invitar-usuario` v4 con flag `generar_password_temporal` opcional (CSPRNG 12 chars) + UI método de acceso en modal Nuevo usuario + tab "Mi cuenta" en Configuración para cambio de contraseña self-service (re-auth + signOut scope:others) + Site URL / Redirect URLs de Supabase Auth aplicadas manualmente.
 
 ### 📝 Hard review v16.1.4 — CERRADO
 
@@ -336,8 +377,8 @@ Causa raíz: el local estaba en `e4393ae` (commit del 10 may), Malio commiteó/p
 ### ⚠️ Pendientes de acción del usuario (NO se pueden hacer vía MCP)
 
 **Auth Dashboard Supabase (5 min):**
-- [ ] Site URL: `https://app.row.energy`
-- [ ] Redirect URLs: agregar `https://app.row.energy/reset-password`
+- [x] Site URL: `https://app.row.energy` ← hecho 14 may
+- [x] Redirect URLs: agregar `https://app.row.energy/**` y `https://app.row.energy/reset-password` ← hecho 14 may
 - [ ] Disable signups (solo invitación)
 - [ ] Min password length: 12
 - [ ] Required chars: lower + upper + digit + symbol
@@ -476,8 +517,8 @@ Headers HTTP: CSP estricto (con `connect-src` para Supabase REST + Realtime wss:
 
 **Dashboard Supabase → Authentication → Sign In / Up:**
 - [ ] Disable signups (toggle OFF "Allow new users to sign up") — solo invitación vía Edge Function `invitar-usuario`.
-- [ ] Site URL: `https://app.row.energy`
-- [ ] Redirect URLs: agregar solo `https://app.row.energy/**`
+- [x] Site URL: `https://app.row.energy` ← hecho 14 may
+- [x] Redirect URLs: `https://app.row.energy/**` ← hecho 14 may
 
 **Dashboard Supabase → Authentication → Policies / Password:**
 - [ ] Min password length: **12** (default es 6)
