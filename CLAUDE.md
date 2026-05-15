@@ -20,6 +20,24 @@
 - **Deploy:** Vercel
 - **Sistema de diseño:** estilo "Klar" — minimalista, mucho espacio en blanco, tipografía serif para titulares (`var(--font-serif)`) y sans-serif para cuerpo
 
+## 🔔 PENDIENTE PARA PRÓXIMA SESIÓN — RECORDARLE A MALIO
+
+**Auth Dashboard toggles** (no se pudieron hacer 14 may porque el MCP de Supabase no expone Auth config admin — solo dashboard manual o Management API con PAT). Malio decidió dejarlo para próxima sesión.
+
+Pasos exactos para que se hagan al arrancar la siguiente sesión:
+
+**Opción A (rápida, segura): clicks en dashboard, ~5 min**
+1. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/providers → Email → toggle "Allow new users to sign up" **OFF** (disable signups)
+2. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/policies → Password requirements → Min length **12** + Required chars: **"Lowercase, uppercase letters, digits, and symbols"**
+3. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/policies → **Leaked password protection** → toggle ON (si plan ya es Pro; si no, omitir)
+4. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/sessions → JWT expiry limit **3600 → 1800**
+
+**Opción B (Malio quiere "yo nada"): le pide a Claude que arme `scripts/setup-auth.sh` con Management API**. Malio crea Personal Access Token en https://supabase.com/dashboard/account/tokens, corre el script local con `SUPABASE_ACCESS_TOKEN=sbp_xxx bash scripts/setup-auth.sh`. Token nunca sale de su máquina.
+
+Al iniciar próxima sesión: **mencionar este pendiente proactivamente** apenas vea esto.
+
+---
+
 ## 🎯 Versión actual en producción
 
 **v16.7.0** — Estado actual en producción (14 may 2026). **Onboarding y self-service de contraseñas completo**: crear usuarios con password temporal + cambio de contraseña en Configuración → Mi cuenta. Site URL de Auth corregida (bug de reset password resuelto).
