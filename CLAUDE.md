@@ -57,12 +57,13 @@ Flujo:
 
 El tab también muestra los datos del usuario (nombre, email, rol) como referencia.
 
-### Fix manual aplicado por Malio (14 may)
+### Fix manual aplicado por Malio (14 may) — VERIFICADO FUNCIONANDO
 
 - ✅ **Site URL** de Supabase Auth corregida a `https://app.row.energy` (antes apuntaba a `localhost:3000`, causaba "No se puede acceder a este sitio" al hacer click en email de reset password).
 - ✅ **Redirect URLs** agregadas: `https://app.row.energy/**` + `https://app.row.energy/reset-password`.
+- ✅ Flow end-to-end probado y funcionando: Login → "¿Olvidaste tu contraseña?" → email llega con link a `app.row.energy/reset-password` → pantalla de cambio de password carga correctamente.
 
-Esto desbloquea el flow "Olvidé contraseña" del login (que existe desde v15.10.0 pero no funcionaba sin esta config).
+Esto desbloquea el flow "Olvidé contraseña" del login (que existía desde v15.10.0 pero no funcionaba sin esta config).
 
 ## 🛡️ v16.6.0 — Security hardening playbook (entregado)
 
