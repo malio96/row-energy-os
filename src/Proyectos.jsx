@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 // v15.2: exportGantt se importa dinámicamente al hacer click (jspdf+exceljs son ~1.4MB)
 import {
   supabase, getProyectos, getProyectoConActividades, getUsuarios, getClientes,
@@ -2180,32 +2180,59 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
             </select>
           )}
           {esRoot && <Badge texto={act.estado} mapa={ESTADOS}/>}
+          <button onClick={() => setCreandoBajo(act.id)} title="Agregar sub-actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.teal, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Plus/></button>
           <button onClick={() => onAbrirInfo(act)} title="Información" style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}><Icon.Info/></button>
           {esRoot && act.es_servicio_padre && <button onClick={() => onDesglosar(act)} title="Desglosar con plantilla" style={{ padding:'5px 10px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>⚖ Desglosar</button>}
           <button onClick={() => onEliminar?.(act)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
         </div>
 
-        {/* Renderizar hijos recursivamente */}
-        {hijos.map(h => renderFila(h, nivel + 1))}
-
-        {/* v16.1.2: botón "+ sub-actividad" para CADA actividad (no solo root).
-            Permite sub-sub-actividades y más profundidad. */}
-        {creandoBajo === act.id ? (
-          <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, borderLeft:`1px solid ${COLORS.slate100}`, borderRight:`1px solid ${COLORS.slate100}`, borderBottom:`1px solid ${COLORS.slate100}`, marginLeft: nivel * 20, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
-            <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearBajo(act.id)} autoFocus placeholder="Nombre de la sub-actividad..." style={{...inputStyle, flex:1}}/>
+        {/* Input inline al hacer clic en el botón "+" de la fila */}
+        {creandoBajo === act.id && (
+          <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, border:`1px solid ${COLORS.slate100}`, borderTop:'none', marginLeft: nivel * 20, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
+            <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') crearBajo(act.id); if (e.key === 'Escape') { setCreandoBajo(null); setNombreNueva('') } }} autoFocus placeholder={`Sub-actividad de "${act.nombre.slice(0,40)}"...`} style={{...inputStyle, flex:1}}/>
             <button onClick={() => crearBajo(act.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px'}}>{creando ? '...' : 'Crear'}</button>
             <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
           </div>
-        ) : (
-          <div onClick={() => setCreandoBajo(act.id)} style={{ padding:'8px 16px', background:COLORS.slate50, borderLeft:`1px dashed ${COLORS.slate200}`, borderRight:`1px dashed ${COLORS.slate200}`, borderBottom:`1px dashed ${COLORS.slate200}`, marginLeft: nivel * 20, fontSize:11, color:COLORS.slate500, cursor:'pointer', display:'flex', alignItems:'center', gap:6, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
-            <Icon.Plus/> Agregar sub-actividad a "{act.nombre}"
-          </div>
         )}
+
+        {/* Renderizar hijos recursivamente */}
+        {hijos.map(h => renderFila(h, nivel + 1))}
       </div>
     )
   }
 
   const roots = actividades.filter(a => !a.parent_id).sort((a,b) => (a.numero||0) - (b.numero||0))
+
+  // Agrupar roots por fase (grupos de Monday). Si dos roots consecutivos
+  // tienen distinta fase, insertar un header de grupo entre ellos.
+  const renderConGrupos = () => {
+    const out = []
+    let faseActual = '__INIT__'
+    roots.forEach((root, idx) => {
+      const fase = (root.fase || '').trim()
+      if (fase && fase !== faseActual) {
+        // Contar cuántas actividades pertenecen a este grupo
+        const rootsDelGrupo = roots.filter(r => (r.fase || '').trim() === fase)
+        const totalEnGrupo = rootsDelGrupo.reduce((s, r) => {
+          const hijos = actividades.filter(a => a.parent_id === r.id).length
+          return s + 1 + hijos
+        }, 0)
+        out.push(
+          <div key={`grupo-${idx}-${fase}`} style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 4px 8px', marginTop: faseActual === '__INIT__' ? 0 : 12 }}>
+            <span style={{ width:8, height:8, borderRadius:4, background:COLORS.teal, flexShrink:0 }}/>
+            <span style={{ fontSize:13, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{fase}</span>
+            <span style={{ fontSize:11, color:COLORS.slate400, fontWeight:500 }}>· {rootsDelGrupo.length} {rootsDelGrupo.length === 1 ? 'tarea' : 'tareas'}{totalEnGrupo > rootsDelGrupo.length ? ` (+${totalEnGrupo - rootsDelGrupo.length} sub)` : ''}</span>
+            <div style={{ flex:1, height:1, background:COLORS.slate100 }}/>
+          </div>
+        )
+        faseActual = fase
+      } else if (!fase) {
+        faseActual = '__INIT__'
+      }
+      out.push(renderFila(root, 0))
+    })
+    return out
+  }
 
   return (
     <div>
@@ -2213,7 +2240,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
         <div style={{ ...cardStyle, textAlign:'center', color:COLORS.slate400, padding:40 }}>
           Sin actividades aún. Usa el Gantt para agregar la primera.
         </div>
-      ) : roots.map(root => renderFila(root, 0))}
+      ) : renderConGrupos()}
       <div style={{ marginTop:20 }}>
         {creandoBajo === 'root' ? (
           <div style={{ display:'flex', gap:8, padding:'12px 16px', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10 }}>
@@ -4044,7 +4071,19 @@ export default function Proyectos({ usuario }) {
   const [deepLinkActividadId, setDeepLinkActividadId] = useState(null)
   const [modalNuevo, setModalNuevo] = useState(false)
   const [filtro, setFiltro] = useState('Activos')
+  const [filtroTipo, setFiltroTipo] = useState('Todos')
   const [busqueda, setBusqueda] = useState('')
+  const location = useLocation()
+
+  // Click en sidebar "Proyectos" estando dentro de un DetalleProyecto debe
+  // regresar a la lista. React Router cambia location.key incluso al navegar
+  // al mismo path, así que escuchamos eso para resetear el state local.
+  useEffect(() => {
+    if (!location.search) {
+      setProyectoSel(null)
+      setDeepLinkActividadId(null)
+    }
+  }, [location.key])
   const [duplicando, setDuplicando] = useState(false) // v12
   const isMobile = useIsMobile()
 
@@ -4090,12 +4129,13 @@ export default function Proyectos({ usuario }) {
     let r = proyectos
     if (filtro === 'Activos') r = r.filter(p => ['Por iniciar', 'En curso', 'En pausa'].includes(p.estado))
     else if (filtro === 'Terminados') r = r.filter(p => ['Terminado', 'Cancelado'].includes(p.estado))
+    if (filtroTipo !== 'Todos') r = r.filter(p => p.tipo_proyecto === filtroTipo)
     if (busqueda.trim()) {
       const q = busqueda.toLowerCase()
       r = r.filter(p => p.nombre?.toLowerCase().includes(q) || p.cliente?.razon_social?.toLowerCase().includes(q) || p.codigo?.toLowerCase().includes(q))
     }
     return r
-  }, [proyectos, filtro, busqueda])
+  }, [proyectos, filtro, filtroTipo, busqueda])
 
   if (proyectoSel) return <DetalleProyecto proyectoId={proyectoSel} actividadInicialId={deepLinkActividadId} onVolver={() => { setProyectoSel(null); setDeepLinkActividadId(null); cargar() }} usuarioActual={usuario}/>
 
@@ -4116,6 +4156,11 @@ export default function Proyectos({ usuario }) {
         <div style={{ display:'flex', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10, padding:2 }}>
           {['Activos', 'Terminados', 'Todos'].map(f => (
             <button key={f} onClick={() => setFiltro(f)} style={{ padding:'7px 14px', border:'none', background: filtro === f ? COLORS.navy : 'transparent', color: filtro === f ? 'white' : COLORS.slate600, borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer' }}>{f}</button>
+          ))}
+        </div>
+        <div style={{ display:'flex', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10, padding:2 }}>
+          {['Todos', 'Interconexión', 'Conexión', 'Almacenamiento', 'Estudios Eléctricos'].map(t => (
+            <button key={t} onClick={() => setFiltroTipo(t)} style={{ padding:'7px 12px', border:'none', background: filtroTipo === t ? COLORS.teal : 'transparent', color: filtroTipo === t ? 'white' : COLORS.slate600, borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>{t}</button>
           ))}
         </div>
         <div style={{ flex:1, minWidth:200, position:'relative' }}>
