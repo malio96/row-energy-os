@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 // v15.2: exportGantt se importa dinámicamente al hacer click (jspdf+exceljs son ~1.4MB)
 import {
@@ -2063,16 +2063,45 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
   )
 }
 
-// v16.1.2: TabActividades refactorizado a render recursivo para soportar
-// profundidad ilimitada de jerarquía. Antes estaba limitado a 2 niveles
-// (padre→hijo). Ahora cada actividad tiene su propio botón "+ sub-actividad"
-// debajo, permitiendo sub-sub-actividades y más allá.
+// v16.9.0: TabActividades rediseñado como CSS Grid de 9 columnas con
+// collapse/expand, header sticky e indent en celda Nombre. Antes la lista
+// crecía vertical sin estructura; con 7,252 actividades post-migración
+// Monday era inmanejable.
 function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, puedeEditarPeso }) {
   const [nombreNueva, setNombreNueva] = useState('')
   const [creandoBajo, setCreandoBajo] = useState(null)
   const [creando, setCreando] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => new Set())
 
-  const getNivel = id => (numeracion[id] || '').split('.').length - 1
+  const GRID_COLS = '32px 28px 1fr 90px 90px 60px 140px 120px auto'
+
+  const childrenMap = useMemo(() => {
+    const m = new Map()
+    for (const a of actividades) {
+      const pid = a.parent_id || 'ROOT'
+      if (!m.has(pid)) m.set(pid, [])
+      m.get(pid).push(a)
+    }
+    for (const arr of m.values()) arr.sort((x, y) => (x.numero || 0) - (y.numero || 0))
+    return m
+  }, [actividades])
+
+  const avanceMap = useMemo(() => {
+    const m = new Map()
+    for (const a of actividades) {
+      const hijos = childrenMap.get(a.id) || []
+      m.set(a.id, hijos.length > 0 ? calcularAvancePonderado(actividades, a.id) : (a.avance || 0))
+    }
+    return m
+  }, [actividades, childrenMap])
+
+  const toggleCollapse = (id) => {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   const crearBajo = async (parentId) => {
     if (!nombreNueva.trim()) return
@@ -2084,154 +2113,48 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
     setCreando(false)
   }
 
-  // Render recursivo: cada nodo se pinta con su indent + botón "+ sub-actividad" debajo
-  const renderFila = (act, nivel) => {
-    const hijos = actividades.filter(a => a.parent_id === act.id).sort((a,b) => (a.numero||0) - (b.numero||0))
-    const tieneHijos = hijos.length > 0
-    const esRoot = nivel === 0
-    const padreAvance = tieneHijos ? calcularAvancePonderado(actividades, act.id) : (act.avance||0)
-    const sumaPesos = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
-    const sumaOk = sumaPesos === 0 || sumaPesos === 100
-    const depsCount = (act.deps || []).length
-
-    // Estilo del header de root vs sub-actividades
-    const headerRoot = {
-      background: 'linear-gradient(to right, #F8FAFC, white)',
-      padding: '12px 16px',
-      border: `1px solid ${COLORS.slate100}`,
-      borderRadius: 10,
-      marginBottom: 2,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 10,
+  const filasPlanas = useMemo(() => {
+    const out = []
+    const visit = (parentKey, nivel) => {
+      const hijos = childrenMap.get(parentKey) || []
+      for (const h of hijos) {
+        const sub = childrenMap.get(h.id) || []
+        out.push({ act: h, nivel, tieneHijos: sub.length > 0 })
+        if (sub.length > 0 && !collapsed.has(h.id)) visit(h.id, nivel + 1)
+      }
     }
-    const headerSub = {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 10,
-      padding: '10px 16px',
-      background: 'white',
-      border: `1px solid ${COLORS.slate100}`,
-      borderTop: 'none',
-      paddingLeft: 16 + nivel * 20,
-    }
+    visit('ROOT', 0)
+    return out
+  }, [childrenMap, collapsed])
 
-    return (
-      <div key={act.id} style={esRoot ? { marginBottom: 16 } : {}}>
-        <div
-          onContextMenu={(e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }}
-          style={esRoot ? headerRoot : headerSub}
-        >
-          {!esRoot && (
-            <div onClick={() => onToggle(act)} style={{ width:18, height:18, borderRadius:5, border:`1.5px solid ${act.completada?COLORS.teal:'#CBD5E1'}`, background:act.completada?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'white', flexShrink:0 }}>
-              {act.completada && <Icon.Check/>}
-            </div>
-          )}
-          <span style={{ fontSize:esRoot?11:10, fontFamily:'var(--font-mono)', color:esRoot?COLORS.navy:COLORS.slate400, fontWeight:esRoot?700:500, minWidth:esRoot?24:36 }}>{numeracion[act.id]}</span>
-          {act.es_milestone && <span style={{ color:COLORS.navy }}><Icon.Diamond/></span>}
-          {!esRoot && <BadgeImportancia importancia={act.importancia} tamano="mini"/>}
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ fontSize:esRoot?14:13, fontWeight:esRoot?600:400, color:esRoot?COLORS.navy:COLORS.ink, fontFamily:'var(--font-sans)' }}>
-                <EditableText value={act.nombre} onSave={v => onInlineUpdate(act.id, { nombre: v })} style={{ fontSize:esRoot?14:13, fontWeight:esRoot?600:400, color:esRoot?COLORS.navy:COLORS.ink, fontFamily:'var(--font-sans)' }}/>
-              </span>
-              {!esRoot && depsCount > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:3, background:COLORS.tealLight, color:COLORS.teal, padding:'2px 7px', borderRadius:10, fontSize:10, fontWeight:700 }}><Icon.Link/>{depsCount}</span>}
-              {!esRoot && act.es_cobrable && (
-                <span title={`Cobrable: ${act.estado_cobro || 'Pendiente'}`} style={{ display:'inline-flex', alignItems:'center', gap:3, background: ESTADOS_COBRO[act.estado_cobro]?.bg || '#E1F5EE', color: ESTADOS_COBRO[act.estado_cobro]?.color || '#0F6E56', padding:'2px 7px', borderRadius:4, fontSize:10, fontWeight:700 }}>
-                  $ {ESTADOS_COBRO[act.estado_cobro]?.label || 'cobrable'}
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
-              {fmtDate(act.inicio)} → {fmtDate(act.fin)}
-              {esRoot
-                ? ` · ${hijos.length} ${hijos.length === 1 ? 'sub-actividad' : 'sub-actividades'}`
-                : ` · ${diffDays(act.inicio, act.fin) + 1}d`}
-              {esRoot && tieneHijos && sumaPesos > 0 && (
-                <span style={{ marginLeft:10, padding:'1px 7px', borderRadius:4, background: sumaOk ? '#E1F5EE' : '#FEF2F2', color: sumaOk ? '#0F6E56' : '#DC2626', fontWeight:700 }}>
-                  pesos: {sumaPesos}%{!sumaOk && ' ⚠'}
-                </span>
-              )}
-            </div>
-          </div>
-          {esRoot && <BadgeImportancia importancia={act.importancia} tamano="normal"/>}
-          {puedeEditarPeso && !esRoot && (
-            <>
-              <div title="Peso ponderado (avance del proyecto)" style={{ display:'flex', alignItems:'center', gap:2 }}>
-                <input type="number" min="0" max="100" step="1" value={act.peso || 0}
-                  onChange={e => { const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); onInlineUpdate(act.id, { peso: v }) }}
-                  onClick={e => e.stopPropagation()}
-                  style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.peso || 0) > 0 ? COLORS.navy : COLORS.slate400, background: 'white' }}/>
-                <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>%</span>
-              </div>
-              <div title="Horas estimadas — afecta el cálculo de carga del responsable. 0 = auto (días×2h)." style={{ display:'flex', alignItems:'center', gap:2 }}>
-                <input type="number" min="0" step="1" value={act.horas_estimadas || 0}
-                  onChange={e => { const v = Math.max(0, parseInt(e.target.value) || 0); onInlineUpdate(act.id, { horas_estimadas: v }) }}
-                  onClick={e => e.stopPropagation()}
-                  style={{ width:42, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.horas_estimadas || 0) > 0 ? COLORS.teal : COLORS.slate400, background: 'white' }}/>
-                <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:700 }}>h</span>
-              </div>
-            </>
-          )}
-          <div style={{ width: esRoot ? 140 : undefined }}><BarraAvance avance={esRoot ? padreAvance : act.avance}/></div>
-          {!esRoot && (
-            <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} style={{ padding:'4px 8px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[act.estado]?.bg, color: ESTADOS[act.estado]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
-              {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
-            </select>
-          )}
-          {esRoot && <Badge texto={act.estado} mapa={ESTADOS}/>}
-          <button onClick={() => setCreandoBajo(act.id)} title="Agregar sub-actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.teal, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Plus/></button>
-          <button onClick={() => onAbrirInfo(act)} title="Información" style={{ padding:'5px 10px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}><Icon.Info/></button>
-          {esRoot && act.es_servicio_padre && <button onClick={() => onDesglosar(act)} title="Desglosar con plantilla" style={{ padding:'5px 10px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer' }}>⚖ Desglosar</button>}
-          <button onClick={() => onEliminar?.(act)} title="Eliminar actividad" style={{ padding:'5px 9px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
-        </div>
+  const roots = childrenMap.get('ROOT') || []
 
-        {/* Input inline al hacer clic en el botón "+" de la fila */}
-        {creandoBajo === act.id && (
-          <div style={{ display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, border:`1px solid ${COLORS.slate100}`, borderTop:'none', marginLeft: nivel * 20, ...(esRoot ? { borderBottomLeftRadius:10, borderBottomRightRadius:10 } : {}) }}>
-            <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') crearBajo(act.id); if (e.key === 'Escape') { setCreandoBajo(null); setNombreNueva('') } }} autoFocus placeholder={`Sub-actividad de "${act.nombre.slice(0,40)}"...`} style={{...inputStyle, flex:1}}/>
-            <button onClick={() => crearBajo(act.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px'}}>{creando ? '...' : 'Crear'}</button>
-            <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
-          </div>
-        )}
-
-        {/* Renderizar hijos recursivamente */}
-        {hijos.map(h => renderFila(h, nivel + 1))}
-      </div>
-    )
-  }
-
-  const roots = actividades.filter(a => !a.parent_id).sort((a,b) => (a.numero||0) - (b.numero||0))
-
-  // Agrupar roots por fase (grupos de Monday). Si dos roots consecutivos
-  // tienen distinta fase, insertar un header de grupo entre ellos.
-  const renderConGrupos = () => {
+  const filasConGrupos = useMemo(() => {
     const out = []
     let faseActual = '__INIT__'
-    roots.forEach((root, idx) => {
-      const fase = (root.fase || '').trim()
-      if (fase && fase !== faseActual) {
-        // Contar cuántas actividades pertenecen a este grupo
-        const rootsDelGrupo = roots.filter(r => (r.fase || '').trim() === fase)
-        const totalEnGrupo = rootsDelGrupo.reduce((s, r) => {
-          const hijos = actividades.filter(a => a.parent_id === r.id).length
-          return s + 1 + hijos
-        }, 0)
-        out.push(
-          <div key={`grupo-${idx}-${fase}`} style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 4px 8px', marginTop: faseActual === '__INIT__' ? 0 : 12 }}>
-            <span style={{ width:8, height:8, borderRadius:4, background:COLORS.teal, flexShrink:0 }}/>
-            <span style={{ fontSize:13, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{fase}</span>
-            <span style={{ fontSize:11, color:COLORS.slate400, fontWeight:500 }}>· {rootsDelGrupo.length} {rootsDelGrupo.length === 1 ? 'tarea' : 'tareas'}{totalEnGrupo > rootsDelGrupo.length ? ` (+${totalEnGrupo - rootsDelGrupo.length} sub)` : ''}</span>
-            <div style={{ flex:1, height:1, background:COLORS.slate100 }}/>
-          </div>
-        )
-        faseActual = fase
-      } else if (!fase) {
-        faseActual = '__INIT__'
+    for (const fila of filasPlanas) {
+      if (fila.nivel === 0) {
+        const fase = (fila.act.fase || '').trim()
+        if (fase && fase !== faseActual) {
+          const rootsDelGrupo = roots.filter(r => (r.fase || '').trim() === fase)
+          const totalEnGrupo = rootsDelGrupo.reduce((s, r) => s + 1 + (childrenMap.get(r.id) || []).length, 0)
+          out.push({ tipoGrupo: true, fase, rootsCount: rootsDelGrupo.length, totalEnGrupo, key: `g-${fase}` })
+          faseActual = fase
+        } else if (!fase) {
+          faseActual = '__INIT__'
+        }
       }
-      out.push(renderFila(root, 0))
-    })
+      out.push(fila)
+    }
     return out
+  }, [filasPlanas, roots, childrenMap])
+
+  const colHead = {
+    fontSize: 10, fontWeight: 700, color: COLORS.slate500,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    padding: '12px 8px', borderBottom: `1.5px solid ${COLORS.slate200}`,
+    background: 'white', position: 'sticky', top: 0, zIndex: 2,
+    fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center',
   }
 
   return (
@@ -2240,8 +2163,140 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
         <div style={{ ...cardStyle, textAlign:'center', color:COLORS.slate400, padding:40 }}>
           Sin actividades aún. Usa el Gantt para agregar la primera.
         </div>
-      ) : renderConGrupos()}
-      <div style={{ marginTop:20 }}>
+      ) : (
+        <div style={{ display:'grid', gridTemplateColumns: GRID_COLS, border:`1px solid ${COLORS.slate100}`, borderRadius:10, overflow:'hidden', background:'white' }}>
+          {/* Header sticky */}
+          <div style={{ ...colHead, justifyContent:'center' }}></div>
+          <div style={{ ...colHead, justifyContent:'flex-end', paddingRight:6 }}>#</div>
+          <div style={colHead}>Nombre</div>
+          <div style={colHead}>Inicio</div>
+          <div style={colHead}>Fin</div>
+          <div style={{ ...colHead, justifyContent:'center' }}>Dur</div>
+          <div style={{ ...colHead, justifyContent:'center' }}>Avance</div>
+          <div style={colHead}>Estado</div>
+          <div style={{ ...colHead, justifyContent:'flex-end' }}>Acciones</div>
+
+          {filasConGrupos.map((row, idx) => {
+            if (row.tipoGrupo) {
+              return (
+                <div key={row.key} style={{ gridColumn:'1 / -1', display:'flex', alignItems:'center', gap:10, padding:'14px 16px 8px', background:COLORS.slate50, borderTop: idx === 0 ? 'none' : `1px solid ${COLORS.slate100}` }}>
+                  <span style={{ width:8, height:8, borderRadius:4, background:COLORS.teal, flexShrink:0 }}/>
+                  <span style={{ fontSize:13, fontWeight:700, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{row.fase}</span>
+                  <span style={{ fontSize:11, color:COLORS.slate400, fontWeight:500 }}>· {row.rootsCount} {row.rootsCount === 1 ? 'tarea' : 'tareas'}{row.totalEnGrupo > row.rootsCount ? ` (+${row.totalEnGrupo - row.rootsCount} sub)` : ''}</span>
+                  <div style={{ flex:1, height:1, background:COLORS.slate100 }}/>
+                </div>
+              )
+            }
+            const { act, nivel, tieneHijos } = row
+            const esRoot = nivel === 0
+            const hijos = childrenMap.get(act.id) || []
+            const sumaPesos = hijos.reduce((s, h) => s + Number(h.peso || 0), 0)
+            const sumaOk = sumaPesos === 0 || sumaPesos === 100
+            const depsCount = (act.deps || []).length
+            const dur = (act.inicio && act.fin) ? `${diffDays(act.inicio, act.fin) + 1}d` : '—'
+            const onCtx = (e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }
+            const cellBg = esRoot ? '#FAFBFC' : 'white'
+            const cellBase = { background: cellBg, borderBottom: `1px solid ${COLORS.slate100}`, padding: '10px 8px', display: 'flex', alignItems: 'center', minHeight: 44, fontSize: 12, color: COLORS.ink }
+
+            return (
+              <Fragment key={act.id}>
+                {/* Chevron */}
+                <div onContextMenu={onCtx} onClick={() => tieneHijos && toggleCollapse(act.id)} style={{ ...cellBase, justifyContent:'center', cursor: tieneHijos ? 'pointer' : 'default', color: COLORS.slate500 }}>
+                  {tieneHijos ? (collapsed.has(act.id) ? <Icon.ChevronRight/> : <Icon.ChevronDown/>) : null}
+                </div>
+                {/* # */}
+                <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'flex-end', paddingRight:6, fontFamily:'var(--font-mono)', fontSize: esRoot?11:10, color: esRoot?COLORS.navy:COLORS.slate400, fontWeight: esRoot?700:500 }}>
+                  {numeracion[act.id]}
+                </div>
+                {/* Nombre */}
+                <div onContextMenu={onCtx} style={{ ...cellBase, paddingLeft: 8 + nivel * 20, gap: 6, minWidth: 0 }}>
+                  {!esRoot && (
+                    <div onClick={(e) => { e.stopPropagation(); onToggle(act) }} style={{ width:16, height:16, borderRadius:4, border:`1.5px solid ${act.completada?COLORS.teal:'#CBD5E1'}`, background:act.completada?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'white', flexShrink:0 }}>
+                      {act.completada && <Icon.Check/>}
+                    </div>
+                  )}
+                  {act.es_milestone && <span style={{ color:COLORS.navy, flexShrink:0 }}><Icon.Diamond/></span>}
+                  {!esRoot && <BadgeImportancia importancia={act.importancia} tamano="mini"/>}
+                  <div style={{ flex:1, minWidth:0, overflow:'hidden' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <EditableText value={act.nombre} onSave={v => onInlineUpdate(act.id, { nombre: v })} style={{ fontSize: esRoot?13:12, fontWeight: esRoot?600:400, color: esRoot?COLORS.navy:COLORS.ink, fontFamily:'var(--font-sans)' }}/>
+                      {!esRoot && depsCount > 0 && <span title={`${depsCount} dependencias`} style={{ display:'inline-flex', alignItems:'center', gap:3, background:COLORS.tealLight, color:COLORS.teal, padding:'1px 6px', borderRadius:10, fontSize:9, fontWeight:700, flexShrink:0 }}><Icon.Link/>{depsCount}</span>}
+                      {!esRoot && act.es_cobrable && (
+                        <span title={`Cobrable: ${ESTADOS_COBRO[act.estado_cobro]?.label || 'Pendiente'}`} style={{ display:'inline-flex', alignItems:'center', background: ESTADOS_COBRO[act.estado_cobro]?.bg || '#E1F5EE', color: ESTADOS_COBRO[act.estado_cobro]?.color || '#0F6E56', padding:'1px 6px', borderRadius:4, fontSize:9, fontWeight:700, flexShrink:0 }}>$</span>
+                      )}
+                    </div>
+                    {esRoot && tieneHijos && (
+                      <div style={{ fontSize:10, color:COLORS.slate400, fontFamily:'var(--font-mono)', marginTop:2 }}>
+                        {hijos.length} {hijos.length === 1 ? 'sub' : 'subs'}
+                      </div>
+                    )}
+                  </div>
+                  {esRoot && <BadgeImportancia importancia={act.importancia} tamano="normal"/>}
+                </div>
+                {/* Inicio */}
+                <div onContextMenu={onCtx} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
+                  {act.inicio ? fmtDate(act.inicio) : '—'}
+                </div>
+                {/* Fin */}
+                <div onContextMenu={onCtx} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
+                  {act.fin ? fmtDate(act.fin) : '—'}
+                </div>
+                {/* Duración */}
+                <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'center', fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
+                  {dur}
+                </div>
+                {/* Avance */}
+                <div onContextMenu={onCtx} title={esRoot && tieneHijos ? `Pesos: ${sumaPesos}%${!sumaOk ? ' ⚠ deberían sumar 100%' : ' ✓'}` : `${avanceMap.get(act.id) || 0}%`} style={{ ...cellBase, justifyContent:'center', flexDirection:'column', gap:2, alignItems:'stretch' }}>
+                  <BarraAvance avance={avanceMap.get(act.id) || 0}/>
+                  {esRoot && tieneHijos && sumaPesos > 0 && !sumaOk && (
+                    <span style={{ fontSize:9, color:'#DC2626', fontWeight:700, textAlign:'center' }}>pesos {sumaPesos}% ⚠</span>
+                  )}
+                </div>
+                {/* Estado */}
+                <div onContextMenu={onCtx} style={{ ...cellBase }}>
+                  {esRoot ? (
+                    <Badge texto={act.estado} mapa={ESTADOS}/>
+                  ) : (
+                    <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} style={{ padding:'4px 6px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[act.estado]?.bg, color: ESTADOS[act.estado]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit', width:'100%' }}>
+                      {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  )}
+                </div>
+                {/* Acciones */}
+                <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'flex-end', gap:4, paddingRight:12 }}>
+                  {puedeEditarPeso && !esRoot && (
+                    <>
+                      <input type="number" min="0" max="100" step="1" value={act.peso || 0}
+                        onChange={e => { const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); onInlineUpdate(act.id, { peso: v }) }}
+                        onClick={e => e.stopPropagation()}
+                        title="Peso ponderado (% del avance del padre)"
+                        style={{ width:38, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:10, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.peso || 0) > 0 ? COLORS.navy : COLORS.slate400 }}/>
+                      <input type="number" min="0" step="1" value={act.horas_estimadas || 0}
+                        onChange={e => { const v = Math.max(0, parseInt(e.target.value) || 0); onInlineUpdate(act.id, { horas_estimadas: v }) }}
+                        onClick={e => e.stopPropagation()}
+                        title="Horas estimadas (carga del responsable)"
+                        style={{ width:38, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:10, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.horas_estimadas || 0) > 0 ? COLORS.teal : COLORS.slate400 }}/>
+                    </>
+                  )}
+                  <button onClick={() => setCreandoBajo(act.id)} title="Agregar sub-actividad" style={{ padding:'5px 7px', background:'transparent', color:COLORS.teal, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Plus/></button>
+                  <button onClick={() => onAbrirInfo(act)} title="Información" style={{ padding:'5px 7px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Info/></button>
+                  {esRoot && act.es_servicio_padre && <button onClick={() => onDesglosar(act)} title="Desglosar con plantilla" style={{ padding:'5px 8px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer' }}>⚖</button>}
+                  <button onClick={() => onEliminar?.(act)} title="Eliminar actividad" style={{ padding:'5px 7px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
+                </div>
+                {/* Input inline para sub-actividad — fila completa */}
+                {creandoBajo === act.id && (
+                  <div style={{ gridColumn:'1 / -1', display:'flex', gap:8, padding:'10px 16px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, paddingLeft: 16 + (nivel + 1) * 20 }}>
+                    <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') crearBajo(act.id); if (e.key === 'Escape') { setCreandoBajo(null); setNombreNueva('') } }} autoFocus placeholder={`Sub-actividad de "${act.nombre.slice(0,40)}"...`} style={{...inputStyle, flex:1}}/>
+                    <button onClick={() => crearBajo(act.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px'}}>{creando ? '...' : 'Crear'}</button>
+                    <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
+                  </div>
+                )}
+              </Fragment>
+            )
+          })}
+        </div>
+      )}
+      <div style={{ marginTop:16 }}>
         {creandoBajo === 'root' ? (
           <div style={{ display:'flex', gap:8, padding:'12px 16px', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10 }}>
             <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearBajo(null)} autoFocus placeholder="Nombre del nuevo servicio/fase..." style={{...inputStyle, flex:1}}/>

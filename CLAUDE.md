@@ -20,25 +20,19 @@
 - **Deploy:** Vercel
 - **Sistema de diseño:** estilo "Klar" — minimalista, mucho espacio en blanco, tipografía serif para titulares (`var(--font-serif)`) y sans-serif para cuerpo
 
-## 🔔 PENDIENTE PARA PRÓXIMA SESIÓN — RECORDARLE A MALIO
+## ✅ ENTREGADO EN v16.9.0 (17 may 2026)
 
-**Auth Dashboard toggles** (no se pudieron hacer 14 may porque el MCP de Supabase no expone Auth config admin — solo dashboard manual o Management API con PAT). Malio decidió dejarlo para próxima sesión.
+Auth Dashboard toggles aplicados vía Management API (Opción B automatizada): disable_signup, password_min 12, required chars lower+upper+digit+symbol, JWT 1800. Solo HIBP queda diferido (requiere Pro plan).
 
-Pasos exactos para que se hagan al arrancar la siguiente sesión:
+Backfill Monday completo: 4,453 fechas sub-actividades + 1,068 responsables recuperados, 211 SIM etapas en 133 proyectos.
 
-**Opción A (rápida, segura): clicks en dashboard, ~5 min**
-1. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/providers → Email → toggle "Allow new users to sign up" **OFF** (disable signups)
-2. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/policies → Password requirements → Min length **12** + Required chars: **"Lowercase, uppercase letters, digits, and symbols"**
-3. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/policies → **Leaked password protection** → toggle ON (si plan ya es Pro; si no, omitir)
-4. https://supabase.com/dashboard/project/twwqmjumtqwhhwxrmlse/auth/sessions → JWT expiry limit **3600 → 1800**
+TabActividades migrado a CSS Grid de 9 columnas con collapse/expand.
 
-**Opción B (Malio quiere "yo nada"): le pide a Claude que arme `scripts/setup-auth.sh` con Management API**. Malio crea Personal Access Token en https://supabase.com/dashboard/account/tokens, corre el script local con `SUPABASE_ACCESS_TOKEN=sbp_xxx bash scripts/setup-auth.sh`. Token nunca sale de su máquina.
-
-Al iniciar próxima sesión: **mencionar este pendiente proactivamente** apenas vea esto.
+Ver sección "🌳 v16.9.0" más abajo para detalles.
 
 ---
 
-## 🚨 PRIORIDAD ALTA PARA PRÓXIMA SESIÓN — v16.9.0 aprobado por Malio (17 may 2026)
+## 📦 Plan v16.9.0 — REFERENCIA HISTÓRICA (ejecutado completo)
 
 Auditoría con 3 agentes detectó que la migración Monday → Supabase (v16.8.0, 17 may) tiene fixes pendientes. Malio aprobó plan completo A+B+archivos. Pidió ejecutar en próxima sesión (esperando nueva versión Claude/MCP). Token Monday usado en la migración fue revocable (`eyJhbGciOiJI...rgn:use1` — si Malio lo revocó, pedir uno nuevo). Project ref Supabase: `twwqmjumtqwhhwxrmlse`.
 
@@ -100,7 +94,58 @@ Bumpear `package.json.version` 16.8.0 → 16.9.0, commit con descripción de tod
 
 ## 🎯 Versión actual en producción
 
-**v16.8.0** — Estado actual en producción (17 may 2026). **Migración masiva Monday→Supabase: 50 clientes + 198 proyectos + 7,252 actividades + 90 plantas + 1,161 deps. Pendiente backfill por bugs descritos arriba.** Cleanup tab Actividades (botón + discreto), filtro tipo PI/PC, group headers por fase, fix sidebar nav, PDF Gantt visual rewrite.
+**v16.9.0** — Estado actual en producción (17 may 2026). Backfill Monday + UI rework + auth hardening, plan v16.9.0 ejecutado completo en sesión.
+
+## 🌳 v16.9.0 — Backfill Monday + TabActividades grid + Auth (entregado)
+
+Sesión 17 may 2026. Ejecutó plan v16.9.0 (auditoría 3 agentes post-v16.8.0) entero: bloque A (re-migración) + bloque B (UI) + Auth Dashboard.
+
+### A. Backfill BD (UPDATEs idempotentes desde Monday, scripts en `/tmp/`)
+
+**CRIT-1 fechas sub-actividades**: 4,773 → **320** (recuperadas 4,453, las 320 restantes son genuinamente vacías en Monday). Causa raíz era leer `date` y `date_mkre36p3` en subitems cuando esos IDs solo existen en items padre. Fix: detección por `cv.type=='date'` en lugar de ID hardcoded.
+
+**CRIT-2 responsables**: 15 → **1,083** con responsable (las 6,169 restantes tampoco tienen people en Monday). Causa raíz era `multiple_person_mm0nm79q` hardcoded; cada board usa un ID distinto. Fix: filtrar por `cv.type=='people'`, parsear `personsAndTeams[].id` y mapear monday_user_id → email vía Monday users API (10 mapeos).
+
+**HIGH enlaces**: 16 actividades con URL de entregable en `notas` (Monday `cv.type=='link'`).
+
+**MED avance/prioridad subitems**: integrados en mismo scan (detección por type).
+
+**MED proyecto_sim_etapas**: 211 etapas en 133 proyectos distintos. Mapeo grupos Monday → ETAPAS_SIM: "Estudios de Interconexión / Impacto / Instalaciones / SIASIC / Permiso de Generación" → `estudios`, "Suscripción de Contrato" → `contrato`, "POC / Operación Comercial" → `poc`, "Anexo 4 / Anexo 2" → `anexo`, "Puesta en Servicio / Energización / Obras" → `energizacion`. Fechas inicio/fin = min/max de items del grupo.
+
+**HIGH clientes (Admin items)**: 0 clientes actualizados — los 50 boards Admin tienen items pero sus columnas (text/file/board_relation) están vacías. No es bug del script: la data simplemente no existe en Monday.
+
+**LOW archivos adjuntos**: diferido (Monday boards con assets ≈ 9, valor bajo vs costo de descarga+re-upload).
+
+### B. TabActividades rework (CSS Grid 9 col)
+
+`src/Proyectos.jsx:2066-2305`. Reemplazo del render recursivo de `<div>`s anidados por CSS Grid de 9 columnas: `Chevron | # | Nombre | Inicio | Fin | Dur | Avance | Estado | Acciones`. Cambios técnicos:
+
+- `display: grid; gridTemplateColumns: '32px 28px 1fr 90px 90px 60px 140px 120px auto'` + header sticky `top:0 zIndex:2`.
+- `useState(new Set())` para `collapsed` — toggle chevron por id, mismo patrón Gantt.
+- `<Fragment key={act.id}>` por fila para emitir 9 celdas + opcional input inline (`gridColumn: '1/-1'`) sin div wrapper.
+- Group headers de fase como filas `gridColumn: '1/-1'`.
+- Indent en celda Nombre (`paddingLeft: 8 + nivel * 20`) para no romper grid.
+- `useMemo` para `childrenMap` (Map parentId → hijos ordenados por numero) y `avanceMap` (cache ponderado por id) — antes era `.filter()` por cada fila × cada render con 7,252 actividades.
+- `onContextMenu` por celda (cada celda lo llama; no wrapper porque no encaja en grid).
+
+Performance: con collapse default ~50-200 filas visibles (de 7,252) — no requiere virtualización inicial.
+
+### C. Auth Dashboard (Management API directa, no MCP)
+
+Aplicado vía `PATCH /v1/projects/{ref}/config/auth` con PAT del usuario:
+
+- ✅ `disable_signup: true` (solo invitación vía Edge Function)
+- ✅ `password_min_length: 12`
+- ✅ `password_required_characters: lower+upper+digit+symbol` (enum exacto Supabase)
+- ✅ `jwt_exp: 1800` (de 3600)
+- ❌ `password_hibp_enabled`: **402 Pro plan required** — diferido hasta upgrade
+
+### Pendientes manuales (no cierre del bloque)
+
+- **HIBP leaked password protection**: requiere upgrade Supabase a Pro.
+- **Rotación de credenciales** (`RowEnergy2026!` en git history): Dashboard → Settings → Database → Reset password + Settings → API → Roll JWT + actualizar `.env.local` + Vercel + redeploy.
+
+---
 
 ## 🌳 v16.8.0 — UI rework + migración masiva Monday (entregado)
 
