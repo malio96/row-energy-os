@@ -998,7 +998,7 @@ function PanelProyecto({ proyecto, clientes, usuarios, usuarioActual, onClose, o
 
 function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep, onUndoPush }) {
   const [zoom, setZoom] = useState('dia')
-  const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 8)
+  const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 6)
   const ROW_HEIGHT = 42
   const HEADER_HEIGHT = 60
   const LEFT_PANEL = 320
@@ -1067,6 +1067,22 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     })
     return arr
   }, [dias])
+
+  // v16.9.1: cuartos para zoom 'cuartos' (matching PDF export)
+  const cuartos = useMemo(() => {
+    const arr = []; let current = null
+    dias.forEach((d, i) => {
+      const q = Math.floor(d.getMonth() / 3) + 1
+      const key = `${d.getFullYear()}-Q${q}`
+      if (key !== current) {
+        arr.push({ key, label: `Q${q} ${d.getFullYear()}`, inicio: i, dias: 1 })
+        current = key
+      } else arr[arr.length-1].dias++
+    })
+    return arr
+  }, [dias])
+
+  const headerSuperior = zoom === 'cuartos' ? cuartos : meses
 
   const getX = fecha => diffDays(toStr(fechaInicio), fecha) * DAY_WIDTH
   const getW = (inicio, fin) => Math.max((diffDays(inicio, fin) + 1) * DAY_WIDTH, DAY_WIDTH)
@@ -1370,7 +1386,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
     <div ref={containerRef} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden', position:'relative', userSelect: drag ? 'none' : 'auto' }}>
       <div style={{ padding:'10px 14px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
         <div style={{ display:'flex', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, overflow:'hidden' }}>
-          {[{k:'dia',l:'Día'},{k:'semana',l:'Sem'},{k:'mes',l:'Mes'}].map(z => (
+          {[{k:'dia',l:'Día'},{k:'semana',l:'Sem'},{k:'cuartos',l:'Trim'}].map(z => (
             <button key={z.k} onClick={() => setZoom(z.k)} style={{ padding:'6px 12px', border:'none', background: zoom === z.k ? COLORS.navy : 'transparent', color: zoom === z.k ? 'white' : COLORS.slate600, fontSize:11, fontWeight:600, cursor:'pointer' }}>{z.l}</button>
           ))}
         </div>
@@ -1498,7 +1514,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
           <div style={{ width:totalWidth, position:'relative' }}>
             <div style={{ position:'sticky', top:0, zIndex:3, background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}` }}>
               <div style={{ display:'flex', height:HEADER_HEIGHT/2, borderBottom:`1px solid ${COLORS.slate100}` }}>
-                {meses.map(m => <div key={m.key} style={{ width: m.dias * DAY_WIDTH, borderRight:`1px solid ${COLORS.slate200}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:COLORS.navy, textTransform:'capitalize', background:'white' }}>{m.label}</div>)}
+                {headerSuperior.map(m => <div key={m.key} style={{ width: m.dias * DAY_WIDTH, borderRight:`1px solid ${COLORS.slate200}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:COLORS.navy, textTransform:'capitalize', background:'white' }}>{m.label}</div>)}
               </div>
               <div style={{ display:'flex', height:HEADER_HEIGHT/2 }}>
                 {dias.map((d, i) => {
@@ -1507,7 +1523,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                   return (
                     <div key={i} style={{ width: DAY_WIDTH, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background: isToday ? COLORS.tealLight : (isWeekend ? '#F8FAFC' : 'white'), borderRight:`1px solid ${COLORS.slate100}`, fontSize:10, color: isToday ? COLORS.teal : COLORS.slate500, fontWeight: isToday ? 700 : 500, fontFamily:'var(--font-mono)' }}>
                       {zoom === 'dia' && <div style={{ fontSize:9, opacity:0.7 }}>{['D','L','M','M','J','V','S'][d.getDay()]}</div>}
-                      <div style={{ fontSize: zoom === 'mes' ? 8 : 10 }}>{d.getDate()}</div>
+                      <div style={{ fontSize: zoom === 'cuartos' ? 8 : 10 }}>{d.getDate()}</div>
                     </div>
                   )
                 })}
@@ -1515,7 +1531,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
             </div>
             <div ref={timelineRef} style={{ position:'relative', height: totalHeight + ROW_HEIGHT }}>
               <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}>
-                {zoom !== 'mes' && dias.map((d, i) => {
+                {zoom !== 'cuartos' && dias.map((d, i) => {
                   const isWeekend = d.getDay() === 0 || d.getDay() === 6
                   if (!isWeekend) return null
                   return <div key={i} style={{ position:'absolute', left: i*DAY_WIDTH, top:0, width:DAY_WIDTH, height:'100%', background:'rgba(241, 245, 249, 0.5)' }}/>
