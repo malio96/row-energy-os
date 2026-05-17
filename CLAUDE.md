@@ -38,9 +38,100 @@ Al iniciar próxima sesión: **mencionar este pendiente proactivamente** apenas 
 
 ---
 
+## 🚨 PRIORIDAD ALTA PARA PRÓXIMA SESIÓN — v16.9.0 aprobado por Malio (17 may 2026)
+
+Auditoría con 3 agentes detectó que la migración Monday → Supabase (v16.8.0, 17 may) tiene fixes pendientes. Malio aprobó plan completo A+B+archivos. Pidió ejecutar en próxima sesión (esperando nueva versión Claude/MCP). Token Monday usado en la migración fue revocable (`eyJhbGciOiJI...rgn:use1` — si Malio lo revocó, pedir uno nuevo). Project ref Supabase: `twwqmjumtqwhhwxrmlse`.
+
+### A. Re-migración BD (UPDATEs idempotentes, NO recrear filas)
+
+**CRIT-1 — Fechas de sub-actividades faltantes en 4,773 / 7,252.**
+Causa raíz: en Monday los subitems boards usan IDs de columna DISTINTOS a los items padre. Mi script (`/tmp/migrate-monday.py` líneas 324-325) leía `date` y `date_mkre36p3` que no existen en subitems. Los IDs reales en subitems: `date0` (inicio) y `date_mkrhs6t9` (fin). Las fechas SÍ están en Monday.
+
+Fix: backfill — query `actividades WHERE parent_id IS NOT NULL AND inicio IS NULL`, re-fetch subitems Monday por board_id, leer las columnas con IDs correctos, UPDATE.
+
+**CRIT-2 — Responsables faltantes en 7,237 / 7,252.**
+Mi script hardcoded `multiple_person_mm0nm79q`. Hay ~38 IDs distintos de people columns en distintos boards. Fix: en lugar de buscar por ID, recorrer todas las columnas y filtrar por `cv.type == 'people'`. Parsear `value` JSON (`personsAndTeams[].id`) y mapear monday_user_id → usuarios.email usando la lista de 10 users que sacamos antes (Alan/Alfonso/Antonio/Helida/Mayra/Noel/Noemi/Carlos + Edgar + Malio).
+
+**HIGH — Datos en items de boards Admin (50 clientes).**
+Cada cliente tiene items con columnas `Entregables` (file) y `Condiciones de pago` (text). Mi script solo creó clientes desde el nombre del board e ignoró los items. Fix:
+- Condiciones de pago → `clientes.notas`
+- Entregables → descargar files de Monday y subir a `proyectos-docs/clientes/{id}/`
+- Usar `board_relation` (linkedBoardId en linkedPulseIds) para mejor matching cliente↔proyecto (autoritativo, 198 vs los 70 actuales)
+
+**HIGH — Enlaces a entregables en actividades (21 boards).**
+Columnas `link_*` con URLs a SharePoint/Drive — no leídas. Fix: leer cualquier `cv.type == 'link'` y guardar en `actividades.notas` (o agregar columna nueva `url_entregable`).
+
+**MED — Avance + prioridad en subitems.**
+Subitems boards usan IDs distintos para `numeric_*` (avance) y `color_*` (prioridad). Fix: detectar por type.
+
+**MED — Poblar `proyecto_sim_etapas` desde grupos Monday.**
+Mapear grupos como "Permiso de Generación", "Estudios de Interconexión", "POC" → etapas SIM existentes (Estudios, Contrato, POC, Anexo II, Energización, DOC). INSERT con fecha_inicio = min(act.inicio del grupo), fecha_fin = max(act.fin del grupo).
+
+**LOW — Archivos adjuntos en items (9 boards).**
+Descargar de Monday vía `assets.url` y subir a Storage bajo scope `proyectos/{id}/entregables/`.
+
+### B. UI rework — TabActividades (v16.9.0)
+
+Diseño confirmado por agente Plan (archivo `src/Proyectos.jsx`, función `TabActividades`, líneas ~2066-2280):
+
+1. **Layout CSS Grid** (NO `<table>` porque rompe el render recursivo). Columnas: `gridTemplateColumns: '32px 28px 1fr 90px 90px 60px 140px 120px auto'` → `Chevron | # | Nombre | Inicio | Fin | Duración | Avance | Estado | Acciones`.
+2. **Header sticky** de columnas con mismo gridTemplate.
+3. **Collapse/expand** state local `useState(new Set())`, mismo patrón que Gantt (líneas 1074-1091). Chevron solo si `tieneHijos`. Reusar `Icon.ChevronDown` / `Icon.ChevronRight`.
+4. **Indent en celda Nombre** (no en la fila completa, rompería grid). `paddingLeft: nivel * 20` dentro de la columna nombre.
+5. **Group headers de fase**: mantener pero envolver con `gridColumn: '1 / -1'` para que ocupen toda la fila dentro del contenedor grid.
+6. **Edge cases**: `fmtDate(null)` → `—`; duración `—` si no hay fechas; chevron 32px vacío si 0 hijos; tooltip sobre BarraAvance para sumas de pesos.
+
+Performance: con collapse por defecto, lista visible será ~50-200 filas → no requiere virtualización inicial.
+
+### C. Push v16.9.0
+
+Bumpear `package.json.version` 16.8.0 → 16.9.0, commit con descripción de todos los fixes, push. Vercel deploy auto.
+
+### Estado actual BD (snapshot 17 may después de v16.8.0)
+
+- 50 clientes (sin RFC/dirección — badge ⚠ INCOMPLETO; 70/198 proyectos con cliente vinculado)
+- 198 proyectos (105 PI / 93 PC; 19 con MW extraído del nombre; 90 vinculados a planta_id)
+- 90 plantas eléctricas (PI no duplicados, tecnología derivada por regex)
+- 7,252 actividades (4,342 sub-actividades; 1,161 con deps; 15 con responsable; 4,773 sin fechas)
+- 11 usuarios activos: Malio (direccion), Edgar (director_proyectos), Regino (ventas) + 8 nuevos equipo_proyectos (passwords temporales ya distribuidas)
+- 0 usuarios huérfanos (los 6 de prueba: desactivados + borrados de auth.users)
+
+---
+
 ## 🎯 Versión actual en producción
 
-**v16.7.0** — Estado actual en producción (14 may 2026). **Onboarding y self-service de contraseñas completo**: crear usuarios con password temporal + cambio de contraseña en Configuración → Mi cuenta. Site URL de Auth corregida (bug de reset password resuelto).
+**v16.8.0** — Estado actual en producción (17 may 2026). **Migración masiva Monday→Supabase: 50 clientes + 198 proyectos + 7,252 actividades + 90 plantas + 1,161 deps. Pendiente backfill por bugs descritos arriba.** Cleanup tab Actividades (botón + discreto), filtro tipo PI/PC, group headers por fase, fix sidebar nav, PDF Gantt visual rewrite.
+
+## 🌳 v16.8.0 — UI rework + migración masiva Monday (entregado)
+
+Sesión 16-17 may 2026. Wipe completo de datos de prueba previo (50 archivos test borrados de bucket, 6 usuarios test desactivados+borrados auth.users, 19 tablas operativas en 0). Después migración completa desde Monday.com vía API GraphQL (token PAT del usuario).
+
+**UI Proyectos:**
+- Tab Actividades limpia: removido row permanente "+ Agregar sub-actividad", agregado botón "+" discreto en cada fila (col Acciones)
+- Group headers visuales en Actividades cuando cambia `fase` entre tareas root (replica grupos de Monday)
+- Filtro `tipo_proyecto` (Todos / Interconexión / Conexión / Almacenamiento / Estudios Eléctricos)
+- **Fix bug navegación**: click en sidebar "Proyectos" estando en DetalleProyecto regresa a la lista (`useLocation` + `location.key` reset)
+
+**Export Gantt PDF** (rewrite completo en `src/exportGantt.js`):
+- De `autoTable` plano → render nativo jsPDF
+- A3 landscape: columna izquierda (actividad + fechas) + columna derecha con barras visuales
+- Header de fechas con años + quarters (escala temporal)
+- Barras coloreadas por estado, overlay de avance
+- Líneas ortogonales de dependencias entre barras con flecha
+- Group headers cuando cambia fase
+- Leyenda al pie + paginación automática
+
+**Datos migrados (Monday → Supabase):**
+- 50 clientes desde workspace Admin (códigos CLI-001..050)
+- 198 proyectos desde workspaces PI (105) + PC (93). Códigos PRY-001..198
+- 7,252 actividades incluyendo 4,342 sub-actividades anidadas
+- 1,161 actividades con dependencias del Gantt (DependencyValue.linked_item_ids)
+- 90 plantas eléctricas (excluyendo "Duplicado de", "Ejercicio", etc.)
+- 8 usuarios nuevos del equipo Monday con passwords temporales
+
+**Scripts migración** (en `/tmp/`, NO en repo): `migrate-monday.py` (clientes+proyectos+actividades), `migrate-deps.py` (deps), `migrate-plantas.py`, `migrate-enrichment.py` (cliente match + MW + estado).
+
+**v16.7.0** — Estado anterior (14 may 2026). **Onboarding y self-service de contraseñas completo**: crear usuarios con password temporal + cambio de contraseña en Configuración → Mi cuenta. Site URL de Auth corregida (bug de reset password resuelto).
 
 ## 🔑 v16.7.0 — Password temporal + Mi cuenta (entregado)
 
