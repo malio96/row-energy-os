@@ -27,6 +27,8 @@ import {
   // v16.4.0: validación RFC + crear cliente centralizado
   crearCliente, validarRFC,
 } from './supabase'
+// v16.9.2: helper para estado efectivo (deriva 'Retrasada' por fecha vencida)
+import { estadoEfectivo } from './helpers'
 // v16.4.0: helpers de permisos centralizados
 import {
   puedeEliminar,
@@ -1513,21 +1515,24 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
         <div ref={scrollRef} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
           <div style={{ width:totalWidth, position:'relative' }}>
             <div style={{ position:'sticky', top:0, zIndex:3, background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}` }}>
-              <div style={{ display:'flex', height:HEADER_HEIGHT/2, borderBottom:`1px solid ${COLORS.slate100}` }}>
+              {/* v16.9.2: en zoom cuartos solo se muestra header superior (Q1..Q4 + año), los días no caben legible */}
+              <div style={{ display:'flex', height: zoom === 'cuartos' ? HEADER_HEIGHT : HEADER_HEIGHT/2, borderBottom:`1px solid ${COLORS.slate100}` }}>
                 {headerSuperior.map(m => <div key={m.key} style={{ width: m.dias * DAY_WIDTH, borderRight:`1px solid ${COLORS.slate200}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:COLORS.navy, textTransform:'capitalize', background:'white' }}>{m.label}</div>)}
               </div>
-              <div style={{ display:'flex', height:HEADER_HEIGHT/2 }}>
-                {dias.map((d, i) => {
-                  const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                  const isToday = toStr(d) === hoy
-                  return (
-                    <div key={i} style={{ width: DAY_WIDTH, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background: isToday ? COLORS.tealLight : (isWeekend ? '#F8FAFC' : 'white'), borderRight:`1px solid ${COLORS.slate100}`, fontSize:10, color: isToday ? COLORS.teal : COLORS.slate500, fontWeight: isToday ? 700 : 500, fontFamily:'var(--font-mono)' }}>
-                      {zoom === 'dia' && <div style={{ fontSize:9, opacity:0.7 }}>{['D','L','M','M','J','V','S'][d.getDay()]}</div>}
-                      <div style={{ fontSize: zoom === 'cuartos' ? 8 : 10 }}>{d.getDate()}</div>
-                    </div>
-                  )
-                })}
-              </div>
+              {zoom !== 'cuartos' && (
+                <div style={{ display:'flex', height:HEADER_HEIGHT/2 }}>
+                  {dias.map((d, i) => {
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                    const isToday = toStr(d) === hoy
+                    return (
+                      <div key={i} style={{ width: DAY_WIDTH, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background: isToday ? COLORS.tealLight : (isWeekend ? '#F8FAFC' : 'white'), borderRight:`1px solid ${COLORS.slate100}`, fontSize:10, color: isToday ? COLORS.teal : COLORS.slate500, fontWeight: isToday ? 700 : 500, fontFamily:'var(--font-mono)' }}>
+                        {zoom === 'dia' && <div style={{ fontSize:9, opacity:0.7 }}>{['D','L','M','M','J','V','S'][d.getDay()]}</div>}
+                        <div style={{ fontSize:10 }}>{d.getDate()}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
             <div ref={timelineRef} style={{ position:'relative', height: totalHeight + ROW_HEIGHT }}>
               <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}>
@@ -2268,15 +2273,18 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                     <span style={{ fontSize:9, color:'#DC2626', fontWeight:700, textAlign:'center' }}>pesos {sumaPesos}% ⚠</span>
                   )}
                 </div>
-                {/* Estado */}
+                {/* Estado — v16.9.2: badge usa estadoEfectivo (deriva 'Retrasada' por fecha vencida).
+                    El select sigue mostrando el estado en BD (editable), pero con colores del derivado. */}
                 <div onContextMenu={onCtx} style={{ ...cellBase }}>
-                  {esRoot ? (
-                    <Badge texto={act.estado} mapa={ESTADOS}/>
-                  ) : (
-                    <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} style={{ padding:'4px 6px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[act.estado]?.bg, color: ESTADOS[act.estado]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit', width:'100%' }}>
-                      {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
-                    </select>
-                  )}
+                  {(() => {
+                    const eff = estadoEfectivo(act)
+                    if (esRoot) return <Badge texto={eff} mapa={ESTADOS}/>
+                    return (
+                      <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} title={eff !== act.estado ? `Mostrado como '${eff}' (fecha fin vencida)` : undefined} style={{ padding:'4px 6px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[eff]?.bg, color: ESTADOS[eff]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit', width:'100%' }}>
+                        {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                    )
+                  })()}
                 </div>
                 {/* Acciones */}
                 <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'flex-end', gap:4, paddingRight:12 }}>

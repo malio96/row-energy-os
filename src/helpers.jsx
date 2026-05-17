@@ -157,6 +157,20 @@ export function daysUntil(fecha) {
   return diffDays(hoyStr, fecha)
 }
 
+// v16.9.2: estado efectivo de una actividad — incluye derivacion 'Retrasada'
+// cuando la fecha fin pasó y la actividad no está completa. Antes Kanban mostraba
+// "Retrasada" pero TabActividades mostraba 'Sin iniciar' (estado en BD); ahora
+// ambos usan este helper para que coincidan visualmente.
+export function estadoEfectivo(act) {
+  if (!act) return ''
+  if (act.estado === 'Completada' || act.estado === 'Cancelada') return act.estado
+  if (act.completada === true) return 'Completada'
+  const hoy = new Date()
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+  if (act.fin && act.fin < hoyStr) return 'Retrasada'
+  return act.estado || 'Sin iniciar'
+}
+
 // ============================================================
 // COMPONENTES REUTILIZABLES
 // ============================================================
