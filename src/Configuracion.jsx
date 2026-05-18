@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   supabase,
   getTodosUsuarios, getClientes,
@@ -7,7 +7,7 @@ import {
   invitarUsuarioViaEdge, reinvitarUsuario,  // v12.5.8, v16.1.4
   getAlertasConfig, actualizarAlertasConfig, resetearAlertasConfig,  // v12.5.9e
 } from './supabase'
-import { COLORS, Avatar, Icon } from './helpers'
+import { COLORS, Avatar, Icon, SortControl, aplicarSort, loadPref, savePref } from './helpers'
 import { useModal } from './Modal'
 import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
@@ -252,22 +252,41 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
     return { label: '✓ Activo', color: COLORS.teal, badgeBg: '#E1F5EE' }
   }
 
+  // Sort (persistido en localStorage)
+  const [sort, setSort] = useState(() => loadPref('sort.config.usuarios', { field:'nombre', dir:'asc' }))
+  useEffect(() => { savePref('sort.config.usuarios', sort) }, [sort])
+
+  const usuariosOrdenados = useMemo(() => aplicarSort(usuarios, sort, {
+    nombre: u => (u.nombre || '').toLowerCase(),
+    email:  u => (u.email || '').toLowerCase(),
+    rol:    u => u.rol || '',
+    activo: u => u.activo ? 1 : 0,
+  }), [usuarios, sort])
+
   return (
     <>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, gap:10 }}>
         <div>
           <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0 }}>Equipo ({usuarios.length})</h3>
           <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2 }}>
             {usuarios.filter(u => u.activo).length} activos · {usuarios.filter(u => !u.activo).length} inactivos
           </div>
         </div>
-        <button onClick={abrirModalCrear} style={{
-          padding:'10px 18px', background:COLORS.navy, color:'white',
-          border:'none', borderRadius:8, fontSize:13, fontWeight:600,
-          cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6,
-        }}>
-          {Icon('Plus')} Invitar usuario
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <SortControl value={sort} onChange={setSort} fields={[
+            { key:'nombre', label:'Nombre' },
+            { key:'email',  label:'Email' },
+            { key:'rol',    label:'Rol' },
+            { key:'activo', label:'Activo' },
+          ]}/>
+          <button onClick={abrirModalCrear} style={{
+            padding:'10px 18px', background:COLORS.navy, color:'white',
+            border:'none', borderRadius:8, fontSize:13, fontWeight:600,
+            cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6,
+          }}>
+            {Icon('Plus')} Invitar usuario
+          </button>
+        </div>
       </div>
 
       {/* v16.1.4: banner advertencia si hay usuarios huérfanos (sin auth) */}
@@ -292,7 +311,7 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
         {usuarios.length === 0 && (
           <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin usuarios</div>
         )}
-        {usuarios.map(u => {
+        {usuariosOrdenados.map(u => {
           const auth = estadoAuth(u)
           const sinInvitar = u.activo && !u.auth_id
           return (
@@ -471,13 +490,30 @@ function TabClientes({ clientes: clientesProp }) {
   // Ayuda al usuario a ver de un vistazo qué clientes bloquearán sus cotizaciones.
   const incompleto = (c) => !c.rfc || !c.direccion
 
+  // Sort (persistido en localStorage)
+  const [sort, setSort] = useState(() => loadPref('sort.config.clientes', { field:'razon', dir:'asc' }))
+  useEffect(() => { savePref('sort.config.clientes', sort) }, [sort])
+
+  const clientesOrdenados = useMemo(() => aplicarSort(clientes, sort, {
+    razon:     c => (c.razon_social || '').toLowerCase(),
+    rfc:       c => (c.rfc || '').toUpperCase(),
+    industria: c => (c.industria || '').toLowerCase(),
+  }), [clientes, sort])
+
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
-      <div style={{ padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+      <div style={{ padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
         <div style={{ fontSize:13, fontWeight:600, color:COLORS.ink }}>Clientes ({clientes.length})</div>
-        <button onClick={() => { setCreando(true); setEditando(null) }} style={{ padding:'6px 12px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer' }}>
-          + Nuevo cliente
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <SortControl value={sort} onChange={setSort} fields={[
+            { key:'razon',     label:'Alfabético' },
+            { key:'rfc',       label:'RFC' },
+            { key:'industria', label:'Industria' },
+          ]}/>
+          <button onClick={() => { setCreando(true); setEditando(null) }} style={{ padding:'6px 12px', background:COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            + Nuevo cliente
+          </button>
+        </div>
       </div>
 
       {creando && (
@@ -493,7 +529,7 @@ function TabClientes({ clientes: clientesProp }) {
         <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin clientes</div>
       )}
 
-      {clientes.map(c => {
+      {clientesOrdenados.map(c => {
         const enEdicion = editando?.id === c.id
         return (
           <div key={c.id} style={{ borderBottom:`1px solid ${COLORS.slate100}` }}>

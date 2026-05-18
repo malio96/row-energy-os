@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getPostventaTickets, crearTicket, actualizarTicket, getProyectos, getUsuarios } from './supabase'
-import { COLORS, ESTADOS_TICKET, Badge, fmtDate, relativeTime, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
+import { COLORS, ESTADOS_TICKET, Badge, fmtDate, relativeTime, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 
 const PRIORIDAD_COLOR = {
   'Alta': { bg:'#FEF2F2', color:'#DC2626' },
@@ -14,11 +14,13 @@ export default function Postventa({ usuario }) {
   const [modal, setModal] = useState(false)
   const [filtro, setFiltro] = useState(loadPref('tk_filtro', 'Abiertos'))
   const [busqueda, setBusqueda] = useState('')
+  const [sort, setSort] = useState(() => loadPref('sort.postventa', { field:'fecha', dir:'desc' }))
   const isMobile = useIsMobile()
 
   const cargar = async () => { setLoading(true); setTickets(await getPostventaTickets()); setLoading(false) }
   useEffect(() => { cargar() }, [])
   useEffect(() => { savePref('tk_filtro', filtro) }, [filtro])
+  useEffect(() => { savePref('sort.postventa', sort) }, [sort])
 
   const filtrados = useMemo(() => {
     let r = tickets
@@ -34,6 +36,15 @@ export default function Postventa({ usuario }) {
       return (prioOrder[a.prioridad] ?? 3) - (prioOrder[b.prioridad] ?? 3)
     })
   }, [tickets, filtro, busqueda])
+
+  const itemsOrdenados = useMemo(() => aplicarSort(filtrados, sort, {
+    fecha: t => t.created_at || '0',
+    codigo: t => t.codigo || '',
+    titulo: t => (t.titulo || '').toLowerCase(),
+    prioridad: t => ({ Alta:0, Media:1, Baja:2 }[t.prioridad] ?? 3),
+    estado: t => t.estado || '',
+    proyecto: t => (t.proyecto?.codigo || ''),
+  }), [filtrados, sort])
 
   const kpis = useMemo(() => ({
     abiertos: tickets.filter(t => t.estado === 'Abierto').length,
@@ -73,6 +84,14 @@ export default function Postventa({ usuario }) {
           <div style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:COLORS.slate400 }}>{Icon('Search')}</div>
           <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar..." style={{ ...inputStyle, paddingLeft:36, minHeight:36, fontSize:13 }}/>
         </div>
+        <SortControl value={sort} onChange={setSort} fields={[
+          { key:'fecha', label:'Más reciente' },
+          { key:'codigo', label:'Código' },
+          { key:'titulo', label:'Título' },
+          { key:'prioridad', label:'Prioridad' },
+          { key:'estado', label:'Estado' },
+          { key:'proyecto', label:'Proyecto' },
+        ]}/>
       </div>
 
       {loading && <LoadingState/>}
@@ -80,7 +99,7 @@ export default function Postventa({ usuario }) {
 
       {!loading && filtrados.length > 0 && (
         <div style={{ display:'grid', gap:8 }}>
-          {filtrados.map(t => (
+          {itemsOrdenados.map(t => (
             <div key={t.id} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${PRIORIDAD_COLOR[t.prioridad]?.color || COLORS.slate400}`, borderRadius:10, padding:14 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
                 <div style={{ flex:1, minWidth:200 }}>

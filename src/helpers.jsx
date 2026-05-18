@@ -58,6 +58,14 @@ export const ESTADOS_HITO = {
   'Cancelado':  { bg:'#F1F5F9', color:'#94A3B8' },
 }
 
+// v16.9.3: estados que cuentan como "activos" para filtros Dashboard / Proyectos.
+// Antes Dashboard usaba "NOT Terminado AND NOT Cancelado" y Proyectos usaba
+// "IN (Por iniciar, En curso, En pausa)" — coincidían por accidente. Si se
+// agrega un estado nuevo (ej. "Bloqueado") los dos divergen. Centralizado aquí.
+export const ESTADOS_PROYECTO_ACTIVOS = ['Por iniciar', 'En curso', 'En pausa']
+export const ESTADOS_PROYECTO_TERMINADOS = ['Terminado', 'Cancelado']
+export function esProyectoActivo(estado) { return ESTADOS_PROYECTO_ACTIVOS.includes(estado) }
+
 export const ESTADOS_FACTURA = {
   'Emitida':   { bg:'#E0EDFF', color:'#1B3A6B' },
   'Pagada':    { bg:'#E1F5EE', color:'#0F6E56' },
@@ -155,6 +163,44 @@ export function daysUntil(fecha) {
   const hoy = new Date()
   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
   return diffDays(hoyStr, fecha)
+}
+
+// v16.9.3: sort + persistencia para listas. Componente + util de aplicación.
+// Pref key sugerida: `sort.<modulo>` (ej. `sort.proyectos`, `sort.leads`).
+// `accesores` es un Map field → función que extrae el valor a comparar.
+// Strings se comparan con localeCompare en español (case insensitive).
+// null/undefined van siempre al final, sin importar dir.
+export function aplicarSort(items, sort, accesores) {
+  if (!Array.isArray(items) || !sort?.field) return items
+  const get = accesores[sort.field]
+  if (!get) return items
+  const out = [...items].sort((a, b) => {
+    const va = get(a); const vb = get(b)
+    if (va == null && vb == null) return 0
+    if (va == null) return 1
+    if (vb == null) return -1
+    if (typeof va === 'string') return va.localeCompare(vb, 'es', { sensitivity:'base', numeric:true })
+    if (va < vb) return -1
+    if (va > vb) return 1
+    return 0
+  })
+  return sort.dir === 'desc' ? out.reverse() : out
+}
+
+// Render dropdown con campos + toggle asc/desc. Compacto, se mete entre filtros.
+export function SortControl({ value, onChange, fields, label='Ordenar' }) {
+  if (!value || !fields?.length) return null
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:4, background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10, padding:'2px 8px', height:40, boxSizing:'border-box' }}>
+      <span style={{ fontSize:10, color:COLORS.slate500, fontWeight:600, textTransform:'uppercase', letterSpacing:0.3 }}>{label}</span>
+      <select value={value.field} onChange={e => onChange({ ...value, field: e.target.value })} style={{ border:'none', background:'transparent', fontSize:12, fontWeight:600, color:COLORS.navy, cursor:'pointer', outline:'none', fontFamily:'inherit', padding:'4px 2px' }}>
+        {fields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+      </select>
+      <button onClick={() => onChange({ ...value, dir: value.dir === 'asc' ? 'desc' : 'asc' })} title={value.dir === 'asc' ? 'Ascendente' : 'Descendente'} style={{ background:'transparent', border:'none', color:COLORS.slate600, cursor:'pointer', padding:'2px 6px', fontSize:14, fontWeight:700, lineHeight:1, borderRadius:4 }}>
+        {value.dir === 'asc' ? '↑' : '↓'}
+      </button>
+    </div>
+  )
 }
 
 // v16.9.2: estado efectivo de una actividad — incluye derivacion 'Retrasada'

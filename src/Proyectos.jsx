@@ -28,7 +28,8 @@ import {
   crearCliente, validarRFC,
 } from './supabase'
 // v16.9.2: helper para estado efectivo (deriva 'Retrasada' por fecha vencida)
-import { estadoEfectivo } from './helpers'
+// v16.9.3: sort + persistencia + ESTADOS_HITO canonico (en helpers, no local)
+import { estadoEfectivo, aplicarSort, SortControl, ESTADOS_HITO } from './helpers'
 // v16.4.0: helpers de permisos centralizados
 import {
   puedeEliminar,
@@ -72,12 +73,15 @@ const ESTADOS_PROY = {
   'Cancelado': { bg:'#FEF2F2', color:'#DC2626', bar:'#DC2626' }
 }
 
-const ESTADOS_HITO = {
-  'Pagado': { bg:'#E1F5EE', color:'#0F6E56', sem:'#0F6E56' },
-  'Facturado': { bg:'#E0EDFF', color:'#1B3A6B', sem:'#3B82F6' },
-  'Pendiente': { bg:'#FEF3C7', color:'#D97706', sem:'#F59E0B' },
-  'Vencido': { bg:'#FEF2F2', color:'#DC2626', sem:'#DC2626' },
-  'Cancelado': { bg:'#F1F5F9', color:'#64748B', sem:'#94A3B8' },
+// v16.9.3: ESTADOS_HITO ahora se importa de helpers (era local divergente:
+// usaba 'Pagado' mientras Cobranza usa 'Cobrado' → hitos creados desde Proyectos
+// eran invisibles en el filtro de Cobranza). Semáforo de color por estado:
+const SEMAFORO_HITO = {
+  'Cobrado':   '#0F6E56',
+  'Facturado': '#3B82F6',
+  'Pendiente': '#F59E0B',
+  'Vencido':   '#DC2626',
+  'Cancelado': '#94A3B8',
 }
 
 // v8: Importancia (prioridad) de actividad
@@ -2061,7 +2065,7 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
             const cfg = ESTADOS_HITO[h.estado] || ESTADOS_HITO['Pendiente']
             return (
               <div key={h.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}` }}>
-                <div style={{ width:10, height:10, borderRadius:'50%', background:cfg.sem, flexShrink:0 }}/>
+                <div style={{ width:10, height:10, borderRadius:'50%', background: SEMAFORO_HITO[h.estado] || cfg.color, flexShrink:0 }}/>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.descripcion || h.concepto || 'Hito'}</div>
                   <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{fmtDate(h.fecha_vencimiento || h.fecha_pago)}</div>
@@ -2384,12 +2388,13 @@ function TabKanban({ actividades, onAbrirInfo, numeracion, onNuevaActividad }) {
     }
   })
 
+  // v16.9.3: emojis 🔴🟡🔵🟢⚪ removidos a favor de dot CSS (consistente con migracion SVG v15.4)
   const colDef = [
-    { k:'retrasadas',  titulo:'Con retraso',   emoji:'🔴', borde:COLORS.red,      bg:'#FEF2F2' },
-    { k:'semana',      titulo:'Esta semana',   emoji:'🟡', borde:COLORS.amber,    bg:'#FEF3C7' },
-    { k:'mes',         titulo:'Este mes',      emoji:'🔵', borde:COLORS.blue,     bg:'#E0EDFF' },
-    { k:'futuro',      titulo:'Más adelante',  emoji:'🟢', borde:COLORS.teal,     bg:COLORS.tealLight },
-    { k:'sinFecha',    titulo:'Sin fecha',     emoji:'⚪', borde:COLORS.slate400, bg:COLORS.slate50 },
+    { k:'retrasadas',  titulo:'Con retraso',  dot:COLORS.red,      borde:COLORS.red,      bg:'#FEF2F2' },
+    { k:'semana',      titulo:'Esta semana',  dot:COLORS.amber,    borde:COLORS.amber,    bg:'#FEF3C7' },
+    { k:'mes',         titulo:'Este mes',     dot:COLORS.blue,     borde:COLORS.blue,     bg:'#E0EDFF' },
+    { k:'futuro',      titulo:'Más adelante', dot:COLORS.teal,     borde:COLORS.teal,     bg:COLORS.tealLight },
+    { k:'sinFecha',    titulo:'Sin fecha',    dot:COLORS.slate400, borde:COLORS.slate400, bg:COLORS.slate50 },
   ]
 
   const totalMostrados = colDef.reduce((s, c) => s + cols[c.k].length, 0)
@@ -2505,7 +2510,7 @@ function TabKanban({ actividades, onAbrirInfo, numeracion, onNuevaActividad }) {
         {colDef.map(c => (
           <div key={c.k} style={{ background:'#F7F8FB', borderRadius:10, padding:12, minHeight:300 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, paddingBottom:8, borderBottom:`2px solid ${c.borde}` }}>
-              <span style={{ fontSize:12, fontWeight:700, color:COLORS.slate600 }}>{c.emoji} {c.titulo}</span>
+              <span style={{ fontSize:12, fontWeight:700, color:COLORS.slate600, display:'inline-flex', alignItems:'center', gap:6 }}><span style={{ width:9, height:9, borderRadius:'50%', background:c.dot, flexShrink:0 }}/>{c.titulo}</span>
               <span style={{ background:'white', color:COLORS.slate600, padding:'2px 10px', borderRadius:12, fontSize:11, fontWeight:600, border:`1px solid ${COLORS.slate200}` }}>{cols[c.k].length}</span>
             </div>
             {cols[c.k].length === 0 ? (
@@ -2944,7 +2949,7 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero, usuarioActual, onC
   }
 
   // Soporta ambos esquemas históricos: 'Pagado'/'Cobrado' como estado completado
-  const esCompleto = (estado) => estado === 'Pagado' || estado === 'Cobrado'
+  const esCompleto = (estado) => estado === 'Cobrado'
   const cobrado = hitos.filter(h => esCompleto(h.estado)).reduce((s,h) => s + Number(h.monto || 0), 0)
   const pendiente = hitos.filter(h => !esCompleto(h.estado) && h.estado !== 'Cancelado').reduce((s,h) => s + Number(h.monto || 0), 0)
   const total = (proyecto.monto_total || proyecto.monto || 0) || (cobrado + pendiente)
@@ -3013,7 +3018,7 @@ function TabFinanciero({ proyecto, hitos, puedeVerFinanciero, usuarioActual, onC
               onMouseEnter={e => { if (puedeEditar) e.currentTarget.style.background = COLORS.slate50 }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
             >
-              <div style={{ width:10, height:10, borderRadius:'50%', background: cfg?.sem || cfg?.color || COLORS.slate400, flexShrink:0 }}/>
+              <div style={{ width:10, height:10, borderRadius:'50%', background: SEMAFORO_HITO[h.estado] || cfg?.color || COLORS.slate400, flexShrink:0 }}/>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{h.descripcion || h.concepto || h.nombre || 'Hito'}</div>
                 <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)', marginTop:2 }}>
@@ -4152,6 +4157,9 @@ export default function Proyectos({ usuario }) {
   const [filtro, setFiltro] = useState('Activos')
   const [filtroTipo, setFiltroTipo] = useState('Todos')
   const [busqueda, setBusqueda] = useState('')
+  // v16.9.3: orden persistido por usuario en localStorage
+  const [sort, setSort] = useState(() => loadPref('sort.proyectos', { field:'nombre', dir:'asc' }))
+  useEffect(() => { savePref('sort.proyectos', sort) }, [sort])
   const location = useLocation()
 
   // Click en sidebar "Proyectos" estando dentro de un DetalleProyecto debe
@@ -4213,8 +4221,17 @@ export default function Proyectos({ usuario }) {
       const q = busqueda.toLowerCase()
       r = r.filter(p => p.nombre?.toLowerCase().includes(q) || p.cliente?.razon_social?.toLowerCase().includes(q) || p.codigo?.toLowerCase().includes(q))
     }
-    return r
-  }, [proyectos, filtro, filtroTipo, busqueda])
+    // v16.9.3: orden persistido por usuario
+    return aplicarSort(r, sort, {
+      nombre:  p => (p.nombre || '').toLowerCase(),
+      codigo:  p => p.codigo || '',
+      cliente: p => (p.cliente?.razon_social || '').toLowerCase(),
+      avance:  p => p.actividades?.length ? calcularAvancePonderado(p.actividades, null) : (p.avance || 0),
+      cierre:  p => p.cierre || '9999-12-31',
+      estado:  p => p.estado || '',
+      tipo:    p => p.tipo_proyecto || '',
+    })
+  }, [proyectos, filtro, filtroTipo, busqueda, sort])
 
   if (proyectoSel) return <DetalleProyecto proyectoId={proyectoSel} actividadInicialId={deepLinkActividadId} onVolver={() => { setProyectoSel(null); setDeepLinkActividadId(null); cargar() }} usuarioActual={usuario}/>
 
@@ -4246,6 +4263,15 @@ export default function Proyectos({ usuario }) {
           <div style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:COLORS.slate400 }}><Icon.Search/></div>
           <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar..." style={{ width:'100%', padding:'9px 14px 9px 36px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, fontSize:12, outline:'none', minHeight:40, boxSizing:'border-box', fontFamily:'inherit' }}/>
         </div>
+        <SortControl value={sort} onChange={setSort} fields={[
+          { key:'nombre',  label:'Alfabético' },
+          { key:'codigo',  label:'Código' },
+          { key:'cliente', label:'Cliente' },
+          { key:'avance',  label:'Avance' },
+          { key:'cierre',  label:'Cierre' },
+          { key:'estado',  label:'Estado' },
+          { key:'tipo',    label:'Tipo' },
+        ]}/>
       </div>
       {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
       {!loading && filtrados.length === 0 && <div style={{ padding:50, background:'white', border:`1px dashed ${COLORS.slate200}`, borderRadius:12, textAlign:'center', color:COLORS.slate500 }}>{busqueda ? 'Sin resultados' : 'Sin proyectos'}</div>}

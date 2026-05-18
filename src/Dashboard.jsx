@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getProyectos, getCotizaciones, getLeads, getHitos, getFacturas, getCompras, getPostventaTickets, getClientes, getUsuarios } from './supabase'
+// v16.9.3: helper centralizado de permisos (era hardcoded ['direccion','admin','ventas'])
+import { esRolEn } from './permisos'
 // v12: helpers para vista Personas
 import { calcularCargaPorColaborador, identificarCuellosBotella, getTareasPostCierrePendientes, DEPARTAMENTOS_POST_CIERRE } from './supabase'
 // v12.5.4: CRUD gastos y cuentas por pagar (reemplaza localStorage)
@@ -14,7 +16,7 @@ import {
 // v12.5.9: sistema de alertas configurables
 import { getAlertasConfig } from './supabase'
 import { generarAlertas, colorAlerta, bgAlerta } from './alertas'
-import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
+import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref, esProyectoActivo } from './helpers'
 // v12.5.5: Modal custom (reemplaza prompt/confirm/alert nativos)
 import { useModal } from './Modal'
 
@@ -244,7 +246,8 @@ function BannerAlertas({ alertas, onNavigate, onAlertaClick }) {
 function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, cargaColaboradores, setVista, setColaboradorInicialId }) {
   const { proyectos, cotizaciones, leads, hitos, facturas, tickets, actividades, cxp } = data
 
-  const proyectosActivos = proyectos.filter(p => p.estado !== 'Terminado' && p.estado !== 'Cancelado')
+  // v16.9.3: usa helper centralizado para no divergir del filtro de /proyectos
+  const proyectosActivos = proyectos.filter(p => esProyectoActivo(p.estado))
   const cotizacionesPipeline = cotizaciones.filter(c => ['Borrador', 'Enviada', 'En revisión'].includes(c.estado))
   const leadsActivos = leads.filter(l => !['Ganado','Perdido'].includes(l.etapa))
   const ponderado = leadsActivos.reduce((s,l) => s + (Number(l.monto_estimado || 0) * Number(l.probabilidad || 0) / 100), 0)
@@ -292,9 +295,12 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
 
   // v16.1: cargar tareas post-cierre para alimentar tanto la bandeja como las alertas
   const [tareasPostCierre, setTareasPostCierre] = useState([])
+  const [errorTareasPC, setErrorTareasPC] = useState(null)  // v16.9.3: feedback visible
   useEffect(() => {
     if (!usuario?.id) return
-    getTareasPostCierrePendientes(usuario.id).then(setTareasPostCierre).catch(() => setTareasPostCierre([]))
+    getTareasPostCierrePendientes(usuario.id)
+      .then(t => { setTareasPostCierre(t); setErrorTareasPC(null) })
+      .catch(e => { setTareasPostCierre([]); setErrorTareasPC(e?.message || 'No se pudieron cargar tareas post-cierre') })
   }, [usuario?.id])
 
   // v12.5.9: generar alertas vía sistema nuevo en vez de hardcoded
@@ -448,14 +454,17 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
 function BandejaPostCierre({ usuario, onNavigate }) {
   const [tareas, setTareas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [errorCarga, setErrorCarga] = useState(null)  // v16.9.3: feedback visible
   const navigate = useNavigate()
   useEffect(() => {
     if (!usuario?.id) return
-    getTareasPostCierrePendientes(usuario.id).then(t => { setTareas(t); setLoading(false) }).catch(() => setLoading(false))
+    getTareasPostCierrePendientes(usuario.id)
+      .then(t => { setTareas(t); setErrorCarga(null); setLoading(false) })
+      .catch(e => { setErrorCarga(e?.message || 'No se pudieron cargar las tareas post-cierre'); setLoading(false) })
   }, [usuario?.id])
 
-  // Filtrar las que aplican al usuario actual (asignado O de su departamento O direccion/admin/ventas que ven todas)
-  const verTodas = ['direccion', 'admin', 'ventas'].includes(usuario?.rol)
+  // v16.9.3: usar helper centralizado (eran arrays hardcoded — drift con permisos.js)
+  const verTodas = esRolEn(usuario, ['direccion', 'admin', 'ventas'])
   const depRol = usuario?.rol === 'admin' ? 'admin' : usuario?.rol === 'director_proyectos' ? 'proyectos' : usuario?.rol === 'direccion' ? 'legal' : null
   const mias = tareas.filter(t => verTodas || t.asignado_a === usuario?.id || t.departamento === depRol)
   if (loading) return null

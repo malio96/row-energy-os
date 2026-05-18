@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getCompras, crearCompra, actualizarCompra, eliminarCompra, getProyectos, getUsuarios } from './supabase'
-import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState } from './helpers'
-import { puedeEliminar } from './permisos'  // v16.4.0
+import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort, loadPref, savePref } from './helpers'
+import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
 
 export default function Compras({ usuario }) {
+  const puedeEditar = puedeEditarFinanciero(usuario)
   const [searchParams, setSearchParams] = useSearchParams()
   // Deep-link desde Centro de Alertas: ?cxp=X → scroll + highlight
   const deepLinkRef = useRef({ cxpId: searchParams.get('cxp'), aplicado: false })
@@ -14,9 +15,20 @@ export default function Compras({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const [compraSel, setCompraSel] = useState(null)  // v15.8.4
+  const [sort, setSort] = useState(() => loadPref('sort.compras', { field:'fecha', dir:'desc' }))
+  useEffect(() => { savePref('sort.compras', sort) }, [sort])
 
   const cargar = async () => { setLoading(true); setCompras(await getCompras()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  const comprasOrdenadas = useMemo(() => aplicarSort(compras, sort, {
+    fecha: c => c.fecha_solicitud || '0',
+    codigo: c => c.codigo || '',
+    proveedor: c => (c.proveedor || '').toLowerCase(),
+    monto: c => Number(c.monto || 0),
+    proyecto: c => (c.proyecto?.codigo || ''),
+    estado: c => c.estado || '',
+  }), [compras, sort])
 
   useEffect(() => {
     if (deepLinkRef.current.aplicado) return
@@ -50,7 +62,7 @@ export default function Compras({ usuario }) {
           <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Compras</h1>
           <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{compras.length} solicitudes · Total: <strong>{fmtMoney(total)}</strong></p>
         </div>
-        <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva solicitud</button>
+        {puedeEditar && <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva solicitud</button>}
       </div>
 
       {pendientes > 0 && (
@@ -64,11 +76,22 @@ export default function Compras({ usuario }) {
       {!loading && compras.length === 0 && <EmptyState titulo="Sin solicitudes de compra"/>}
 
       {!loading && compras.length > 0 && (
+        <>
+          <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', justifyContent:'flex-end' }}>
+            <SortControl value={sort} onChange={setSort} fields={[
+              { key:'fecha', label:'Más reciente' },
+              { key:'codigo', label:'Código' },
+              { key:'proveedor', label:'Proveedor' },
+              { key:'monto', label:'Monto' },
+              { key:'proyecto', label:'Proyecto' },
+              { key:'estado', label:'Estado' },
+            ]}/>
+          </div>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
           <div style={{ display:'grid', gridTemplateColumns:'100px 180px 1fr 140px 120px 130px 140px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
             <div>Código</div><div>Proveedor</div><div>Descripción</div><div>Monto</div><div>Proyecto</div><div>Solicitud</div><div>Estado</div>
           </div>
-          {compras.map(c => {
+          {comprasOrdenadas.map(c => {
             // v15.8.4: dirección siempre puede modificar el estado; admin solo si Solicitada y <50k
             // v15.8.4: dirección siempre puede modificar el estado; admin solo si Solicitada y <50k
             const puedeAprobar = (
@@ -99,7 +122,7 @@ export default function Compras({ usuario }) {
                 <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_solicitud}</div>
                 <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>
                   {puedeAprobar ? (
-                    <select value={c.estado} onChange={e => cambiarEstado(c.id, e.target.value)} style={{ border:'none', background:ESTADOS_COMPRA[c.estado]?.bg, color:ESTADOS_COMPRA[c.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
+                    <select value={c.estado} onChange={e => cambiarEstado(c.id, e.target.value)} disabled={!puedeEditar} style={{ border:'none', background:ESTADOS_COMPRA[c.estado]?.bg, color:ESTADOS_COMPRA[c.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor: puedeEditar ? 'pointer' : 'not-allowed', fontFamily:'inherit', opacity: puedeEditar ? 1 : 0.55 }}>
                       {Object.keys(ESTADOS_COMPRA).map(e => <option key={e}>{e}</option>)}
                     </select>
                   ) : <Badge texto={c.estado} mapa={ESTADOS_COMPRA}/>}
@@ -120,6 +143,7 @@ export default function Compras({ usuario }) {
             )
           })}
         </div>
+        </>
       )}
     </div>
   )

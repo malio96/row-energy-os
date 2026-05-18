@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getContratos, crearContrato, actualizarContrato, getProyectos } from './supabase'
-import { COLORS, ESTADOS_CONTRATO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
+import { COLORS, ESTADOS_CONTRATO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 import { esDirOAdmin } from './permisos'  // v16.4.0
 
 export default function Contratos({ usuario }) {
@@ -9,12 +9,14 @@ export default function Contratos({ usuario }) {
   const [modal, setModal] = useState(false)
   const [filtro, setFiltro] = useState(loadPref('ctr_filtro', 'Todos'))
   const [busqueda, setBusqueda] = useState('')
+  const [sort, setSort] = useState(() => loadPref('sort.contratos', { field:'fecha', dir:'desc' }))
   const isMobile = useIsMobile()
   const puedeEditar = esDirOAdmin(usuario)
 
   const cargar = async () => { setLoading(true); setContratos(await getContratos()); setLoading(false) }
   useEffect(() => { cargar() }, [])
   useEffect(() => { savePref('ctr_filtro', filtro) }, [filtro])
+  useEffect(() => { savePref('sort.contratos', sort) }, [sort])
 
   const enriquecidos = useMemo(() => contratos.map(c => {
     const dias = daysUntil(c.fecha_fin)
@@ -30,6 +32,16 @@ export default function Contratos({ usuario }) {
     }
     return r
   }, [enriquecidos, filtro, busqueda])
+
+  const itemsOrdenados = useMemo(() => aplicarSort(filtrados, sort, {
+    fecha: c => c.fecha_firma || c.created_at || '0',
+    codigo: c => c.codigo || '',
+    proyecto: c => (c.proyecto?.nombre || '').toLowerCase(),
+    cliente: c => (c.cliente?.razon_social || c.proyecto?.cliente?.razon_social || '').toLowerCase(),
+    monto: c => Number(c.monto_total || c.monto || 0),
+    fin: c => c.fecha_fin || '9999-12-31',
+    estado: c => c.estado || '',
+  }), [filtrados, sort])
 
   const kpis = useMemo(() => ({
     total: contratos.reduce((s,c) => s + Number(c.monto_total || 0), 0),
@@ -74,6 +86,15 @@ export default function Contratos({ usuario }) {
           <div style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:COLORS.slate400 }}>{Icon('Search')}</div>
           <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar..." style={{ ...inputStyle, paddingLeft:36, minHeight:36, fontSize:13 }}/>
         </div>
+        <SortControl value={sort} onChange={setSort} fields={[
+          { key:'fecha', label:'Más reciente' },
+          { key:'codigo', label:'Código' },
+          { key:'proyecto', label:'Proyecto' },
+          { key:'cliente', label:'Cliente' },
+          { key:'monto', label:'Monto' },
+          { key:'fin', label:'Vence' },
+          { key:'estado', label:'Estado' },
+        ]}/>
       </div>
 
       {loading && <LoadingState/>}
@@ -86,7 +107,7 @@ export default function Contratos({ usuario }) {
               <div>Código</div><div>Proyecto</div><div>Cliente</div><div>Monto</div><div>Firma</div><div>Vence</div><div>Estado</div>
             </div>
           )}
-          {filtrados.map(c => (
+          {itemsOrdenados.map(c => (
             <div key={c.id} style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 120px 110px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12 }}>
               {isMobile ? (
                 <>

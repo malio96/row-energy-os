@@ -11,9 +11,13 @@ import {
 } from './supabase'
 import {
   COLORS, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle,
-  btnPrimary, Icon, EmptyState, LoadingState, useIsMobile,
+  btnPrimary, Icon, EmptyState, LoadingState, useIsMobile, SortControl, aplicarSort,
 } from './helpers'
-import { puede, puedeEliminar as rolPuedeEliminar } from './permisos'
+import { puede, puedeEliminar as rolPuedeEliminar, puedeGestionarProyecto } from './permisos'
+
+// v16.9.3: persistir orden
+const loadPref = (key, fallback) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback } catch { return fallback } }
+const savePref = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} }
 import { TabDocumentos } from './Proyectos'
 
 export default function Plantas({ usuario }) {
@@ -56,8 +60,16 @@ export default function Plantas({ usuario }) {
         p.ubicacion?.toLowerCase().includes(q)
       )
     }
-    return r
-  }, [plantas, filtroEstado, filtroTipo, busqueda])
+    return aplicarSort(r, sort, {
+      nombre:    p => (p.nombre || '').toLowerCase(),
+      codigo:    p => p.codigo || '',
+      capacidad: p => Number(p.capacidad_mw || 0),
+      estado:    p => p.estado || '',
+      tipo:      p => p.tipo_tecnologia || '',
+      cliente:   p => (p.cliente?.razon_social || '').toLowerCase(),
+      ubicacion: p => (p.ubicacion || '').toLowerCase(),
+    })
+  }, [plantas, filtroEstado, filtroTipo, busqueda, sort])
 
   const kpis = useMemo(() => {
     if (!plantas) return { total: 0, mwTotal: 0, enOperacion: 0, enPlaneacion: 0 }
@@ -132,6 +144,15 @@ export default function Plantas({ usuario }) {
           <div style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:COLORS.slate400 }}>{Icon('Search')}</div>
           <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar nombre, código, cliente, ubicación..." style={{ ...inputStyle, paddingLeft:36 }}/>
         </div>
+        <SortControl value={sort} onChange={setSort} fields={[
+          { key:'nombre',    label:'Alfabético' },
+          { key:'codigo',    label:'Código' },
+          { key:'capacidad', label:'Capacidad MW' },
+          { key:'estado',    label:'Estado' },
+          { key:'tipo',      label:'Tecnología' },
+          { key:'cliente',   label:'Cliente' },
+          { key:'ubicacion', label:'Ubicación' },
+        ]}/>
       </div>
 
       {/* Lista */}
@@ -204,7 +225,8 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
   const [editando, setEditando] = useState(false)
   const navigate = useNavigate()
 
-  const puedeEditar = ['direccion', 'director_proyectos', 'admin'].includes(usuario?.rol)
+  // v16.9.3: helper centralizado (era hardcoded — mismo array que en lista principal)
+  const puedeEditar = puedeGestionarProyecto(usuario)
   const puedeBorrar = rolPuedeEliminar(usuario)
 
   const cargar = async () => {

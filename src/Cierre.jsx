@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { getProyectos, getCierreChecklist, actualizarCierreItem, crearCierreItem } from './supabase'
-import { COLORS, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile } from './helpers'
+import { COLORS, Badge, fmtMoney, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 
 const CHECKLIST_TEMPLATE = [
   'Todas las actividades completadas',
@@ -18,6 +18,7 @@ export default function Cierre({ usuario }) {
   const [proyectos, setProyectos] = useState([])
   const [selId, setSelId] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [sort, setSort] = useState(() => loadPref('sort.cierre', { field:'cierre', dir:'asc' }))
   const isMobile = useIsMobile()
 
   useEffect(() => {
@@ -26,6 +27,15 @@ export default function Cierre({ usuario }) {
       setLoading(false)
     })
   }, [])
+  useEffect(() => { savePref('sort.cierre', sort) }, [sort])
+
+  const itemsOrdenados = useMemo(() => aplicarSort(proyectos, sort, {
+    cierre: p => p.cierre || '9999-12-31',
+    nombre: p => (p.nombre || '').toLowerCase(),
+    codigo: p => p.codigo || '',
+    cliente: p => (p.cliente?.razon_social || '').toLowerCase(),
+    estado: p => p.estado || '',
+  }), [proyectos, sort])
 
   if (selId) return <CierreDetalle proyectoId={selId} onVolver={() => setSelId(null)} usuario={usuario}/>
 
@@ -40,9 +50,20 @@ export default function Cierre({ usuario }) {
       {!loading && proyectos.length === 0 && <EmptyState titulo="Sin proyectos por cerrar" descripcion="Los proyectos aparecen aquí cuando están en estado 'En cierre' o 'Terminado'"/>}
 
       {!loading && proyectos.length > 0 && (
-        <div style={{ display:'grid', gap:10 }}>
-          {proyectos.map(p => <ProyectoCard key={p.id} p={p} onClick={() => setSelId(p.id)}/>)}
-        </div>
+        <>
+          <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', justifyContent:'flex-end' }}>
+            <SortControl value={sort} onChange={setSort} fields={[
+              { key:'cierre', label:'Fecha cierre' },
+              { key:'nombre', label:'Alfabético' },
+              { key:'codigo', label:'Código' },
+              { key:'cliente', label:'Cliente' },
+              { key:'estado', label:'Estado' },
+            ]}/>
+          </div>
+          <div style={{ display:'grid', gap:10 }}>
+            {itemsOrdenados.map(p => <ProyectoCard key={p.id} p={p} onClick={() => setSelId(p.id)}/>)}
+          </div>
+        </>
       )}
     </div>
   )

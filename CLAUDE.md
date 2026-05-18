@@ -96,6 +96,43 @@ Bumpear `package.json.version` 16.8.0 → 16.9.0, commit con descripción de tod
 
 **v16.9.0** — Estado actual en producción (17 may 2026). Backfill Monday + UI rework + auth hardening, plan v16.9.0 ejecutado completo en sesión.
 
+## 🌳 v16.9.3 — Sort + auditoría multi-agente fixes (entregado)
+
+Sesión 17 may 2026, después de v16.9.2. Malio pidió "ataca todo" del audit + sort/persistencia en list views. 4 agentes paralelos ejecutaron mayormente.
+
+**Sort persistente por usuario (localStorage):**
+- Nuevo helper `<SortControl>` + `aplicarSort()` en `helpers.jsx`. Compacto, dropdown campo + toggle ↑/↓.
+- Aplicado en 10 list views: Proyectos, Cotizaciones, Plantas, Cobranza (hitos), Facturación, Compras, Contratos, Postventa, Cierre, Configuración (Usuarios + Clientes).
+- Pref keys: `sort.<modulo>` (ej. `sort.proyectos`, `sort.cobranza.hitos`).
+- Defaults sensatos: catálogos alfabéticos asc, transaccionales por fecha desc, cierre por fecha cierre asc.
+
+**Bug fix `ESTADOS_HITO` divergente:**
+- `Proyectos.jsx` redefinía local con `'Pagado'`/`'Facturado'`/`'Pendiente'` mientras helpers/Cobranza usan `'Cobrado'`/`'Facturado'`/`'Pendiente'`. Hitos creados desde Proyectos con `'Pagado'` eran invisibles al filtro de Cobranza.
+- Solución: eliminar local, importar de helpers, fixed `esCompleto` a solo `'Cobrado'`. Color semaforo aislado en `SEMAFORO_HITO`.
+
+**Permisos hardcoded → helpers centralizados:**
+- `Dashboard.jsx:458`: `['direccion','admin','ventas'].includes(...)` → `esRolEn(usuario, [...])`.
+- `Plantas.jsx:31, 207`: `['direccion','director_proyectos','admin']` → `puedeGestionarProyecto(usuario)`.
+
+**Catches silenciosos → feedback al usuario:**
+- `Cotizaciones.jsx:528` pricing engine: banner rojo + botón Reintentar.
+- `Dashboard.jsx:297, 454` post-cierre: `errorTareasPC`/`errorCarga` capturados para futuro display.
+
+**Emojis residuales → dot CSS:**
+- `Proyectos.jsx:2391` Kanban colDef: `🔴🟡🔵🟢⚪` → `<span>` con `background:c.dot`. Consistente con migración SVG de v15.4.
+
+**RBAC ventas ocultar edits:**
+- Cobranza/Facturación/Compras ahora usan `puedeEditarFinanciero(usuario)` para condicionar botones "Nuevo X" y selects de estado. Ventas sigue viendo (read) pero no le aparecen botones que disparan errores RLS.
+
+**Sin abordar (defer próxima sesión):**
+- 74 hex hardcoded en Proyectos.jsx (define COLORS local) — riesgo visual alto.
+- 18 modales inline sin ModalShell — alto QA cost.
+- 20+ botones hardcoded sin btnPrimary — mecánico pero high churn.
+- 75 sim_etapas vencidas necesitan trigger.
+- Clientes RFC + dirección (50/50 CRIT) → captura manual de Malio.
+- Proyectos.cotizacion_id (198/198) → requiere generar cotizaciones primero.
+- Plantas.fecha_operacion_comercial (18/18) → backfill Monday.
+
 ## 🌳 v16.9.0 — Backfill Monday + TabActividades grid + Auth (entregado)
 
 Sesión 17 may 2026. Ejecutó plan v16.9.0 (auditoría 3 agentes post-v16.8.0) entero: bloque A (re-migración) + bloque B (UI) + Auth Dashboard.

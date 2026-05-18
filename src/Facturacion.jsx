@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getFacturas, crearFactura, actualizarFactura, eliminarFactura, getHitos, getClientes } from './supabase'
-import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState } from './helpers'
-import { puedeEliminar } from './permisos'  // v16.4.0
+import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, loadPref, savePref, SortControl, aplicarSort } from './helpers'
+import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
 
 export default function Facturacion({ usuario }) {
+  const puedeEditar = puedeEditarFinanciero(usuario)
   const [searchParams, setSearchParams] = useSearchParams()
   // Deep-link desde Centro de Alertas: ?factura=X → scroll + highlight
   const deepLinkRef = useRef({ facturaId: searchParams.get('factura'), aplicado: false })
@@ -14,6 +15,8 @@ export default function Facturacion({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const [facturaSel, setFacturaSel] = useState(null)  // v15.8.4
+  const [sort, setSort] = useState(() => loadPref('sort.facturacion', { field:'emision', dir:'desc' }))
+  useEffect(() => { savePref('sort.facturacion', sort) }, [sort])
 
   const cargar = async () => { setLoading(true); setFacturas(await getFacturas()); setLoading(false) }
   useEffect(() => { cargar() }, [])
@@ -41,6 +44,15 @@ export default function Facturacion({ usuario }) {
 
   const cambiarEstado = async (id, nuevo) => { await actualizarFactura(id, { estado: nuevo }); cargar() }
 
+  const itemsOrdenados = useMemo(() => aplicarSort(facturas, sort, {
+    emision:  f => f.fecha_emision || '0',
+    folio:    f => f.folio || '',
+    proyecto: f => (f.proyecto?.nombre || '').toLowerCase(),
+    cliente:  f => (f.cliente?.razon_social || f.proyecto?.cliente?.razon_social || '').toLowerCase(),
+    total:    f => Number(f.total || 0),
+    estado:   f => f.estado || '',
+  }), [facturas, sort])
+
   return (
     <div>
       {modal && <ModalNuevaFactura onClose={() => setModal(false)} onCreada={() => { setModal(false); cargar() }}/>}
@@ -51,7 +63,17 @@ export default function Facturacion({ usuario }) {
           <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Facturación</h1>
           <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{facturas.length} facturas · Total: <strong>{fmtMoney(total)}</strong></p>
         </div>
-        <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva factura</button>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <SortControl value={sort} onChange={setSort} fields={[
+            { key:'emision',  label:'Más reciente' },
+            { key:'folio',    label:'Folio' },
+            { key:'proyecto', label:'Proyecto' },
+            { key:'cliente',  label:'Cliente' },
+            { key:'total',    label:'Monto' },
+            { key:'estado',   label:'Estado' },
+          ]}/>
+          {puedeEditar && <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva factura</button>}
+        </div>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12, marginBottom:20 }}>
@@ -72,7 +94,7 @@ export default function Facturacion({ usuario }) {
           <div style={{ display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
             <div>Folio</div><div>Proyecto</div><div>Cliente</div><div>Total</div><div>Emisión</div><div>Estado</div>
           </div>
-          {facturas.map(f => (
+          {itemsOrdenados.map(f => (
             <div
               key={f.id}
               ref={el => { if (el) rowRefs.current[f.id] = el }}
@@ -97,7 +119,7 @@ export default function Facturacion({ usuario }) {
               <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(f.total)}</div>
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>{f.fecha_emision}</div>
               <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>
-                <select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select>
+                <select value={f.estado} onChange={e => cambiarEstado(f.id, e.target.value)} disabled={!puedeEditar} style={{ border:'none', background:ESTADOS_FACTURA[f.estado]?.bg, color:ESTADOS_FACTURA[f.estado]?.color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:500, cursor: puedeEditar ? 'pointer' : 'not-allowed', fontFamily:'inherit', opacity: puedeEditar ? 1 : 0.55 }}>{Object.keys(ESTADOS_FACTURA).map(e => <option key={e}>{e}</option>)}</select>
                 {puedeEliminar(usuario) && (
                   <button
                     onClick={async (ev) => {

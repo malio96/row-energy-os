@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getHitos, actualizarHito, eliminarHito } from './supabase'
-import { COLORS, ESTADOS_HITO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref } from './helpers'
-import { puedeEliminar } from './permisos'  // v16.4.0
+import { COLORS, ESTADOS_HITO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
+import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
 
 // ============================================================
 // CONFIG — lo que pidió la jefa de admin
@@ -19,6 +19,7 @@ const CLIENTES_WATCHLIST = [
 // COBRANZA v10
 // ============================================================
 export default function Cobranza({ usuario }) {
+  const puedeEditar = puedeEditarFinanciero(usuario)
   const [hitos, setHitos] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(loadPref('cob_tab', 'hitos'))
@@ -121,6 +122,7 @@ export default function Cobranza({ usuario }) {
           onSelectHito={setHitoSel}
           kpis={kpis}
           isMobile={isMobile}
+          puedeEditar={puedeEditar}
         />
       )}
       {tab === 'clientes' && !clienteSel && (
@@ -138,6 +140,7 @@ export default function Cobranza({ usuario }) {
           cambiarEstado={cambiarEstado}
           onSelectHito={setHitoSel}
           isMobile={isMobile}
+          puedeEditar={puedeEditar}
         />
       )}
       {tab === 'meta'   && <VistaMetaReal enriquecidos={enriquecidos} isMobile={isMobile}/>}
@@ -149,7 +152,10 @@ export default function Cobranza({ usuario }) {
 // ============================================================
 // VISTA HITOS (la que ya existía - preservada 100%)
 // ============================================================
-function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, cambiarEstado, onSelectHito, kpis, isMobile }) {
+function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, cambiarEstado, onSelectHito, kpis, isMobile, puedeEditar }) {
+  const [sort, setSort] = useState(() => loadPref('sort.cobranza.hitos', { field:'vencimiento', dir:'asc' }))
+  useEffect(() => { savePref('sort.cobranza.hitos', sort) }, [sort])
+
   const filtrados = useMemo(() => {
     let r = enriquecidos
     if (filtro === 'Por cobrar') r = r.filter(h => ['Pendiente', 'Facturado'].includes(h.estado))
@@ -166,6 +172,15 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
     }
     return r
   }, [enriquecidos, filtro, busqueda])
+
+  const itemsOrdenados = useMemo(() => aplicarSort(filtrados, sort, {
+    vencimiento: h => h.fecha_vencimiento || h.fecha_esperada || '9999-12-31',
+    nombre:      h => (h.descripcion || h.concepto || h.nombre || '').toLowerCase(),
+    proyecto:    h => (h.proyecto?.nombre || '').toLowerCase(),
+    cliente:     h => (h.proyecto?.cliente?.razon_social || '').toLowerCase(),
+    monto:       h => Number(h.monto || 0),
+    estado:      h => h.estado || '',
+  }), [filtrados, sort])
 
   // Aging Report
   const aging = useMemo(() => {
@@ -227,20 +242,28 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
             style={{ width:'100%', padding:'9px 14px 9px 36px', border:`1px solid ${COLORS.slate100}`, borderRadius:10, fontSize:12, outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}
           />
         </div>
+        <SortControl value={sort} onChange={setSort} fields={[
+          { key:'vencimiento', label:'Más urgente' },
+          { key:'nombre',      label:'Nombre' },
+          { key:'proyecto',    label:'Proyecto' },
+          { key:'cliente',     label:'Cliente' },
+          { key:'monto',       label:'Monto' },
+          { key:'estado',      label:'Estado' },
+        ]}/>
       </div>
 
       {/* Lista de hitos */}
-      {filtrados.length === 0 && <EmptyState titulo="Sin hitos" descripcion="No hay hitos con esos filtros."/>}
-      {filtrados.length > 0 && (
+      {itemsOrdenados.length === 0 && <EmptyState titulo="Sin hitos" descripcion="No hay hitos con esos filtros."/>}
+      {itemsOrdenados.length > 0 && (
         <div style={{ display:'grid', gap:8 }}>
-          {filtrados.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile}/>)}
+          {itemsOrdenados.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile} puedeEditar={puedeEditar}/>)}
         </div>
       )}
     </>
   )
 }
 
-function HitoRow({ hito, onCambiar, onClick, isMobile }) {
+function HitoRow({ hito, onCambiar, onClick, isMobile, puedeEditar = true }) {
   const proyNombre = hito.proyecto?.nombre || 'Sin proyecto'
   const clienteNombre = hito.proyecto?.cliente?.razon_social || ''
   const color = hito.esVencido ? COLORS.red : (ESTADOS_HITO[hito.estado]?.color || COLORS.slate500)
@@ -288,7 +311,8 @@ function HitoRow({ hito, onCambiar, onClick, isMobile }) {
           value={hito.estado}
           onChange={e => onCambiar(hito.id, e.target.value)}
           onClick={e => e.stopPropagation()}
-          style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor:'pointer', fontFamily:'inherit' }}
+          disabled={!puedeEditar}
+          style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor: puedeEditar ? 'pointer' : 'not-allowed', fontFamily:'inherit', opacity: puedeEditar ? 1 : 0.55 }}
         >
           {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
@@ -420,7 +444,7 @@ function ClienteRow({ cliente, onClick, isMobile, destacado }) {
   )
 }
 
-function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, onSelectHito, isMobile }) {
+function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, onSelectHito, isMobile, puedeEditar }) {
   const hitosCli = enriquecidos.filter(h => (h.proyecto?.cliente?.id || 'null') === cliente.id)
     .sort((a,b) => {
       // Primero vencidos, luego por fecha esperada
@@ -451,7 +475,7 @@ function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, onSele
 
       {hitosCli.length === 0 && <EmptyState titulo="Sin hitos" descripcion="Este cliente no tiene hitos registrados."/>}
       <div style={{ display:'grid', gap:8 }}>
-        {hitosCli.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile}/>)}
+        {hitosCli.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile} puedeEditar={puedeEditar}/>)}
       </div>
     </>
   )

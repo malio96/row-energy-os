@@ -1,7 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS, getTareasPostCierre, completarTareaPostCierre, asignarTareaPostCierre, aprobarWorkflowPostCierre, DEPARTAMENTOS_POST_CIERRE, ESTADOS_TAREA_PC } from './supabase'
-import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState } from './helpers'
+import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort } from './helpers'
+
+// v16.9.3: loadPref/savePref locales para persistir orden por usuario
+const loadPref = (key, fallback) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback } catch { return fallback } }
+const savePref = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} }
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
@@ -14,6 +18,17 @@ export default function Cotizaciones({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [selId, setSelId] = useState(null)
   const [modalNuevo, setModalNuevo] = useState(false)
+  // v16.9.3: orden persistido por usuario
+  const [sort, setSort] = useState(() => loadPref('sort.cotizaciones', { field:'fecha', dir:'desc' }))
+  useEffect(() => { savePref('sort.cotizaciones', sort) }, [sort])
+  const cotsOrdenadas = useMemo(() => aplicarSort(cots, sort, {
+    codigo:   c => c.codigo || '',
+    proyecto: c => (c.nombre_proyecto || '').toLowerCase(),
+    cliente:  c => (c.cliente?.razon_social || '').toLowerCase(),
+    total:    c => Number(c.total || 0),
+    estado:   c => c.estado || '',
+    fecha:    c => c.fecha_emision || '',
+  }), [cots, sort])
 
   const cargar = async () => { setLoading(true); setCots(await getCotizaciones()); setLoading(false) }
   useEffect(() => { cargar() }, [])
@@ -33,14 +48,24 @@ export default function Cotizaciones({ usuario }) {
     <div>
       {modalNuevo && <ModalNuevaCotizacion usuario={usuario} onClose={() => setModalNuevo(false)} onCreada={(c) => { setModalNuevo(false); cargar(); setSelId(c.id) }}/>}
 
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:28 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
           <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Cotizaciones</h1>
           <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{cots.length} cotización{cots.length!==1?'es':''}</p>
         </div>
-        <button onClick={() => setModalNuevo(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-          {Icon('Plus')} Nueva cotización
-        </button>
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          <SortControl value={sort} onChange={setSort} fields={[
+            { key:'fecha',    label:'Más reciente' },
+            { key:'codigo',   label:'Código' },
+            { key:'proyecto', label:'Proyecto' },
+            { key:'cliente',  label:'Cliente' },
+            { key:'total',    label:'Monto' },
+            { key:'estado',   label:'Estado' },
+          ]}/>
+          <button onClick={() => setModalNuevo(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            {Icon('Plus')} Nueva cotización
+          </button>
+        </div>
       </div>
 
       {loading && <LoadingState/>}
@@ -58,7 +83,7 @@ export default function Cotizaciones({ usuario }) {
           <div style={{ display:'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 130px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
             <div>Código</div><div>Proyecto</div><div>Cliente</div><div>Total</div><div>Estado</div><div>Emitida</div>
           </div>
-          {cots.map(c => (
+          {cotsOrdenadas.map(c => (
             <div key={c.id} onClick={() => setSelId(c.id)} style={{ display:'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 130px', padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', cursor:'pointer', transition:'background 0.12s' }}
               onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
               <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
@@ -500,7 +525,12 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
   const [pricingCap, setPricingCap] = useState('')
   const [pricingInfl, setPricingInfl] = useState(false)
   const [pricingAnios, setPricingAnios] = useState(0)
-  useEffect(() => { getPreciosServicios().then(setPrecios).catch(()=>{}) }, [])
+  const [pricingError, setPricingError] = useState(null)  // v16.9.3: feedback visible (antes catch silencioso)
+  useEffect(() => {
+    getPreciosServicios()
+      .then(d => { setPrecios(d); setPricingError(null) })
+      .catch(e => setPricingError(e.message || 'No se pudieron cargar los precios'))
+  }, [])
 
   const pricingMatch = (() => {
     if (!form.servicio || !pricingCap) return null
@@ -575,6 +605,12 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
             </button>
             {pricingOpen && (
               <div style={{ padding: 14, background: 'white' }}>
+                {pricingError && (
+                  <div style={{ padding:10, marginBottom:10, background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, fontSize:12, color:'#DC2626', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                    <span>⚠ {pricingError}</span>
+                    <button onClick={() => { setPricingError(null); getPreciosServicios().then(d => { setPrecios(d); setPricingError(null) }).catch(e => setPricingError(e.message || 'No se pudieron cargar los precios')) }} style={{ padding:'4px 10px', background:'white', color:'#DC2626', border:'1px solid #FECACA', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer' }}>Reintentar</button>
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 110px', gap: 10, marginBottom: 10 }}>
                   <div>
                     <div style={{ fontSize: 10, color: COLORS.slate500, marginBottom: 4 }}>Tipo</div>
