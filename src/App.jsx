@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom'
 import { supabase } from './supabase'
-import { COLORS, useIsMobile } from './helpers'
+import { COLORS, useIsMobile, hydratePrefsFromBD, setSyncPrefHandler, clearLocalPrefs } from './helpers'
 import { puede } from './permisos'
 import Turnstile, { TURNSTILE_ENABLED } from './Turnstile'  // v16.6.0: captcha login
 import Sidebar from './Sidebar'
@@ -339,6 +339,8 @@ export default function App() {
 function MainApp() {
   const [usuario, setUsuario] = useState(null)
   const [loading, setLoading] = useState(true)
+  // v17.0.0: hidratar prefs del usuario desde BD (cross-device persistence)
+  const [prefsHydrated, setPrefsHydrated] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -376,13 +378,37 @@ function MainApp() {
     }
   }, [])
 
+  // v17.0.0: cuando cambia usuario, hidratar prefs desde BD y setup sync handler
+  useEffect(() => {
+    if (!usuario?.id) { setPrefsHydrated(true); return }
+    setPrefsHydrated(false)
+    // Limpiar prefs locales del user anterior antes de hidratar
+    clearLocalPrefs()
+    hydratePrefsFromBD(supabase, usuario.id).finally(() => {
+      // Configurar dual-write a BD para futuras llamadas a savePref
+      setSyncPrefHandler((key, value) => {
+        supabase.from('usuario_preferencias').upsert(
+          { usuario_id: usuario.id, key, value, updated_at: new Date().toISOString() },
+          { onConflict: 'usuario_id,key' }
+        ).then(({ error }) => {
+          if (error) console.warn('savePref sync to BD:', error.message)
+        })
+      })
+      setPrefsHydrated(true)
+    })
+    return () => { setSyncPrefHandler(null) }
+  }, [usuario?.id])
+
   const handleLogout = async () => {
+    setSyncPrefHandler(null)  // no escribir más a BD
+    clearLocalPrefs()
     await supabase.auth.signOut()
     setUsuario(null)
   }
 
   if (loading) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color:COLORS.slate400, fontFamily:'var(--font-sans)' }}>Cargando...</div>
   if (!usuario) return <Login onLogin={setUsuario}/>
+  if (!prefsHydrated) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color:COLORS.slate400, fontFamily:'var(--font-sans)' }}>Cargando preferencias...</div>
 
   return (
     <Layout usuario={usuario} onLogout={handleLogout}>
@@ -392,8 +418,13 @@ function MainApp() {
         {/* v12.5.9c: Centro de Alertas — accesible para todos */}
         <Route path="/alertas" element={<CentroAlertas usuario={usuario}/>}/>
 
-        {/* v16.9.4: Vista de actividades filtradas (drill-down desde Dashboard) */}
-        <Route path="/actividades" element={<MisActividades usuario={usuario}/>}/>
+        {/* v16.9.4: Vista de actividades filtradas (drill-down desde Dashboard).
+            v16.9.x: protegida bajo módulo 'actividades' (todos los roles operativos lo tienen). */}
+        <Route path="/actividades" element={
+          <RutaProtegida usuario={usuario} modulo="actividades">
+            <MisActividades usuario={usuario}/>
+          </RutaProtegida>
+        }/>
 
           <Route path="/proyectos" element={
             <RutaProtegida usuario={usuario} modulo="proyectos">

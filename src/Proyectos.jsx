@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'rea
 import { useSearchParams, useLocation } from 'react-router-dom'
 // v15.2: exportGantt se importa dinámicamente al hacer click (jspdf+exceljs son ~1.4MB)
 import {
-  supabase, getProyectos, getProyectoConActividades, getUsuarios, getClientes,
+  supabase, getProyectos, getProyectosLite, getProyectoConActividades, getUsuarios, getClientes,
   getPlantillas, getPlantillaActividades, crearProyectoDesdePlantilla,
   actualizarActividad, crearActividad, desglosarActividadConPlantilla,
   agregarDependencia, quitarDependencia, recalcularFechasDesde,
@@ -2097,8 +2097,12 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
   const [creandoBajo, setCreandoBajo] = useState(null)
   const [creando, setCreando] = useState(false)
   const [collapsed, setCollapsed] = useState(() => new Set())
+  // v16.9.4: responsive — field users del equipo de proyectos reportan desde celular
+  const isMobile = useIsMobile()
 
-  const GRID_COLS = '32px 28px 1fr 90px 90px 60px 140px 120px auto'
+  const GRID_COLS = isMobile
+    ? '24px 1fr auto'
+    : '32px 28px 1fr 90px 90px 60px 140px 120px auto'
 
   const childrenMap = useMemo(() => {
     const m = new Map()
@@ -2190,16 +2194,20 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
         </div>
       ) : (
         <div style={{ display:'grid', gridTemplateColumns: GRID_COLS, border:`1px solid ${COLORS.slate100}`, borderRadius:10, overflow:'hidden', background:'white' }}>
-          {/* Header sticky */}
-          <div style={{ ...colHead, justifyContent:'center' }}></div>
-          <div style={{ ...colHead, justifyContent:'flex-end', paddingRight:6 }}>#</div>
-          <div style={colHead}>Nombre</div>
-          <div style={colHead}>Inicio</div>
-          <div style={colHead}>Fin</div>
-          <div style={{ ...colHead, justifyContent:'center' }}>Dur</div>
-          <div style={{ ...colHead, justifyContent:'center' }}>Avance</div>
-          <div style={colHead}>Estado</div>
-          <div style={{ ...colHead, justifyContent:'flex-end' }}>Acciones</div>
+          {/* Header sticky — solo desktop; mobile lleva la info dentro de las cards */}
+          {!isMobile && (
+            <>
+              <div style={{ ...colHead, justifyContent:'center' }}></div>
+              <div style={{ ...colHead, justifyContent:'flex-end', paddingRight:6 }}>#</div>
+              <div style={colHead}>Nombre</div>
+              <div style={colHead}>Inicio</div>
+              <div style={colHead}>Fin</div>
+              <div style={{ ...colHead, justifyContent:'center' }}>Dur</div>
+              <div style={{ ...colHead, justifyContent:'center' }}>Avance</div>
+              <div style={colHead}>Estado</div>
+              <div style={{ ...colHead, justifyContent:'flex-end' }}>Acciones</div>
+            </>
+          )}
 
           {filasConGrupos.map((row, idx) => {
             if (row.tipoGrupo) {
@@ -2222,6 +2230,63 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
             const onCtx = (e) => { e.preventDefault(); onMenuContextual?.(act, e.clientX, e.clientY) }
             const cellBg = esRoot ? '#FAFBFC' : 'white'
             const cellBase = { background: cellBg, borderBottom: `1px solid ${COLORS.slate100}`, padding: '10px 8px', display: 'flex', alignItems: 'center', minHeight: 44, fontSize: 12, color: COLORS.ink }
+
+            // v16.9.4: render mobile (3 celdas: chevron + nombre+metadata stacked + acciones compactas)
+            if (isMobile) {
+              const eff = estadoEfectivo(act)
+              return (
+                <Fragment key={act.id}>
+                  {/* Chevron */}
+                  <div onContextMenu={onCtx} onClick={() => tieneHijos && toggleCollapse(act.id)} style={{ ...cellBase, padding:'10px 4px', justifyContent:'center', cursor: tieneHijos ? 'pointer' : 'default', color: COLORS.slate500 }}>
+                    {tieneHijos ? (collapsed.has(act.id) ? <Icon.ChevronRight/> : <Icon.ChevronDown/>) : null}
+                  </div>
+                  {/* Nombre + metadata stacked */}
+                  <div onContextMenu={onCtx} style={{ ...cellBase, paddingLeft: 8 + nivel * 12, paddingRight:6, flexDirection:'column', alignItems:'flex-start', gap:4, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, width:'100%', minWidth:0 }}>
+                      {act.es_milestone && <span style={{ color:COLORS.navy, flexShrink:0 }}><Icon.Diamond/></span>}
+                      <span style={{ fontSize:13, fontWeight: esRoot?600:500, color: esRoot?COLORS.navy:COLORS.ink, fontFamily:'var(--font-sans)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0, flex:1 }}>{act.nombre}</span>
+                    </div>
+                    <div style={{ fontSize:10, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>
+                      {numeracion[act.id]} · {act.inicio ? fmtDate(act.inicio) : '—'} → {act.fin ? fmtDate(act.fin) : '—'}
+                      {dur !== '—' && ` · ${dur}`}
+                      {' · '}{avanceMap.get(act.id) || 0}%
+                    </div>
+                    <div style={{ width:'100%' }}>
+                      <BarraAvance avance={avanceMap.get(act.id) || 0}/>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, alignItems:'center' }}>
+                      <Badge texto={eff} mapa={ESTADOS}/>
+                      {!esRoot && depsCount > 0 && (
+                        <span title={`${depsCount} dependencias`} style={{ display:'inline-flex', alignItems:'center', gap:3, background:COLORS.tealLight, color:COLORS.teal, padding:'1px 6px', borderRadius:10, fontSize:9, fontWeight:700 }}><Icon.Link/>{depsCount}</span>
+                      )}
+                      {!esRoot && act.es_cobrable && (
+                        <span title={`Cobrable: ${ESTADOS_COBRO[act.estado_cobro]?.label || 'Pendiente'}`} style={{ display:'inline-flex', alignItems:'center', background: ESTADOS_COBRO[act.estado_cobro]?.bg || '#E1F5EE', color: ESTADOS_COBRO[act.estado_cobro]?.color || '#0F6E56', padding:'1px 6px', borderRadius:4, fontSize:9, fontWeight:700 }}>$</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Acciones compactas: ✓ (si !esRoot) + Info + Trash */}
+                  <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'flex-end', gap:4, paddingRight:8 }}>
+                    {!esRoot && (
+                      <div onClick={(e) => { e.stopPropagation(); onToggle(act) }} title="Completar" style={{ width:24, height:24, borderRadius:5, border:`1.5px solid ${act.completada?COLORS.teal:'#CBD5E1'}`, background:act.completada?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'white', flexShrink:0 }}>
+                        {act.completada && <Icon.Check/>}
+                      </div>
+                    )}
+                    <button onClick={() => onAbrirInfo(act)} title="Información" style={{ padding:'5px 7px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Info/></button>
+                    <button onClick={() => onEliminar?.(act)} title="Eliminar actividad" style={{ padding:'5px 7px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
+                  </div>
+                  {/* Input inline para sub-actividad — fila completa, padding reducido en mobile */}
+                  {creandoBajo === act.id && (
+                    <div style={{ gridColumn:'1 / -1', display:'flex', flexDirection:'column', gap:8, padding:'10px 12px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, paddingLeft: 12 + (nivel + 1) * 12 }}>
+                      <input value={nombreNueva} onChange={e => setNombreNueva(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') crearBajo(act.id); if (e.key === 'Escape') { setCreandoBajo(null); setNombreNueva('') } }} autoFocus placeholder={`Sub-actividad de "${act.nombre.slice(0,30)}"...`} style={{...inputStyle}}/>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <button onClick={() => crearBajo(act.id)} disabled={!nombreNueva.trim() || creando} style={{...btnTeal, padding:'7px 14px', flex:1}}>{creando ? '...' : 'Crear'}</button>
+                        <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px', flex:1}}>Cancelar</button>
+                      </div>
+                    </div>
+                  )}
+                </Fragment>
+              )
+            }
 
             return (
               <Fragment key={act.id}>
@@ -4174,7 +4239,7 @@ export default function Proyectos({ usuario }) {
   const [duplicando, setDuplicando] = useState(false) // v12
   const isMobile = useIsMobile()
 
-  const cargar = async () => { setLoading(true); setProyectos(await getProyectos()); setLoading(false) }
+  const cargar = async () => { setLoading(true); setProyectos(await getProyectosLite()); setLoading(false) }
   useEffect(() => { cargar() }, [])
 
   // Deep-link: aplicar ?proyecto=X cuando los proyectos terminen de cargar; limpiar URL después

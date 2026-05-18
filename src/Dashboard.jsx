@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { getProyectos, getCotizaciones, getLeads, getHitos, getFacturas, getCompras, getPostventaTickets, getClientes, getUsuarios } from './supabase'
+import { getProyectos, getCotizaciones, getLeads, getHitos, getFacturas, getCompras, getPostventaTickets, getClientes, getUsuarios, actualizarActividad } from './supabase'
 // v16.9.3: helper centralizado de permisos (era hardcoded ['direccion','admin','ventas'])
-import { esRolEn } from './permisos'
+// v16.9.5: puede() para gating de vistas Dashboard según rol (equipo_proyectos solo ve "Mis tareas")
+import { esRolEn, puede } from './permisos'
 // v12: helpers para vista Personas
 import { calcularCargaPorColaborador, identificarCuellosBotella, getTareasPostCierrePendientes, DEPARTAMENTOS_POST_CIERRE } from './supabase'
 // v12.5.4: CRUD gastos y cuentas por pagar (reemplaza localStorage)
@@ -46,7 +47,9 @@ export default function Dashboard({ usuario, onNavigate }) {
   const deepLinkRef = useRef({ colaboradorId: searchParams.get('colaborador'), aplicado: false })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [vista, setVista] = useState(loadPref('dash_vista', 'ejecutivo'))
+  // v16.9.5: equipo_proyectos aterriza directo en su vista "Mis tareas" (no en Ejecutivo)
+  const defaultVista = (usuario?.rol === 'equipo_proyectos') ? 'mis_tareas' : 'ejecutivo'
+  const [vista, setVista] = useState(() => loadPref('dash_vista', defaultVista))
   const [colaboradorInicialId, setColaboradorInicialId] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)  // v12.5.4: trigger para recargar datos
   const [alertasConfig, setAlertasConfig] = useState(null)  // v12.5.9
@@ -66,17 +69,30 @@ export default function Dashboard({ usuario, onNavigate }) {
   useEffect(() => {
     const cargar = async () => {
       setLoading(true)
+      // v16.9.5: equipo_proyectos solo necesita proyectos + usuarios para "Mis tareas".
+      // Skip fetches financieros/comerciales (cotizaciones, leads, hitos, facturas, compras,
+      // tickets, clientes, gastos, cxp) — son irrelevantes para su vista y podrían leakear
+      // datos que su rol no debería ver.
+      const skipFinanciero = usuario?.rol === 'equipo_proyectos'
       const [proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, gastos, cxp] = await Promise.all([
-        getProyectos(), getCotizaciones(), getLeads(), getHitos(),
-        getFacturas(), getCompras(), getPostventaTickets(), getClientes(), getUsuarios(),
-        getGastosVariables(), getCuentasPorPagar(),  // v12.5.4
+        getProyectos(),
+        skipFinanciero ? Promise.resolve([]) : getCotizaciones(),
+        skipFinanciero ? Promise.resolve([]) : getLeads(),
+        skipFinanciero ? Promise.resolve([]) : getHitos(),
+        skipFinanciero ? Promise.resolve([]) : getFacturas(),
+        skipFinanciero ? Promise.resolve([]) : getCompras(),
+        skipFinanciero ? Promise.resolve([]) : getPostventaTickets(),
+        skipFinanciero ? Promise.resolve([]) : getClientes(),
+        getUsuarios(),
+        skipFinanciero ? Promise.resolve([]) : getGastosVariables(),
+        skipFinanciero ? Promise.resolve([]) : getCuentasPorPagar(),  // v12.5.4
       ])
       const actividades = proyectos.flatMap(p => (p.actividades || []).map(a => ({ ...a, proyecto: { id: p.id, codigo: p.codigo, nombre: p.nombre } })))
       setData({ proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, actividades, gastos, cxp })
       setLoading(false)
     }
     cargar()
-  }, [refreshTick])
+  }, [refreshTick, usuario?.rol])
 
   // v12.5.9: cargar config de alertas del usuario actual
   useEffect(() => {
@@ -94,15 +110,32 @@ export default function Dashboard({ usuario, onNavigate }) {
 
   if (loading || !data) return <LoadingState/>
 
-  const VISTAS = [
-    { key:'ejecutivo',       label:'Ejecutivo',       icon:'Eye' },
-    { key:'administracion',  label:'Administración',  icon:'File' },
-    { key:'ventas',          label:'Ventas',          icon:'Users' },
-    { key:'marketing',       label:'Marketing',       icon:'Message' },
-    { key:'compras',         label:'Compras',         icon:'Archive' },
-    { key:'cobranza',        label:'Cobranza',        icon:'Dollar' },
-    { key:'personas',        label:'Personas',        icon:'Users' },
-  ]
+  // v16.9.5: vistas filtradas por rol. `rolesOcultos` = roles que NO ven esa vista.
+  // - 'ejecutivo' tiene KPIs financieros (Pipeline/Por cobrar/Cobrado) → equipo_proyectos NO debe verlo.
+  // - 'mis_tareas' es exclusiva de equipo_proyectos (resto tiene su vista departamental).
+  // - Departamentales restringidas a sus roles operativos.
+  const VISTAS = useMemo(() => {
+    const todas = [
+      { key:'ejecutivo',       label:'Ejecutivo',       icon:'Eye',      rolesOcultos:['equipo_proyectos'] },
+      { key:'mis_tareas',      label:'Mis tareas',      icon:'Check',    rolesOcultos:['direccion','admin','ventas','director_proyectos','cobranza'] },
+      { key:'administracion',  label:'Administración',  icon:'File',     rolesOcultos:['ventas','director_proyectos','cobranza','equipo_proyectos'] },
+      { key:'ventas',          label:'Ventas',          icon:'Users',    rolesOcultos:['director_proyectos','cobranza','equipo_proyectos'] },
+      { key:'marketing',       label:'Marketing',       icon:'Message',  rolesOcultos:['director_proyectos','cobranza','equipo_proyectos'] },
+      { key:'compras',         label:'Compras',         icon:'Archive',  rolesOcultos:['ventas','director_proyectos','equipo_proyectos'] },
+      { key:'cobranza',        label:'Cobranza',        icon:'Dollar',   rolesOcultos:['director_proyectos','equipo_proyectos'] },
+      { key:'personas',        label:'Personas',        icon:'Users',    rolesOcultos:['ventas','cobranza','equipo_proyectos'] },
+    ]
+    return todas.filter(v => !v.rolesOcultos?.includes(usuario?.rol))
+  }, [usuario?.rol])
+
+  // v16.9.5: si la vista guardada en localStorage ya no está permitida para este rol, switch
+  // al primer disponible. Evita pantalla en blanco si el rol del usuario cambió.
+  useEffect(() => {
+    if (VISTAS.length === 0) return
+    if (!VISTAS.find(v => v.key === vista)) {
+      setVista(VISTAS[0].key)
+    }
+  }, [VISTAS, vista])
 
   // v12.5.9: calcular carga (necesaria para alerta de sobrecarga)
   const cargaColaboradores = calcularCargaPorColaborador(data.actividades || [], data.usuarios || [])
@@ -143,6 +176,7 @@ export default function Dashboard({ usuario, onNavigate }) {
       </div>
 
       {/* CONTENIDO */}
+      {vista === 'mis_tareas'     && <VistaMisTareas     data={data} usuario={usuario} isMobile={isMobile} recargar={recargar}/>}
       {vista === 'ejecutivo'      && <VistaEjecutivo      data={data} onNavigate={onNavigate} isMobile={isMobile} usuario={usuario} alertasConfig={alertasConfig} cargaColaboradores={cargaColaboradores} setVista={setVista} setColaboradorInicialId={setColaboradorInicialId}/>}
       {vista === 'administracion' && <VistaAdministracion data={data} onNavigate={onNavigate} isMobile={isMobile} recargar={recargar}/>}
       {vista === 'ventas'         && <VistaVentas        data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
@@ -151,6 +185,156 @@ export default function Dashboard({ usuario, onNavigate }) {
       {vista === 'cobranza'       && <VistaCobranza      data={data} onNavigate={onNavigate} isMobile={isMobile}/>}
       {vista === 'personas'       && <VistaPersonas      data={data} onNavigate={onNavigate} isMobile={isMobile} colaboradorInicialId={colaboradorInicialId}/>}
     </div>
+  )
+}
+
+// ============================================================
+// v16.9.5: VISTA "MIS TAREAS" — exclusiva para equipo_proyectos
+// El equipo de proyectos NO debe ver KPIs financieros (Pipeline/Por cobrar/Cobrado)
+// del Dashboard Ejecutivo. Aterriza aquí: 4 KPIs propios + lista accionable.
+// ============================================================
+function VistaMisTareas({ data, usuario, isMobile, recargar }) {
+  const { actividades } = data
+  const navigate = useNavigate()
+  const [completandoId, setCompletandoId] = useState(null)
+
+  const misKpis = useMemo(() => {
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+    const dia = hoy.getDay()
+    const diasDesdeLunes = dia === 0 ? 6 : dia - 1
+    const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - diasDesdeLunes); lunes.setHours(0,0,0,0)
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 7)
+
+    const mias = (actividades || []).filter(a => {
+      const respId = a.responsable_id || a.asignado_id
+      return respId && usuario?.id && String(respId) === String(usuario.id)
+    })
+    const abiertas = mias.filter(a => !['Completada','Cancelada'].includes(a.estado))
+
+    const retrasadas = abiertas.filter(a => {
+      if (!a.fin) return false
+      const fin = new Date(a.fin); fin.setHours(0,0,0,0)
+      return fin < hoy
+    })
+    const bloqueadas = abiertas.filter(a => a.estado === 'Bloqueada')
+    const hoyArr = abiertas.filter(a => {
+      if (!a.fin) return false
+      const fin = new Date(a.fin); fin.setHours(0,0,0,0)
+      return fin.getTime() === hoy.getTime()
+    })
+    const estaSemana = abiertas.filter(a => {
+      if (!a.fin) return false
+      const fin = new Date(a.fin); fin.setHours(0,0,0,0)
+      return fin >= lunes && fin < domingo
+    })
+
+    // Lista accionable: prioriza retrasadas → hoy → resto de la semana → próximas
+    const visibles = [...abiertas]
+      .filter(a => a.inicio || a.fin)
+      .sort((a, b) => {
+        const fa = a.fin ? new Date(a.fin).getTime() : Infinity
+        const fb = b.fin ? new Date(b.fin).getTime() : Infinity
+        return fa - fb
+      })
+      .slice(0, 10)
+
+    return { retrasadas, bloqueadas, hoyArr, estaSemana, visibles, totalAbiertas: abiertas.length }
+  }, [actividades, usuario?.id])
+
+  const completar = async (act) => {
+    if (completandoId) return
+    setCompletandoId(act.id)
+    try {
+      const hoyISO = new Date().toISOString().slice(0, 10)
+      await actualizarActividad(act.id, { estado: 'Completada', avance: 100, fecha_fin_real: hoyISO })
+      recargar?.()
+    } catch (e) {
+      alert('No se pudo marcar como completada: ' + (e?.message || 'error'))
+    } finally {
+      setCompletandoId(null)
+    }
+  }
+
+  const irAActividades = (filtro) => {
+    if (filtro) navigate(`/actividades?filtro=${filtro}`)
+    else navigate('/actividades')
+  }
+
+  if (misKpis.totalAbiertas === 0 && misKpis.visibles.length === 0) {
+    return (
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:32, textAlign:'center' }}>
+        <div style={{ color: COLORS.teal, marginBottom: 12, display:'inline-flex' }}>{Icon('Check')}</div>
+        <div style={{ fontSize:16, fontWeight:600, color:COLORS.navy, marginBottom:6 }}>Sin tareas asignadas</div>
+        <div style={{ fontSize:13, color:COLORS.slate500 }}>
+          No tienes actividades abiertas. Cuando tu director te asigne una, aparecerá aquí.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:16 }}>
+        <KpiHero label="Retrasadas" valor={misKpis.retrasadas.length} sub="Fin vencido sin completar" color={COLORS.danger || '#DC2626'} onClick={() => irAActividades('retrasadas')}/>
+        <KpiHero label="Bloqueadas" valor={misKpis.bloqueadas.length} sub="Marcadas como Bloqueada"   color={COLORS.amberInk || '#D97706'} onClick={() => irAActividades('bloqueadas')}/>
+        <KpiHero label="Para hoy"   valor={misKpis.hoyArr.length}     sub="Vencen hoy"                color={COLORS.navy}                  onClick={() => irAActividades()}/>
+        <KpiHero label="Esta semana" valor={misKpis.estaSemana.length} sub="Vencen lun–dom"           color={COLORS.teal}                  onClick={() => irAActividades()}/>
+      </div>
+
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:12 }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.navy, margin:0, fontFamily:'var(--font-sans)' }}>Próximas tareas</h3>
+          <button onClick={() => irAActividades()} style={{ background:'transparent', border:'none', fontSize:11, fontWeight:600, color:COLORS.teal, cursor:'pointer' }}>
+            Ver todas →
+          </button>
+        </div>
+        {misKpis.visibles.length === 0 ? (
+          <div style={{ fontSize:13, color:COLORS.slate500, padding:'12px 0' }}>No hay tareas con fechas en agenda.</div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {misKpis.visibles.map(a => {
+              const finDate = a.fin ? new Date(a.fin) : null
+              const hoy = new Date(); hoy.setHours(0,0,0,0)
+              if (finDate) finDate.setHours(0,0,0,0)
+              const vencida = finDate && finDate < hoy
+              const esHoy = finDate && finDate.getTime() === hoy.getTime()
+              const estadoColor = vencida ? '#DC2626' : (esHoy ? '#D97706' : COLORS.slate500)
+              return (
+                <div key={a.id} style={{
+                  display:'flex', alignItems:'center', gap:12, padding:'10px 12px',
+                  background: COLORS.slate50, borderRadius:8,
+                  borderLeft:`3px solid ${estadoColor}`,
+                }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:COLORS.navy, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {a.nombre || a.descripcion || 'Sin nombre'}
+                    </div>
+                    <div style={{ fontSize:11, color:COLORS.slate500, display:'flex', gap:8, flexWrap:'wrap' }}>
+                      {a.proyecto?.codigo && <span>{a.proyecto.codigo}</span>}
+                      {a.fin && <span style={{ color: estadoColor, fontWeight: vencida || esHoy ? 600 : 400 }}>
+                        Vence {fmtDate(a.fin)}{vencida ? ' (vencida)' : esHoy ? ' (hoy)' : ''}
+                      </span>}
+                      {a.estado && <span>· {a.estado}</span>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => completar(a)}
+                    disabled={completandoId === a.id}
+                    style={{
+                      padding:'6px 10px', background: completandoId === a.id ? COLORS.slate100 : COLORS.teal,
+                      color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:600,
+                      cursor: completandoId === a.id ? 'wait' : 'pointer',
+                      display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap',
+                    }}>
+                    {Icon('Check')} {completandoId === a.id ? '...' : 'Completar'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 

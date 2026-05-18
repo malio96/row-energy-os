@@ -20,6 +20,12 @@ const modulos = [
     { id:'dashboard', label:'Dashboard', path:'/', mobileNav:true,
       icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
     },
+    // v16.9.x: entrada exclusiva del rol equipo_proyectos.
+    // Para los demás roles esta vista sigue accesible via drill-down desde cards del Dashboard.
+    { id:'actividades', label:'Mis actividades', path:'/actividades?filtro=proximas', mobileNav:true,
+      soloRoles:['equipo_proyectos'],
+      icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    },
   ]},
   { seccion: 'OPERACIONES', items: [
     { id:'proyectos', label:'Proyectos', path:'/proyectos', mobileNav:true,
@@ -70,7 +76,12 @@ function filtrarModulosPorPermisos(usuario) {
   return modulos
     .map(seccion => ({
       ...seccion,
-      items: seccion.items.filter(item => puede(usuario, item.id)),
+      items: seccion.items.filter(item => {
+        // v16.9.x: items con soloRoles solo aparecen si el rol del usuario está en la lista.
+        // Esto permite items "exclusivos" por rol sin tener que reescribir permisos.js.
+        if (Array.isArray(item.soloRoles) && !item.soloRoles.includes(usuario?.rol)) return false
+        return puede(usuario, item.id)
+      }),
     }))
     .filter(seccion => seccion.items.length > 0)
 }

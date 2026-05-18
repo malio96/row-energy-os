@@ -20,6 +20,7 @@ export const PERMISOS_POR_ROL = {
       'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',  // v15.8.0
+      'actividades',  // v16.9.x: drill-down vista
       'config'
     ],
     puedeEliminar: true,
@@ -32,6 +33,7 @@ export const PERMISOS_POR_ROL = {
       'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',  // v15.8.0
+      'actividades',  // v16.9.x
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
@@ -42,6 +44,7 @@ export const PERMISOS_POR_ROL = {
     modulos: [
       'dashboard', 'proyectos', 'cierre', 'postventa',
       'plantas',
+      'actividades',  // v16.9.x
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
@@ -53,6 +56,7 @@ export const PERMISOS_POR_ROL = {
       'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',
+      'actividades',  // v16.9.x
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
@@ -63,6 +67,7 @@ export const PERMISOS_POR_ROL = {
     modulos: [
       'dashboard', 'cobranza', 'facturacion',
       'contratos', 'compras', 'cierre',
+      'actividades',  // v16.9.x
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
@@ -70,7 +75,7 @@ export const PERMISOS_POR_ROL = {
   equipo_proyectos: {
     label: 'Equipo de Proyectos',
     descripcion: 'Ejecución de actividades en proyectos. Dashboard personal.',
-    modulos: ['dashboard', 'proyectos'],
+    modulos: ['dashboard', 'proyectos', 'actividades'],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
   },

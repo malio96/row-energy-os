@@ -441,8 +441,54 @@ export function loadPref(key, defaultValue) {
   catch { return defaultValue }
 }
 
+// v17.0.0: sync handler para escribir prefs a BD (cross-device). Se setea
+// en App.jsx después del login. Cuando es null (anon o no inicializado),
+// solo se escribe localStorage. Mantenemos la API sync para no romper los
+// useState((() => loadPref(...))) existentes.
+let _prefsSyncHandler = null
+export function setSyncPrefHandler(handler) { _prefsSyncHandler = handler }
+
 // v12.5.7 M3: loggea errores en vez de silenciarlos
+// v17.0.0: dual-write — localStorage + BD (via handler async, fire-and-forget)
 export function savePref(key, value) {
   try { localStorage.setItem(`rowenergy:${key}`, JSON.stringify(value)) }
   catch (e) { console.warn(`No se pudo guardar preferencia "${key}":`, e.message) }
+  if (_prefsSyncHandler) {
+    try { _prefsSyncHandler(key, value) } catch (e) { /* no romper UI */ }
+  }
+}
+
+// v17.0.0: hidrata localStorage desde BD al login. Llamado UNA vez en App.jsx
+// antes de renderizar Layout. La gracia: el resto de la app sigue usando
+// loadPref sync sin saber que hay BD detrás.
+export async function hydratePrefsFromBD(supabaseClient, usuarioId) {
+  if (!supabaseClient || !usuarioId) return
+  try {
+    const { data, error } = await supabaseClient
+      .from('usuario_preferencias')
+      .select('key, value')
+      .eq('usuario_id', usuarioId)
+    if (error) {
+      // Tabla podría no existir aún en dev (RLS o migration pendiente)
+      if (error.code !== '42P01') console.warn('hydratePrefs:', error.message)
+      return
+    }
+    for (const row of (data || [])) {
+      try { localStorage.setItem(`rowenergy:${row.key}`, JSON.stringify(row.value)) }
+      catch {}
+    }
+  } catch (e) { console.warn('hydratePrefs failed:', e?.message) }
+}
+
+// v17.0.0: limpia prefs locales al logout (evita que el siguiente user vea
+// el sort/vista del anterior). Solo borra keys con prefijo rowenergy:.
+export function clearLocalPrefs() {
+  try {
+    const toDelete = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('rowenergy:')) toDelete.push(k)
+    }
+    for (const k of toDelete) localStorage.removeItem(k)
+  } catch {}
 }

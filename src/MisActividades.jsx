@@ -71,8 +71,14 @@ export default function MisActividades({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busqueda, setBusqueda] = useState('')
-  const [soloMias, setSoloMias] = useState(() => loadPref('misActividades.soloMias', false))
+  // v16.9.x: equipo_proyectos SOLO debe ver sus actividades. Default true para ese rol
+  // y el toggle queda forzado (disabled) más abajo.
+  const esEquipoProyectos = usuario?.rol === 'equipo_proyectos'
+  const defaultSoloMias = esEquipoProyectos ? true : false
+  const [soloMias, setSoloMias] = useState(() => esEquipoProyectos ? true : loadPref('misActividades.soloMias', defaultSoloMias))
   useEffect(() => savePref('misActividades.soloMias', soloMias), [soloMias])
+  // Si el rol cambia (no debería pasar in-session, pero por consistencia) garantiza true
+  useEffect(() => { if (esEquipoProyectos && !soloMias) setSoloMias(true) }, [esEquipoProyectos, soloMias])
   const [sort, setSort] = useState(() => loadPref(`sort.misActividades.${filtro}`, { field:'fin', dir:'asc' }))
   useEffect(() => savePref(`sort.misActividades.${filtro}`, sort), [sort, filtro])
   const [updating, setUpdating] = useState(null)
@@ -182,8 +188,22 @@ export default function MisActividades({ usuario }) {
           <div style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:COLORS.slate400 }}>{Icon('Search')}</div>
           <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar nombre, proyecto, responsable..." style={{ ...inputStyle, paddingLeft:36 }}/>
         </div>
-        <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color:COLORS.slate600, cursor:'pointer', padding:'8px 12px', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10 }}>
-          <input type="checkbox" checked={soloMias} onChange={e => setSoloMias(e.target.checked)}/>
+        <label
+          title={esEquipoProyectos ? 'Tu rol solo ve sus actividades asignadas' : undefined}
+          style={{
+            display:'flex', alignItems:'center', gap:6, fontSize:12,
+            color: esEquipoProyectos ? COLORS.slate400 : COLORS.slate600,
+            cursor: esEquipoProyectos ? 'not-allowed' : 'pointer',
+            padding:'8px 12px', background:'white',
+            border:`1px solid ${COLORS.slate100}`, borderRadius:10,
+            opacity: esEquipoProyectos ? 0.75 : 1,
+          }}>
+          <input
+            type="checkbox"
+            checked={soloMias}
+            disabled={esEquipoProyectos}
+            onChange={e => setSoloMias(e.target.checked)}
+          />
           Solo asignadas a mí
         </label>
         <SortControl value={sort} onChange={setSort} fields={[

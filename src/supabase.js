@@ -118,6 +118,22 @@ export async function getProyectos() {
   return data || []
 }
 
+// v17.0.0: versión liviana para listas (sin actividades). Mata el lag inicial
+// al cargar /proyectos. El detalle sigue usando getProyectoConActividades(id).
+// Incluye conteos pre-calculados de actividades para badges del listado.
+export async function getProyectosLite() {
+  const { data, error } = await supabase
+    .from('proyectos')
+    .select(`*,
+      cliente:clientes(id, razon_social),
+      director:usuarios!director_id(id, nombre),
+      actividades(id, estado, fin, completada, peso, avance)
+    `)
+    .order('created_at', { ascending: false })
+  if (error) { console.error('getProyectosLite:', error); throw error }
+  return data || []
+}
+
 export async function getProyectoConActividades(proyectoId) {
   const { data: proyecto, error: e1 } = await supabase
     .from('proyectos')
