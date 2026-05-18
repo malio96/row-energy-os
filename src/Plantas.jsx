@@ -9,15 +9,13 @@ import {
   getPlantas, getPlanta, crearPlanta, actualizarPlanta, eliminarPlanta,
   getClientes, TIPOS_TECNOLOGIA_PLANTA, ESTADOS_PLANTA, templateCotizacionPorCapacidad,
 } from './supabase'
+// v17.0.2: loadPref/savePref desde helpers (antes shim local sin sync a BD)
 import {
   COLORS, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle,
   btnPrimary, Icon, EmptyState, LoadingState, useIsMobile, SortControl, aplicarSort,
+  loadPref, savePref,
 } from './helpers'
 import { puede, puedeEliminar as rolPuedeEliminar, puedeGestionarProyecto } from './permisos'
-
-// v16.9.3: persistir orden
-const loadPref = (key, fallback) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback } catch { return fallback } }
-const savePref = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} }
 import { TabDocumentos } from './Proyectos'
 
 export default function Plantas({ usuario }) {

@@ -29,7 +29,9 @@ import {
 } from './supabase'
 // v16.9.2: helper para estado efectivo (deriva 'Retrasada' por fecha vencida)
 // v16.9.3: sort + persistencia + ESTADOS_HITO canonico (en helpers, no local)
-import { estadoEfectivo, aplicarSort, SortControl, ESTADOS_HITO } from './helpers'
+// v17.0.2: loadPref/savePref desde helpers (antes shim local sin prefijo rowenergy:
+// que causaba leak cross-user en browser compartido + no sincronizaba a BD)
+import { estadoEfectivo, aplicarSort, SortControl, ESTADOS_HITO, loadPref, savePref, daysUntil } from './helpers'
 // v16.4.0: helpers de permisos centralizados
 import {
   puedeEliminar,
@@ -40,14 +42,6 @@ import {
   puedeGestionarProyecto,
 } from './permisos'
 
-// v14.1: helpers para persistir preferencias simples en localStorage
-const loadPref = (key, fallback) => {
-  try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v) }
-  catch { return fallback }
-}
-const savePref = (key, value) => {
-  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
-}
 
 const COLORS = {
   navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56', tealLight:'#E1F5EE',
@@ -1617,7 +1611,11 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                 })}
               </svg>
               {actOrdenadas.map((act, rowIdx) => {
-                const estadoCfg = ESTADOS[act.estado] || ESTADOS['Sin iniciar']
+                // v17.0.2: usar estadoEfectivo para consistencia con TabActividades/Kanban
+                // (preserva Bloqueada, deriva Retrasada por fecha vencida)
+                const estadoVis = estadoEfectivo(act)
+                const estadoCfg = ESTADOS[estadoVis] || ESTADOS['Sin iniciar']
+                const esBloqueada = estadoVis === 'Bloqueada'  // v17.0.2: highlight visual
                 const prev = previewActividad(act)
                 const x = getX(prev.inicio)
                 const w = getW(prev.inicio, prev.fin)
@@ -1691,11 +1689,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                             background: esCritica ? COLORS.red : estadoCfg.bar,
                             transform:'rotate(45deg)',
                             borderRadius:3,
+                            // v17.0.2: ring amarillo si bloqueada (prioridad después de drop/critica)
                             boxShadow: isDropTarget
                               ? `0 0 0 3px ${COLORS.teal}, 0 4px 12px rgba(15,110,86,0.5)`
                               : esCritica
                                 ? `0 0 0 2px rgba(220,38,38,0.3), 0 3px 8px rgba(220,38,38,0.4)`
-                                : (isHovered ? '0 4px 10px rgba(0,0,0,0.2)' : '0 2px 6px rgba(0,0,0,0.15)'),
+                                : esBloqueada
+                                  ? `0 0 0 2px ${COLORS.amber}, 0 0 8px rgba(245,158,11,0.5)`
+                                  : (isHovered ? '0 4px 10px rgba(0,0,0,0.2)' : '0 2px 6px rgba(0,0,0,0.15)'),
                             cursor:'grab',
                             zIndex:3,
                             transition: drag ? 'none' : 'box-shadow 0.15s, background 0.2s',
@@ -1772,11 +1773,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                               : estadoCfg.gradient,
                           borderRadius: esPadre ? 4 : 7,
                           display:'flex', alignItems:'center', padding:'0 10px',
+                          // v17.0.2: ring amarillo si bloqueada — fácil de ver entre cientos de barras
                           boxShadow: isDropTarget
                             ? `0 0 0 3px ${COLORS.teal}, 0 4px 16px rgba(15,110,86,0.5)`
                             : esCritica
                               ? `0 0 0 1px rgba(220,38,38,0.4), 0 2px 8px rgba(220,38,38,0.3)`
-                              : (isHovered || isDraggedNow ? `0 4px 12px rgba(10, 37, 64, 0.25)` : '0 1px 3px rgba(10, 37, 64, 0.1)'),
+                              : esBloqueada && !esPadre
+                                ? `0 0 0 2px ${COLORS.amber}, 0 0 10px rgba(245,158,11,0.45)`
+                                : (isHovered || isDraggedNow ? `0 4px 12px rgba(10, 37, 64, 0.25)` : '0 1px 3px rgba(10, 37, 64, 0.1)'),
                           transition: drag ? 'none' : 'box-shadow 0.15s, background 0.2s',
                           overflow:'hidden',
                           cursor: isDraggedNow && drag?.tipo === 'move' ? 'grabbing' : 'grab',
@@ -1794,6 +1798,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                             pointerEvents:'none',
                             textShadow:'0 1px 2px rgba(0,0,0,0.3)',
                           }}>!</span>
+                        )}
+                        {/* v17.0.2: icono lock si bloqueada — refuerza el ring amarillo */}
+                        {esBloqueada && !esPadre && w > 30 && (
+                          <span style={{
+                            position:'absolute', right:6, top:'50%', transform:'translateY(-50%)',
+                            color:'white', display:'inline-flex', pointerEvents:'none',
+                            textShadow:'0 1px 2px rgba(0,0,0,0.3)',
+                          }}><Icon.Lock/></span>
                         )}
                       </div>
 
@@ -1993,8 +2005,19 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
   const padres = actividades.filter(a => !a.parent_id)
   const avance = calcularAvancePonderado(actividades, null)
   const completadas = actividades.filter(a => a.completada).length
-  const bloqueadas = actividades.filter(a => a.estado === 'Bloqueada').length
-  const retrasadas = actividades.filter(a => a.estado === 'Retrasada').length
+  // v17.0.2: usa estadoEfectivo para consistencia (retrasadas se derivan por fecha)
+  const actsConEf = actividades.map(a => ({ ...a, _eff: estadoEfectivo(a) }))
+  const bloqueadasArr = actsConEf.filter(a => a._eff === 'Bloqueada')
+  const retrasadasArr = actsConEf.filter(a => a._eff === 'Retrasada')
+  const bloqueadas = bloqueadasArr.length
+  const retrasadas = retrasadasArr.length
+  // Cierre próximo del proyecto (≤30 días)
+  const diasParaCierre = proyecto.cierre ? daysUntil(proyecto.cierre) : null
+  const cierreProximo = diasParaCierre !== null && diasParaCierre >= 0 && diasParaCierre <= 30
+
+  // v17.0.2: panel alertas del proyecto colapsable
+  const [alertasOpen, setAlertasOpen] = useState(false)
+  const totalAlertas = bloqueadas + retrasadas + (cierreProximo ? 1 : 0)
 
   const responsableIds = [...new Set(actividades.map(a => a.responsable_id).filter(Boolean))]
   const equipo = usuarios.filter(u => responsableIds.includes(u.id))
@@ -2018,12 +2041,73 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
           <div style={{ fontSize:18, fontWeight:500, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>{fmtDate(proyecto.cierre)}</div>
           <div style={{ fontSize:11, color:COLORS.slate400, marginTop:4 }}>Inicio: {fmtDate(proyecto.inicio)}</div>
         </div>
-        <div style={cardStyle}>
-          <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>Alertas</div>
-          <div style={{ fontSize:32, fontWeight:400, color: (bloqueadas+retrasadas)>0 ? COLORS.red : COLORS.teal, fontFamily:'var(--font-sans)', marginBottom:4 }}>{bloqueadas + retrasadas}</div>
-          <div style={{ fontSize:11, color:COLORS.slate400 }}>{bloqueadas} bloq · {retrasadas} retr</div>
+        <div onClick={() => totalAlertas > 0 && setAlertasOpen(!alertasOpen)} style={{ ...cardStyle, cursor: totalAlertas > 0 ? 'pointer' : 'default', borderColor: alertasOpen ? COLORS.amber : COLORS.slate100, transition:'border-color 0.15s' }}>
+          <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span>Alertas</span>
+            {totalAlertas > 0 && <span style={{ fontSize:10, fontWeight:700, color: alertasOpen ? COLORS.amber : COLORS.slate400 }}>{alertasOpen ? '▴ cerrar' : '▾ ver detalle'}</span>}
+          </div>
+          <div style={{ fontSize:32, fontWeight:400, color: totalAlertas>0 ? COLORS.red : COLORS.teal, fontFamily:'var(--font-sans)', marginBottom:4 }}>{totalAlertas}</div>
+          <div style={{ fontSize:11, color:COLORS.slate400 }}>{bloqueadas} bloq · {retrasadas} retr{cierreProximo ? ` · cierre en ${diasParaCierre}d` : ''}</div>
         </div>
       </div>
+
+      {/* v17.0.2: panel detalle de alertas — colapsable, lista actividades específicas */}
+      {alertasOpen && totalAlertas > 0 && (
+        <div style={{ ...cardStyle, marginBottom:16, borderLeft:`3px solid ${COLORS.amber}` }}>
+          <div style={{ ...labelStyle, marginBottom:12, display:'flex', alignItems:'center', gap:8 }}>
+            <Icon.Warning/> Alertas del proyecto · {totalAlertas}
+          </div>
+          {cierreProximo && (
+            <div style={{ padding:'10px 12px', marginBottom:8, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:8, display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ width:8, height:8, borderRadius:'50%', background:COLORS.amber, flexShrink:0 }}/>
+              <div style={{ flex:1, fontSize:12, color:COLORS.ink, fontWeight:500 }}>
+                Cierre del proyecto en <strong>{diasParaCierre} día{diasParaCierre !== 1 ? 's' : ''}</strong> ({fmtDate(proyecto.cierre)})
+              </div>
+            </div>
+          )}
+          {bloqueadasArr.length > 0 && (
+            <>
+              <div style={{ fontSize:11, fontWeight:700, color:COLORS.amber, textTransform:'uppercase', letterSpacing:0.5, marginTop:8, marginBottom:6 }}>
+                {bloqueadasArr.length} actividad{bloqueadasArr.length !== 1 ? 'es' : ''} bloqueada{bloqueadasArr.length !== 1 ? 's' : ''}
+              </div>
+              {bloqueadasArr.slice(0, 8).map(a => {
+                const resp = usuarios.find(u => u.id === a.responsable_id)
+                return (
+                  <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'#FEF3C7', borderRadius:6, marginBottom:4 }}>
+                    <Icon.Lock/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.nombre}</div>
+                      <div style={{ fontSize:10, color:COLORS.slate500 }}>{resp?.nombre || 'Sin responsable'} · fin {fmtDate(a.fin) || '—'}</div>
+                    </div>
+                  </div>
+                )
+              })}
+              {bloqueadasArr.length > 8 && <div style={{ fontSize:10, color:COLORS.slate500, marginTop:4 }}>+ {bloqueadasArr.length - 8} más en la tab Actividades</div>}
+            </>
+          )}
+          {retrasadasArr.length > 0 && (
+            <>
+              <div style={{ fontSize:11, fontWeight:700, color:COLORS.red, textTransform:'uppercase', letterSpacing:0.5, marginTop:12, marginBottom:6 }}>
+                {retrasadasArr.length} actividad{retrasadasArr.length !== 1 ? 'es' : ''} retrasada{retrasadasArr.length !== 1 ? 's' : ''}
+              </div>
+              {retrasadasArr.slice(0, 8).map(a => {
+                const resp = usuarios.find(u => u.id === a.responsable_id)
+                const dias = a.fin ? -daysUntil(a.fin) : 0
+                return (
+                  <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'#FEF2F2', borderRadius:6, marginBottom:4 }}>
+                    <div style={{ width:8, height:8, borderRadius:'50%', background:COLORS.red, flexShrink:0 }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.nombre}</div>
+                      <div style={{ fontSize:10, color:COLORS.slate500 }}>{resp?.nombre || 'Sin responsable'} · {dias}d de retraso · fin {fmtDate(a.fin) || '—'}</div>
+                    </div>
+                  </div>
+                )
+              })}
+              {retrasadasArr.length > 8 && <div style={{ fontSize:10, color:COLORS.slate500, marginTop:4 }}>+ {retrasadasArr.length - 8} más en la tab Actividades</div>}
+            </>
+          )}
+        </div>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
         <div style={cardStyle}>
