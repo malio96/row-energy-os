@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import {
   getProyectos, getFacturas, getCuentasPorPagar, getLeads,
   getCotizaciones, getUsuarios, getAlertasConfig,
-  calcularCargaPorColaborador,
+  calcularCargaPorColaborador, identificarCuellosBotella,  // v16.9.4: cuellos en CentroAlertas
   getTareasPostCierrePendientes,  // v16.1
+  actualizarActividad,  // v16.9.4: acción rápida desde alerta
 } from './supabase'
 import {
   generarAlertasDetalladas, agruparPorCategoria,
@@ -54,11 +55,14 @@ export default function CentroAlertas({ usuario }) {
           }))
         )
         const carga = calcularCargaPorColaborador(actividades, usuarios)
+        // v16.9.4: cuellos de botella ahora aparecen también en CentroAlertas
+        const cuellos = identificarCuellosBotella(actividades)
 
         const detalladas = generarAlertasDetalladas({
           usuario, config, usuarios,
           facturas, actividades, proyectos, cxp, leads, cotizaciones, carga,
           tareasPostCierre,  // v16.1
+          cuellos,           // v16.9.4
         })
         if (!cancelled) {
           setItems(detalladas)
@@ -93,6 +97,23 @@ export default function CentroAlertas({ usuario }) {
 
   const handleItemClick = (item) => {
     if (item.modulo_ruta) navigate(item.modulo_ruta)
+  }
+
+  // v16.9.4: acción rápida desde CentroAlertas — marcar actividad completada
+  // sin tener que entrar al proyecto. Solo aplica a actividades_retrasadas/bloqueadas.
+  const [completando, setCompletando] = useState(null)
+  const handleCompletarActividad = async (item) => {
+    const actId = item.entidad_secundaria_id
+    if (!actId) return
+    setCompletando(actId)
+    try {
+      await actualizarActividad(actId, { estado: 'Completada', avance: 100, completada: true })
+      // Quitar el item del listado optimistamente (sin recargar todo)
+      setItems(prev => prev.filter(i => i.id !== item.id))
+    } catch (e) {
+      alert('Error: ' + (e?.message || 'No se pudo completar'))
+    }
+    setCompletando(null)
   }
 
   return (
@@ -229,6 +250,8 @@ export default function CentroAlertas({ usuario }) {
           key={grupo.categoria}
           grupo={grupo}
           onItemClick={handleItemClick}
+          onCompletarActividad={handleCompletarActividad}
+          completando={completando}
           isMobile={isMobile}
         />
       ))}
@@ -277,7 +300,7 @@ function ChipFiltro({ label, count, active, onClick, color }) {
 // ============================================================
 // Grupo de alertas (categoría)
 // ============================================================
-function GrupoAlertas({ grupo, onItemClick, isMobile }) {
+function GrupoAlertas({ grupo, onItemClick, onCompletarActividad, completando, isMobile }) {
   const color = colorAlerta(grupo.severidad_mas_alta)
 
   return (
@@ -330,6 +353,8 @@ function GrupoAlertas({ grupo, onItemClick, isMobile }) {
             key={item.id}
             item={item}
             onClick={() => onItemClick(item)}
+            onCompletarActividad={onCompletarActividad}
+            completando={completando}
             isLast={idx === grupo.items.length - 1}
             isMobile={isMobile}
           />
@@ -342,12 +367,15 @@ function GrupoAlertas({ grupo, onItemClick, isMobile }) {
 // ============================================================
 // Item individual
 // ============================================================
-function ItemAlerta({ item, onClick, isLast, isMobile }) {
+function ItemAlerta({ item, onClick, onCompletarActividad, completando, isLast, isMobile }) {
   const color = colorAlerta(item.severidad)
   const bg = bgAlerta(item.severidad)
+  // v16.9.4: solo actividades retrasadas/bloqueadas tienen acción rápida "Completar"
+  const esActividad = item.categoria === 'actividades_retrasadas' || item.categoria === 'actividades_bloqueadas'
+  const estaCompletando = completando === item.entidad_secundaria_id
 
   return (
-    <button
+    <div
       onClick={onClick}
       style={{
         width: '100%',
@@ -356,7 +384,6 @@ function ItemAlerta({ item, onClick, isLast, isMobile }) {
         gap: 12,
         padding: isMobile ? '12px 14px' : '14px 18px',
         background: 'white',
-        border: 'none',
         borderBottom: isLast ? 'none' : `1px solid ${COLORS.slate100}`,
         cursor: 'pointer',
         textAlign: 'left',
@@ -405,7 +432,7 @@ function ItemAlerta({ item, onClick, isLast, isMobile }) {
         )}
       </div>
 
-      {/* Severidad badge + chevron */}
+      {/* Acciones rápidas + severidad + chevron */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -413,6 +440,20 @@ function ItemAlerta({ item, onClick, isLast, isMobile }) {
         flexShrink: 0,
         marginTop: 2,
       }}>
+        {esActividad && onCompletarActividad && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onCompletarActividad(item) }}
+            disabled={estaCompletando}
+            title="Marcar como completada (100% avance)"
+            style={{
+              padding: '5px 10px', background: estaCompletando ? COLORS.slate200 : COLORS.teal,
+              color: 'white', border: 'none', borderRadius: 6,
+              fontSize: 11, fontWeight: 600, cursor: estaCompletando ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>
+            {estaCompletando ? '...' : '✓ Completar'}
+          </button>
+        )}
         {!isMobile && (
           <span style={{
             fontSize: 9,
@@ -428,6 +469,6 @@ function ItemAlerta({ item, onClick, isLast, isMobile }) {
           <polyline points="9 18 15 12 9 6"/>
         </svg>
       </div>
-    </button>
+    </div>
   )
 }

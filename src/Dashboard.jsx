@@ -178,10 +178,24 @@ const LABELS_ALERTA = {
   tareas_post_cierre_vencidas:'Tareas post-cierre vencidas',
 }
 
+const LABELS_ALERTA_SUB = {
+  facturas_vencidas:        'Pasaron su fecha de pago',
+  actividades_retrasadas:   'Fin vencido sin completar',
+  actividades_bloqueadas:   'Marcadas como Bloqueada',
+  proyectos_cierre_proximo: 'Cierran en ≤ 30 días',
+  cxp_autorizacion_pendiente:'Pagos próximos sin autorizar',
+  leads_sin_actividad:      'Sin movimiento 7+ días',
+  cotizaciones_sin_respuesta:'Sin respuesta 5+ días',
+  colaborador_sobrecargado: '>100% carga semanal',
+  tareas_post_cierre_vencidas:'Tareas legal/admin vencidas',
+  cuellos_botella:          'Etapas con retraso recurrente',
+}
+
 function AlertCard({ alerta, onClick }) {
   const color = colorAlerta(alerta.severidad)
   const count = alerta.data?.length ?? 0
   const label = LABELS_ALERTA[alerta.tipo] || alerta.tipo
+  const sub = LABELS_ALERTA_SUB[alerta.tipo] || ''
   return (
     <div onClick={onClick} style={{
       background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${color}`,
@@ -194,8 +208,8 @@ function AlertCard({ alerta, onClick }) {
         <span style={{ color, display:'inline-flex' }}>{Icon('Alert')}</span>
         <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
       </div>
-      <div style={{ fontSize:24, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1, marginBottom:4 }}>{count}</div>
-      <div style={{ fontSize:11, color:COLORS.slate500, marginTop:'auto' }}>Click para revisar →</div>
+      <div style={{ fontSize:26, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1, marginBottom:4 }}>{count}</div>
+      <div style={{ fontSize:11, color:COLORS.slate500 }}>{sub}</div>
     </div>
   )
 }
@@ -213,6 +227,7 @@ function BannerAlertas({ alertas, onNavigate, onAlertaClick, navigate, isMobile 
     // v16.9.4: drill-down a vista filtrada en /actividades para tipos de actividad
     if (alerta.tipo === 'actividades_retrasadas') return navigate?.('/actividades?filtro=retrasadas')
     if (alerta.tipo === 'actividades_bloqueadas') return navigate?.('/actividades?filtro=bloqueadas')
+    if (alerta.tipo === 'cuellos_botella')        return navigate?.('/actividades?filtro=retrasadas')
     if (alerta.modulo) onNavigate?.(alerta.modulo)
   }
 
@@ -309,6 +324,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       cotizaciones,
       carga: cargaColaboradores,
       tareasPostCierre,  // v16.1
+      cuellos: identificarCuellosBotella(actividades || []),  // v16.9.4: cuellos como una AlertCard más (reemplaza widget)
     })
   }, [alertasConfig, usuario, facturas, actividades, proyectos, cxp, leads, cotizaciones, cargaColaboradores, tareasPostCierre])
 
@@ -329,23 +345,20 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
 
   return (
     <>
-      {/* v16.9.4: Banner alertas como KPI cards compactas (antes ocupaba mucho vertical) */}
-      <BannerAlertas alertas={alertas} onNavigate={onNavigate} onAlertaClick={handleAlertaClick} navigate={routerNavigate} isMobile={isMobile}/>
-
-      {/* v15.1: Cuellos de botella (solo si hay) */}
-      {cuellos.porEtapa.length > 0 && (
-        <CuellosBotellaWidget cuellos={cuellos} isMobile={isMobile}/>
-      )}
-
-      {/* v16.1: Bandeja Post-Cierre — tareas pendientes del usuario */}
-      <BandejaPostCierre usuario={usuario} onNavigate={onNavigate}/>
-
-      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:20 }}>
+      {/* v16.9.4 (rev): KPIs primero (pedido de Malio: proyectos activos arriba) */}
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:16 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
         <KpiHero label="Pipeline ponderado" valor={fmtMoney(ponderado, true)} sub={`${leadsActivos.length} leads activos`} color={COLORS.teal} onClick={() => onNavigate?.('leads')}/>
         <KpiHero label="Por cobrar" valor={fmtMoney(porCobrar, true)} sub={vencido > 0 ? `${fmtMoney(vencido, true)} vencido` : 'Al día'} color={vencido > 0 ? COLORS.red : COLORS.navy} onClick={() => onNavigate?.('cobranza')}/>
         <KpiHero label="Cobrado este mes" valor={fmtMoney(cobradoMes, true)} sub="MXN" color={COLORS.gold || COLORS.teal} onClick={() => onNavigate?.('facturacion')}/>
       </div>
+
+      {/* v16.9.4: Alertas (incluyendo cuellos_botella) — todas como KPI cards uniformes.
+          Reemplaza al CuellosBotellaWidget detallado anterior; el detalle vive en /actividades. */}
+      <BannerAlertas alertas={alertas} onNavigate={onNavigate} onAlertaClick={handleAlertaClick} navigate={routerNavigate} isMobile={isMobile}/>
+
+      {/* v16.1: Bandeja Post-Cierre — tareas pendientes del usuario */}
+      <BandejaPostCierre usuario={usuario} onNavigate={onNavigate}/>
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>

@@ -20,7 +20,7 @@ const ROLES_OPERATIVOS = ['ventas', 'equipo_proyectos']
 // ============================================================
 // GENERADOR PRINCIPAL — agrupado (banner Dashboard, sin cambios)
 // ============================================================
-export function generarAlertas({ usuario, config, facturas = [], actividades = [], proyectos = [], cxp = [], leads = [], cotizaciones = [], carga = [], tareasPostCierre = [] }) {
+export function generarAlertas({ usuario, config, facturas = [], actividades = [], proyectos = [], cxp = [], leads = [], cotizaciones = [], carga = [], tareasPostCierre = [], cuellos = null }) {
   if (!config) return []
   const hoy = new Date()
   hoy.setHours(0, 0, 0, 0)
@@ -213,6 +213,22 @@ export function generarAlertas({ usuario, config, facturas = [], actividades = [
     }
   }
 
+  // ---------- v16.9.4: Cuellos de botella (solo se incluye si quien llama pasa `cuellos`) ----------
+  // Dashboard renderiza su propio widget detallado y NO pasa cuellos para evitar
+  // duplicación visual. CentroAlertas sí los pasa para que aparezcan en el listado.
+  if (config.cuellos_botella !== false && cuellos && cuellos.porEtapa && cuellos.porEtapa.length > 0) {
+    alertas.push({
+      id: 'cuellos_botella',
+      tipo: 'cuellos_botella',
+      severidad: 'critica',
+      mensaje: `${cuellos.porEtapa.length} cuello(s) de botella detectado(s) (${cuellos.retrasadas?.length || 0} actividad(es) retrasadas)`,
+      modulo: 'dashboard',
+      modulo_ruta: '/',
+      fecha: hoy.toISOString(),
+      data: cuellos.porEtapa.slice(0, 10),
+    })
+  }
+
   // ---------- v16.1: Tareas post-cierre vencidas ----------
   // Trigger: cualquier tarea pendiente con fecha_limite < hoy.
   // Audiencia: direccion/admin/ventas (siempre); el responsable directo (siempre).
@@ -375,6 +391,24 @@ export function generarAlertasDetalladas(params) {
           fecha_relevante: null,
         })
       })
+    } else if (grupo.tipo === 'cuellos_botella') {
+      // v16.9.4: 1 item por etapa-cuello. detalle = X actividades + Yd promedio
+      data.forEach(e => {
+        const promDias = e.count > 0 ? Math.round(e.totalDias / e.count) : 0
+        items.push({
+          id: `cuello-${e.nombre}`,
+          categoria: 'cuellos_botella',
+          severidad: 'critica',
+          titulo: e.nombre,
+          detalle: `${e.count} actividad(es) retrasadas · +${promDias}d promedio`,
+          contexto: 'Etapa recurrente con retrasos en múltiples proyectos',
+          modulo: 'actividades',
+          // Al clickear, lleva a la lista de retrasadas (que es donde están las actividades del cuello)
+          modulo_ruta: '/actividades?filtro=retrasadas',
+          entidad_id: null,
+          fecha_relevante: null,
+        })
+      })
     } else if (grupo.tipo === 'tareas_post_cierre_vencidas') {
       // v16.1: cada tarea vencida es un item
       data.forEach(t => {
@@ -481,6 +515,7 @@ export const ETIQUETAS_ALERTAS = {
   cotizaciones_sin_respuesta:    { label: 'Cotizaciones sin respuesta', descripcion: 'Cotizaciones enviadas sin respuesta en 5+ días' },
   colaborador_sobrecargado:      { label: 'Colaborador sobrecargado', descripcion: 'Miembros del equipo con >100% carga' },
   tareas_post_cierre_vencidas:   { label: 'Tareas post-cierre vencidas', descripcion: 'Tareas (Legal/Admin/Proyectos) que pasaron su plazo' },  // v16.1
+  cuellos_botella:               { label: 'Cuellos de botella', descripcion: 'Etapas recurrentes con retrasos en múltiples proyectos' },  // v16.9.4
 }
 
 // Iconos emoji por categoría (legacy — mantener para banner Dashboard)
@@ -494,6 +529,7 @@ export const ICONOS_ALERTAS = {
   cotizaciones_sin_respuesta:    '📑',
   colaborador_sobrecargado:      '👥',
   tareas_post_cierre_vencidas:   '🔄',  // v16.1
+  cuellos_botella:               '🧱',  // v16.9.4
 }
 
 // v15.8.6: SVG paths por categoría para Centro de Alertas + tab Mis alertas.
@@ -528,6 +564,9 @@ export const SVG_PATHS_ALERTAS = {
   // RefreshCw / Workflow (tareas post-cierre vencidas) - v16.1
   tareas_post_cierre_vencidas:
     '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  // Triangulo de alerta / Funnel (cuellos de botella) — v16.9.4
+  cuellos_botella:
+    '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>',
 }
 
 // ============================================================
