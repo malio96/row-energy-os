@@ -21,6 +21,7 @@ export const PERMISOS_POR_ROL = {
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',  // v15.8.0
       'actividades',  // v16.9.x: drill-down vista
+      'auditoria',  // v17.1.0
       'config'
     ],
     puedeEliminar: true,
@@ -34,6 +35,7 @@ export const PERMISOS_POR_ROL = {
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',  // v15.8.0
       'actividades',  // v16.9.x
+      'auditoria',  // v17.1.0
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,

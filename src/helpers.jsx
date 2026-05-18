@@ -480,6 +480,16 @@ export async function hydratePrefsFromBD(supabaseClient, usuarioId) {
   } catch (e) { console.warn('hydratePrefs failed:', e?.message) }
 }
 
+// v17.1.0: handler para tracking de eventos a auditoria_eventos. Patrón idéntico
+// a setSyncPrefHandler — App.jsx lo setea al login, frontend dispara trackEvent
+// libremente y queda async fire-and-forget.
+let _trackHandler = null
+export function setTrackHandler(h) { _trackHandler = h }
+export function trackEvent(evento, opts = {}) {
+  if (!_trackHandler) return
+  try { _trackHandler({ evento, ...opts }) } catch (e) { /* no romper UI */ }
+}
+
 // v17.0.0: limpia prefs locales al logout (evita que el siguiente user vea
 // el sort/vista del anterior). Solo borra keys con prefijo rowenergy:.
 export function clearLocalPrefs() {

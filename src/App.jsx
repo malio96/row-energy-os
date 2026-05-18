@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import { supabase } from './supabase'
-import { COLORS, useIsMobile, hydratePrefsFromBD, setSyncPrefHandler, clearLocalPrefs } from './helpers'
+import { COLORS, useIsMobile, hydratePrefsFromBD, setSyncPrefHandler, clearLocalPrefs, setTrackHandler, trackEvent } from './helpers'
 import { puede } from './permisos'
 import Turnstile, { TURNSTILE_ENABLED } from './Turnstile'  // v16.6.0: captcha login
 import Sidebar from './Sidebar'
@@ -14,6 +14,7 @@ import Compras from './Compras'
 import Contratos from './Contratos'
 import Cierre from './Cierre'
 import MisActividades from './MisActividades'  // v16.9.4: drill-down de alertas Dashboard
+import Auditoria from './Auditoria'  // v17.1.0: audit log para direccion/admin
 import Postventa from './Postventa'
 import Configuracion from './Configuracion'
 import Dashboard from './Dashboard'
@@ -39,6 +40,8 @@ const RUTAS_POR_SECCION = {
   clientes: '/config',
   alertas: '/alertas',  // v12.5.9c
   plantas: '/plantas',  // v15.8.0
+  actividades: '/actividades',  // v16.9.4
+  auditoria: '/auditoria',  // v17.1.0
 }
 
 const inputStyle = {
@@ -279,6 +282,7 @@ function Layout({ usuario, onLogout, children }) {
   const [cmdOpen, setCmdOpen] = useState(false)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const goTo = (seccion) => { if (RUTAS_POR_SECCION[seccion]) navigate(RUTAS_POR_SECCION[seccion]) }
 
@@ -287,6 +291,13 @@ function Layout({ usuario, onLogout, children }) {
     document.addEventListener('open-command-palette', handler)
     return () => document.removeEventListener('open-command-palette', handler)
   }, [])
+
+  // v17.1.0: auto-track route changes para auditoría. Solo dispara cuando el
+  // pathname cambia (no en cada query-param tweak para no inundar la tabla).
+  useEffect(() => {
+    const modulo = location.pathname.split('/')[1] || 'dashboard'
+    trackEvent('view', { modulo, ruta: location.pathname + (location.search || '') })
+  }, [location.pathname])
 
   return (
     <div style={{
@@ -379,6 +390,7 @@ function MainApp() {
   }, [])
 
   // v17.0.0: cuando cambia usuario, hidratar prefs desde BD y setup sync handler
+  // v17.1.0: además setup trackHandler para auditoría (fire-and-forget insert a auditoria_eventos)
   useEffect(() => {
     if (!usuario?.id) { setPrefsHydrated(true); return }
     setPrefsHydrated(false)
@@ -394,13 +406,32 @@ function MainApp() {
           if (error) console.warn('savePref sync to BD:', error.message)
         })
       })
+      // v17.1.0: handler de auditoría
+      setTrackHandler((payload) => {
+        supabase.from('auditoria_eventos').insert({
+          usuario_id: usuario.id,
+          evento: payload.evento,
+          modulo: payload.modulo || null,
+          ruta: payload.ruta || null,
+          entidad_tipo: payload.entidadTipo || null,
+          entidad_id: payload.entidadId || null,
+          metadata: payload.metadata || null,
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        }).then(({ error }) => {
+          if (error) console.warn('trackEvent insert:', error.message)
+        })
+      })
+      // Login event
+      trackEvent('login', { modulo: 'auth' })
       setPrefsHydrated(true)
     })
-    return () => { setSyncPrefHandler(null) }
+    return () => { setSyncPrefHandler(null); setTrackHandler(null) }
   }, [usuario?.id])
 
   const handleLogout = async () => {
+    trackEvent('logout', { modulo: 'auth' })  // v17.1.0: registrar antes de cerrar
     setSyncPrefHandler(null)  // no escribir más a BD
+    setTrackHandler(null)
     clearLocalPrefs()
     await supabase.auth.signOut()
     setUsuario(null)
@@ -423,6 +454,13 @@ function MainApp() {
         <Route path="/actividades" element={
           <RutaProtegida usuario={usuario} modulo="actividades">
             <MisActividades usuario={usuario}/>
+          </RutaProtegida>
+        }/>
+
+        {/* v17.1.0: Auditoría — solo direccion/admin */}
+        <Route path="/auditoria" element={
+          <RutaProtegida usuario={usuario} modulo="auditoria">
+            <Auditoria usuario={usuario}/>
           </RutaProtegida>
         }/>
 
