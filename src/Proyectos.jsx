@@ -4305,6 +4305,8 @@ export default function Proyectos({ usuario }) {
   const [modalNuevo, setModalNuevo] = useState(false)
   const [filtro, setFiltro] = useState('Activos')
   const [filtroTipo, setFiltroTipo] = useState('Todos')
+  // v17.0.3: filtro especial via URL (?filtro=cierre_proximo desde Dashboard "Ver todos")
+  const filtroEspecial = searchParams.get('filtro')  // 'cierre_proximo' | null
   const [busqueda, setBusqueda] = useState('')
   // v16.9.3: orden persistido por usuario en localStorage
   const [sort, setSort] = useState(() => loadPref('sort.proyectos', { field:'nombre', dir:'asc' }))
@@ -4366,12 +4368,22 @@ export default function Proyectos({ usuario }) {
     if (filtro === 'Activos') r = r.filter(p => ['Por iniciar', 'En curso', 'En pausa'].includes(p.estado))
     else if (filtro === 'Terminados') r = r.filter(p => ['Terminado', 'Cancelado'].includes(p.estado))
     if (filtroTipo !== 'Todos') r = r.filter(p => p.tipo_proyecto === filtroTipo)
+    // v17.0.3: filtro especial drill-down desde Dashboard
+    if (filtroEspecial === 'cierre_proximo') {
+      r = r.filter(p => {
+        if (!p.cierre || p.estado === 'Terminado' || p.estado === 'Cancelado') return false
+        const d = daysUntil(p.cierre)
+        return d !== null && d >= 0 && d <= 30
+      })
+    }
     if (busqueda.trim()) {
       const q = busqueda.toLowerCase()
       r = r.filter(p => p.nombre?.toLowerCase().includes(q) || p.cliente?.razon_social?.toLowerCase().includes(q) || p.codigo?.toLowerCase().includes(q))
     }
-    // v16.9.3: orden persistido por usuario
-    return aplicarSort(r, sort, {
+    // v16.9.3: orden persistido por usuario.
+    // v17.0.3: si filtro especial 'cierre_proximo', auto-ordenar por cierre asc (urgentes primero).
+    const sortEffective = filtroEspecial === 'cierre_proximo' ? { field:'cierre', dir:'asc' } : sort
+    return aplicarSort(r, sortEffective, {
       nombre:  p => (p.nombre || '').toLowerCase(),
       codigo:  p => p.codigo || '',
       cliente: p => (p.cliente?.razon_social || '').toLowerCase(),
@@ -4380,7 +4392,7 @@ export default function Proyectos({ usuario }) {
       estado:  p => p.estado || '',
       tipo:    p => p.tipo_proyecto || '',
     })
-  }, [proyectos, filtro, filtroTipo, busqueda, sort])
+  }, [proyectos, filtro, filtroTipo, busqueda, sort, filtroEspecial])
 
   if (proyectoSel) return <DetalleProyecto proyectoId={proyectoSel} actividadInicialId={deepLinkActividadId} onVolver={() => { setProyectoSel(null); setDeepLinkActividadId(null); cargar() }} usuarioActual={usuario}/>
 
@@ -4397,6 +4409,18 @@ export default function Proyectos({ usuario }) {
           <Icon.Plus/> {isMobile ? 'Nuevo' : 'Nuevo proyecto'}
         </button>
       </div>
+      {/* v17.0.3: banner cuando hay filtro especial drill-down desde Dashboard */}
+      {filtroEspecial === 'cierre_proximo' && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', marginBottom:14, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10 }}>
+          <Icon.Warning/>
+          <div style={{ flex:1, fontSize:12, color:COLORS.ink }}>
+            <strong>Filtrando:</strong> proyectos con cierre en los próximos 30 días · ordenados por fecha de cierre asc
+          </div>
+          <button onClick={() => setSearchParams({}, { replace: true })} style={{ padding:'5px 12px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, fontWeight:600, color:COLORS.slate600, cursor:'pointer' }}>
+            ✕ Quitar filtro
+          </button>
+        </div>
+      )}
       <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
         <div style={{ display:'flex', background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:10, padding:2 }}>
           {['Activos', 'Terminados', 'Todos'].map(f => (

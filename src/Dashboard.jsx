@@ -586,7 +586,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
-        <Tarjeta titulo={`Proyectos con cierre próximo (${proximosCierre.length})`} onVerTodo={() => onNavigate?.('proyectos')}>
+        <Tarjeta titulo={`Proyectos con cierre próximo (${proximosCierre.length})`} onVerTodo={() => routerNavigate('/proyectos?filtro=cierre_proximo')}>
           {proximosCierre.length === 0 && <EmptyMini texto="Ningún proyecto cerca de cierre"/>}
           {proximosCierre.slice(0, 5).map(p => {
             const d = daysUntil(p.cierre)
