@@ -108,12 +108,11 @@ export default function Dashboard({ usuario, onNavigate }) {
   // v12.5.4: función para que las vistas puedan pedir recarga de datos
   const recargar = () => setRefreshTick(t => t + 1)
 
-  if (loading || !data) return <LoadingState/>
-
+  // v17.0.1 HOTFIX: estos hooks DEBEN ir antes del early return (React #310).
+  // El agente que aplicó el filtrado por rol en v17.0.0 los puso después del
+  // `if (loading || !data) return <LoadingState/>` causando crash al pasar
+  // de loading=true a false (cantidad de hooks distinta entre renders).
   // v16.9.5: vistas filtradas por rol. `rolesOcultos` = roles que NO ven esa vista.
-  // - 'ejecutivo' tiene KPIs financieros (Pipeline/Por cobrar/Cobrado) → equipo_proyectos NO debe verlo.
-  // - 'mis_tareas' es exclusiva de equipo_proyectos (resto tiene su vista departamental).
-  // - Departamentales restringidas a sus roles operativos.
   const VISTAS = useMemo(() => {
     const todas = [
       { key:'ejecutivo',       label:'Ejecutivo',       icon:'Eye',      rolesOcultos:['equipo_proyectos'] },
@@ -128,14 +127,14 @@ export default function Dashboard({ usuario, onNavigate }) {
     return todas.filter(v => !v.rolesOcultos?.includes(usuario?.rol))
   }, [usuario?.rol])
 
-  // v16.9.5: si la vista guardada en localStorage ya no está permitida para este rol, switch
-  // al primer disponible. Evita pantalla en blanco si el rol del usuario cambió.
   useEffect(() => {
     if (VISTAS.length === 0) return
     if (!VISTAS.find(v => v.key === vista)) {
       setVista(VISTAS[0].key)
     }
   }, [VISTAS, vista])
+
+  if (loading || !data) return <LoadingState/>
 
   // v12.5.9: calcular carga (necesaria para alerta de sobrecarga)
   const cargaColaboradores = calcularCargaPorColaborador(data.actividades || [], data.usuarios || [])
