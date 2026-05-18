@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getHitos, actualizarHito, eliminarHito } from './supabase'
 import { COLORS, ESTADOS_HITO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
@@ -20,6 +20,10 @@ const CLIENTES_WATCHLIST = [
 // ============================================================
 export default function Cobranza({ usuario }) {
   const puedeEditar = puedeEditarFinanciero(usuario)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // v17.0.4: filtro especial via URL (?filtro=por_cobrar | vencidos desde Dashboard "Ver todos")
+  // COEXISTE con el filtro tradicional de tabs (filtro state)
+  const filtroEspecial = searchParams.get('filtro')
   const [hitos, setHitos] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(loadPref('cob_tab', 'hitos'))
@@ -32,6 +36,10 @@ export default function Cobranza({ usuario }) {
   const cargar = async () => { setLoading(true); setHitos(await getHitos()); setLoading(false) }
   useEffect(() => { cargar() }, [])
   useEffect(() => { savePref('cob_filtro', filtro); savePref('cob_tab', tab) }, [filtro, tab])
+  // v17.0.4: si llega un filtro especial vía URL, asegurar que estemos en tab 'hitos' (única vista que lo aplica)
+  useEffect(() => {
+    if (filtroEspecial && tab !== 'hitos') setTab('hitos')
+  }, [filtroEspecial])
 
   // Enriquecer hitos con cálculos derivados
   const enriquecidos = useMemo(() => hitos.map(h => {
@@ -123,6 +131,8 @@ export default function Cobranza({ usuario }) {
           kpis={kpis}
           isMobile={isMobile}
           puedeEditar={puedeEditar}
+          filtroEspecial={filtroEspecial}
+          setSearchParams={setSearchParams}
         />
       )}
       {tab === 'clientes' && !clienteSel && (
@@ -152,7 +162,7 @@ export default function Cobranza({ usuario }) {
 // ============================================================
 // VISTA HITOS (la que ya existía - preservada 100%)
 // ============================================================
-function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, cambiarEstado, onSelectHito, kpis, isMobile, puedeEditar }) {
+function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, cambiarEstado, onSelectHito, kpis, isMobile, puedeEditar, filtroEspecial, setSearchParams }) {
   const [sort, setSort] = useState(() => loadPref('sort.cobranza.hitos', { field:'vencimiento', dir:'asc' }))
   useEffect(() => { savePref('sort.cobranza.hitos', sort) }, [sort])
 
@@ -162,6 +172,12 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
     else if (filtro === 'Cobrados') r = r.filter(h => h.estado === 'Cobrado')
     else if (filtro === 'Vencidos') r = r.filter(h => h.esVencido || h.estado === 'Vencido')
     else if (filtro === 'Por vencer') r = r.filter(h => !h.esVencido && h.estado !== 'Cobrado' && h.diasVence !== null && h.diasVence <= 7 && h.diasVence >= 0)
+    // v17.0.4: filtro especial URL — COEXISTE con el filtro tradicional de tabs
+    if (filtroEspecial === 'por_cobrar') {
+      r = r.filter(h => ['Pendiente', 'Facturado'].includes(h.estado))
+    } else if (filtroEspecial === 'vencidos') {
+      r = r.filter(h => h.esVencido === true)
+    }
     if (busqueda.trim()) {
       const q = busqueda.toLowerCase()
       r = r.filter(h =>
@@ -171,16 +187,24 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
       )
     }
     return r
-  }, [enriquecidos, filtro, busqueda])
+  }, [enriquecidos, filtro, busqueda, filtroEspecial])
 
-  const itemsOrdenados = useMemo(() => aplicarSort(filtrados, sort, {
-    vencimiento: h => h.fecha_vencimiento || h.fecha_esperada || '9999-12-31',
-    nombre:      h => (h.descripcion || h.concepto || h.nombre || '').toLowerCase(),
-    proyecto:    h => (h.proyecto?.nombre || '').toLowerCase(),
-    cliente:     h => (h.proyecto?.cliente?.razon_social || '').toLowerCase(),
-    monto:       h => Number(h.monto || 0),
-    estado:      h => h.estado || '',
-  }), [filtrados, sort])
+  const itemsOrdenados = useMemo(() => {
+    // v17.0.4: si filtro especial activo, override del sort por la fecha relevante
+    const sortEffective =
+      filtroEspecial === 'por_cobrar' ? { field:'vencimiento', dir:'asc' } :
+      filtroEspecial === 'vencidos' ? { field:'diasVencido', dir:'desc' } :
+      sort
+    return aplicarSort(filtrados, sortEffective, {
+      vencimiento:  h => h.fecha_vencimiento || h.fecha_esperada || '9999-12-31',
+      nombre:       h => (h.descripcion || h.concepto || h.nombre || '').toLowerCase(),
+      proyecto:     h => (h.proyecto?.nombre || '').toLowerCase(),
+      cliente:      h => (h.proyecto?.cliente?.razon_social || '').toLowerCase(),
+      monto:        h => Number(h.monto || 0),
+      estado:       h => h.estado || '',
+      diasVencido:  h => Number(h.diasVencido || 0),
+    })
+  }, [filtrados, sort, filtroEspecial])
 
   // Aging Report
   const aging = useMemo(() => {
@@ -197,6 +221,18 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
 
   return (
     <>
+      {/* v17.0.4: banner cuando hay filtro especial drill-down desde Dashboard */}
+      {filtroEspecial && ['por_cobrar','vencidos'].includes(filtroEspecial) && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', marginBottom:14, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10 }}>
+          {Icon('Alert')}
+          <div style={{ flex:1, fontSize:12, color:COLORS.ink }}>
+            <strong>Filtrando:</strong> {filtroEspecial === 'por_cobrar' ? 'hitos por cobrar (Pendiente / Facturado) · ordenados por vencimiento asc' : 'hitos vencidos · ordenados por días de retraso desc'}
+          </div>
+          <button onClick={() => setSearchParams({}, { replace: true })} style={{ padding:'5px 12px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, fontWeight:600, color:COLORS.slate600, cursor:'pointer' }}>
+            ✕ Quitar filtro
+          </button>
+        </div>
+      )}
       {/* Aging Report (solo desktop y si hay vencido) */}
       {kpis.vencido > 0 && !isMobile && (
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:16, marginBottom:16 }}>

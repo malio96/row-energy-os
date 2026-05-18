@@ -411,6 +411,12 @@ function BannerAlertas({ alertas, onNavigate, onAlertaClick, navigate, isMobile 
     if (alerta.tipo === 'actividades_retrasadas') return navigate?.('/actividades?filtro=retrasadas')
     if (alerta.tipo === 'actividades_bloqueadas') return navigate?.('/actividades?filtro=bloqueadas')
     if (alerta.tipo === 'cuellos_botella')        return navigate?.('/actividades?filtro=retrasadas')
+    // v17.0.4: drill-down a módulos financieros/comerciales con filtros pre-aplicados
+    if (alerta.tipo === 'facturas_vencidas')         return navigate?.('/facturacion?filtro=vencidas')
+    if (alerta.tipo === 'cxp_autorizacion_pendiente') return navigate?.('/compras?filtro=pendientes')
+    if (alerta.tipo === 'cotizaciones_sin_respuesta') return navigate?.('/cotizaciones?filtro=sin_respuesta')
+    if (alerta.tipo === 'tareas_post_cierre_vencidas') return navigate?.('/cotizaciones?filtro=workflow_pendiente')
+    if (alerta.tipo === 'proyectos_cierre_proximo')   return navigate?.('/proyectos?filtro=cierre_proximo')
     if (alerta.modulo) onNavigate?.(alerta.modulo)
   }
 
@@ -532,8 +538,8 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:16 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
         <KpiHero label="Pipeline ponderado" valor={fmtMoney(ponderado, true)} sub={`${leadsActivos.length} leads activos`} color={COLORS.teal} onClick={() => onNavigate?.('leads')}/>
-        <KpiHero label="Por cobrar" valor={fmtMoney(porCobrar, true)} sub={vencido > 0 ? `${fmtMoney(vencido, true)} vencido` : 'Al día'} color={vencido > 0 ? COLORS.red : COLORS.navy} onClick={() => onNavigate?.('cobranza')}/>
-        <KpiHero label="Cobrado este mes" valor={fmtMoney(cobradoMes, true)} sub="MXN" color={COLORS.gold || COLORS.teal} onClick={() => onNavigate?.('facturacion')}/>
+        <KpiHero label="Por cobrar" valor={fmtMoney(porCobrar, true)} sub={vencido > 0 ? `${fmtMoney(vencido, true)} vencido` : 'Al día'} color={vencido > 0 ? COLORS.red : COLORS.navy} onClick={() => routerNavigate(vencido > 0 ? '/cobranza?filtro=vencidos' : '/cobranza?filtro=por_cobrar')}/>
+        <KpiHero label="Cobrado este mes" valor={fmtMoney(cobradoMes, true)} sub="MXN" color={COLORS.gold || COLORS.teal} onClick={() => routerNavigate('/facturacion?filtro=cobradas_mes')}/>
       </div>
 
       {/* v16.9.4: Alertas (incluyendo cuellos_botella) — todas como KPI cards uniformes.
@@ -604,7 +610,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
           })}
         </Tarjeta>
 
-        <Tarjeta titulo={`Cotizaciones pendientes (${cotizacionesPipeline.length})`} onVerTodo={() => onNavigate?.('cotizaciones')}>
+        <Tarjeta titulo={`Cotizaciones pendientes (${cotizacionesPipeline.length})`} onVerTodo={() => routerNavigate('/cotizaciones?filtro=pendientes')}>
           {cotizacionesPipeline.length === 0 && <EmptyMini texto="No hay cotizaciones pendientes"/>}
           {cotizacionesPipeline.slice(0, 5).map(c => (
             <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}` }}>
@@ -1452,6 +1458,7 @@ function VistaCompras({ data, onNavigate, isMobile }) {
 // ============================================================
 function VistaCobranza({ data, onNavigate, isMobile }) {
   const { facturas } = data
+  const routerNavigate = useNavigate()  // v17.0.4: drill-down con filtro
   const hoy = new Date()
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
 
@@ -1494,7 +1501,7 @@ function VistaCobranza({ data, onNavigate, isMobile }) {
         </div>
       </div>
 
-      <Tarjeta titulo={`Top facturas vencidas (${vencidasList.length})`} onVerTodo={() => onNavigate?.('cobranza')}>
+      <Tarjeta titulo={`Top facturas vencidas (${vencidasList.length})`} onVerTodo={() => routerNavigate('/cobranza?filtro=vencidos')}>
         {vencidasList.length === 0 && <EmptyMini texto="¡No hay facturas vencidas!"/>}
         {vencidasList.map(f => (
           <div key={f.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}` }}>

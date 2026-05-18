@@ -17,18 +17,35 @@ export default function Compras({ usuario }) {
   const [compraSel, setCompraSel] = useState(null)  // v15.8.4
   const [sort, setSort] = useState(() => loadPref('sort.compras', { field:'fecha', dir:'desc' }))
   useEffect(() => { savePref('sort.compras', sort) }, [sort])
+  // v17.0.4: filtro especial via URL (?filtro=pendientes|abiertas desde Dashboard "Ver todos")
+  const filtroEspecial = searchParams.get('filtro')  // 'pendientes' | 'abiertas' | null
 
   const cargar = async () => { setLoading(true); setCompras(await getCompras()); setLoading(false) }
   useEffect(() => { cargar() }, [])
 
-  const comprasOrdenadas = useMemo(() => aplicarSort(compras, sort, {
-    fecha: c => c.fecha_solicitud || '0',
-    codigo: c => c.codigo || '',
-    proveedor: c => (c.proveedor || '').toLowerCase(),
-    monto: c => Number(c.monto || 0),
-    proyecto: c => (c.proyecto?.codigo || ''),
-    estado: c => c.estado || '',
-  }), [compras, sort])
+  const comprasOrdenadas = useMemo(() => {
+    let r = compras
+    // v17.0.4: filtro especial drill-down desde Dashboard
+    if (filtroEspecial === 'pendientes') {
+      // Solicitudes pendientes de autorizar: estado 'Solicitada' (no aprobada, no rechazada, no pagada)
+      r = r.filter(c => c.estado === 'Solicitada')
+    } else if (filtroEspecial === 'abiertas') {
+      // Órdenes abiertas: cualquier estado excepto Pagada/Rechazada
+      r = r.filter(c => c.estado !== 'Pagada' && c.estado !== 'Rechazada')
+    }
+    // v17.0.4: si filtro 'pendientes', auto-ordenar por fecha_pago asc (urgente primero); fallback fecha_solicitud desc
+    let sortEffective = sort
+    if (filtroEspecial === 'pendientes') sortEffective = { field:'fechaPago', dir:'asc' }
+    return aplicarSort(r, sortEffective, {
+      fecha: c => c.fecha_solicitud || '0',
+      fechaPago: c => c.fecha_pago || '9999-12-31',
+      codigo: c => c.codigo || '',
+      proveedor: c => (c.proveedor || '').toLowerCase(),
+      monto: c => Number(c.monto || 0),
+      proyecto: c => (c.proyecto?.codigo || ''),
+      estado: c => c.estado || '',
+    })
+  }, [compras, sort, filtroEspecial])
 
   useEffect(() => {
     if (deepLinkRef.current.aplicado) return
@@ -68,6 +85,19 @@ export default function Compras({ usuario }) {
       {pendientes > 0 && (
         <div style={{ padding:14, background:COLORS.amberLight, border:`1px solid ${COLORS.amberBorder}`, borderRadius:10, marginBottom:16, fontSize:12, color:COLORS.amberInk }}>
           <strong>{fmtMoney(pendientes)}</strong> en solicitudes pendientes de aprobación
+        </div>
+      )}
+
+      {/* v17.0.4: banner cuando hay filtro especial drill-down desde Dashboard */}
+      {(filtroEspecial === 'pendientes' || filtroEspecial === 'abiertas') && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', marginBottom:14, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10 }}>
+          {Icon('Alert')}
+          <div style={{ flex:1, fontSize:12, color:COLORS.ink }}>
+            <strong>Filtrando:</strong> {filtroEspecial === 'pendientes' ? 'solicitudes pendientes de autorizar · ordenadas por fecha de pago asc' : 'órdenes abiertas (no pagadas ni rechazadas)'}
+          </div>
+          <button onClick={() => setSearchParams({}, { replace: true })} style={{ padding:'5px 12px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, fontWeight:600, color:COLORS.slate600, cursor:'pointer' }}>
+            ✕ Quitar filtro
+          </button>
         </div>
       )}
 

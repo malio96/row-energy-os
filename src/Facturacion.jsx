@@ -17,6 +17,8 @@ export default function Facturacion({ usuario }) {
   const [facturaSel, setFacturaSel] = useState(null)  // v15.8.4
   const [sort, setSort] = useState(() => loadPref('sort.facturacion', { field:'emision', dir:'desc' }))
   useEffect(() => { savePref('sort.facturacion', sort) }, [sort])
+  // v17.0.4: filtro especial via URL (?filtro=vencidas | cobradas_mes desde Dashboard "Ver todas")
+  const filtroEspecial = searchParams.get('filtro')
 
   const cargar = async () => { setLoading(true); setFacturas(await getFacturas()); setLoading(false) }
   useEffect(() => { cargar() }, [])
@@ -44,14 +46,35 @@ export default function Facturacion({ usuario }) {
 
   const cambiarEstado = async (id, nuevo) => { await actualizarFactura(id, { estado: nuevo }); cargar() }
 
-  const itemsOrdenados = useMemo(() => aplicarSort(facturas, sort, {
-    emision:  f => f.fecha_emision || '0',
-    folio:    f => f.folio || '',
-    proyecto: f => (f.proyecto?.nombre || '').toLowerCase(),
-    cliente:  f => (f.cliente?.razon_social || f.proyecto?.cliente?.razon_social || '').toLowerCase(),
-    total:    f => Number(f.total || 0),
-    estado:   f => f.estado || '',
-  }), [facturas, sort])
+  const itemsOrdenados = useMemo(() => {
+    let base = facturas
+    // v17.0.4: filtro especial drill-down desde Dashboard
+    if (filtroEspecial === 'vencidas') {
+      const hoy = new Date().toISOString().split('T')[0]
+      base = base.filter(f => f.estado === 'Emitida' && f.fecha_vencimiento && f.fecha_vencimiento < hoy)
+    } else if (filtroEspecial === 'cobradas_mes') {
+      const now = new Date()
+      const y = now.getFullYear()
+      const m = String(now.getMonth() + 1).padStart(2, '0')
+      const prefijo = `${y}-${m}`
+      base = base.filter(f => f.estado === 'Pagada' && f.fecha_pago && f.fecha_pago.startsWith(prefijo))
+    }
+    // Si el filtro especial aplica, override del sort por la fecha relevante
+    const sortEffective =
+      filtroEspecial === 'vencidas' ? { field:'vencimiento', dir:'asc' } :
+      filtroEspecial === 'cobradas_mes' ? { field:'pago', dir:'desc' } :
+      sort
+    return aplicarSort(base, sortEffective, {
+      emision:     f => f.fecha_emision || '0',
+      folio:       f => f.folio || '',
+      proyecto:    f => (f.proyecto?.nombre || '').toLowerCase(),
+      cliente:     f => (f.cliente?.razon_social || f.proyecto?.cliente?.razon_social || '').toLowerCase(),
+      total:       f => Number(f.total || 0),
+      estado:      f => f.estado || '',
+      vencimiento: f => f.fecha_vencimiento || '9999-12-31',
+      pago:        f => f.fecha_pago || '0',
+    })
+  }, [facturas, sort, filtroEspecial])
 
   return (
     <div>
@@ -75,6 +98,19 @@ export default function Facturacion({ usuario }) {
           {puedeEditar && <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nueva factura</button>}
         </div>
       </div>
+
+      {/* v17.0.4: banner cuando hay filtro especial drill-down desde Dashboard */}
+      {filtroEspecial && ['vencidas','cobradas_mes'].includes(filtroEspecial) && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', marginBottom:14, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10 }}>
+          {Icon('Alert')}
+          <div style={{ flex:1, fontSize:12, color:COLORS.ink }}>
+            <strong>Filtrando:</strong> {filtroEspecial === 'vencidas' ? 'facturas vencidas · ordenadas por fecha de vencimiento asc' : 'cobradas este mes · ordenadas por fecha de pago desc'}
+          </div>
+          <button onClick={() => setSearchParams({}, { replace: true })} style={{ padding:'5px 12px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, fontWeight:600, color:COLORS.slate600, cursor:'pointer' }}>
+            ✕ Quitar filtro
+          </button>
+        </div>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12, marginBottom:20 }}>
         {[{ l:'Pagadas', v:fmtMoney(pagadas), c:COLORS.teal }, { l:'Pendientes', v:fmtMoney(pendientes), c:COLORS.amber }].map(k => (

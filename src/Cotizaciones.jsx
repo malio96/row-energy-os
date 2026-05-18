@@ -18,14 +18,35 @@ export default function Cotizaciones({ usuario }) {
   // v16.9.3: orden persistido por usuario
   const [sort, setSort] = useState(() => loadPref('sort.cotizaciones', { field:'fecha', dir:'desc' }))
   useEffect(() => { savePref('sort.cotizaciones', sort) }, [sort])
-  const cotsOrdenadas = useMemo(() => aplicarSort(cots, sort, {
-    codigo:   c => c.codigo || '',
-    proyecto: c => (c.nombre_proyecto || '').toLowerCase(),
-    cliente:  c => (c.cliente?.razon_social || '').toLowerCase(),
-    total:    c => Number(c.total || 0),
-    estado:   c => c.estado || '',
-    fecha:    c => c.fecha_emision || '',
-  }), [cots, sort])
+  // v17.0.4: filtro especial via URL (?filtro=pendientes|sin_respuesta|workflow_pendiente desde Dashboard "Ver todos")
+  const filtroEspecial = searchParams.get('filtro')  // 'pendientes' | 'sin_respuesta' | 'workflow_pendiente' | null
+  const cotsOrdenadas = useMemo(() => {
+    let r = cots
+    // v17.0.4: filtro especial drill-down desde Dashboard
+    if (filtroEspecial === 'pendientes') {
+      r = r.filter(c => ['Borrador', 'Enviada', 'En revisión'].includes(c.estado))
+    } else if (filtroEspecial === 'sin_respuesta') {
+      const hace5d = new Date(); hace5d.setDate(hace5d.getDate() - 5)
+      const cutoff = hace5d.toISOString().split('T')[0]
+      r = r.filter(c => c.estado === 'Enviada' && c.fecha_emision && c.fecha_emision < cutoff)
+    } else if (filtroEspecial === 'workflow_pendiente') {
+      // Simplificado: cotizaciones aprobadas con workflow no aprobado aún
+      r = r.filter(c => c.estado === 'Aprobada' && !c.workflow_aprobado_en)
+    }
+    // v17.0.4: override sort según filtro especial
+    let sortEffective = sort
+    if (filtroEspecial === 'pendientes') sortEffective = { field:'fecha', dir:'desc' }
+    else if (filtroEspecial === 'sin_respuesta') sortEffective = { field:'fecha', dir:'asc' }
+    else if (filtroEspecial === 'workflow_pendiente') sortEffective = { field:'fecha', dir:'desc' }
+    return aplicarSort(r, sortEffective, {
+      codigo:   c => c.codigo || '',
+      proyecto: c => (c.nombre_proyecto || '').toLowerCase(),
+      cliente:  c => (c.cliente?.razon_social || '').toLowerCase(),
+      total:    c => Number(c.total || 0),
+      estado:   c => c.estado || '',
+      fecha:    c => c.fecha_emision || '',
+    })
+  }, [cots, sort, filtroEspecial])
 
   const cargar = async () => { setLoading(true); setCots(await getCotizaciones()); setLoading(false) }
   useEffect(() => { cargar() }, [])
@@ -64,6 +85,23 @@ export default function Cotizaciones({ usuario }) {
           </button>
         </div>
       </div>
+
+      {/* v17.0.4: banner cuando hay filtro especial drill-down desde Dashboard */}
+      {(filtroEspecial === 'pendientes' || filtroEspecial === 'sin_respuesta' || filtroEspecial === 'workflow_pendiente') && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', marginBottom:14, background:'#FEF3C7', border:'1px solid #FDE68A', borderRadius:10 }}>
+          {Icon('Alert')}
+          <div style={{ flex:1, fontSize:12, color:COLORS.ink }}>
+            <strong>Filtrando:</strong> {
+              filtroEspecial === 'pendientes' ? 'cotizaciones pendientes (Borrador, Enviada, En revisión)'
+              : filtroEspecial === 'sin_respuesta' ? 'cotizaciones enviadas sin respuesta (5+ días) · ordenadas por más viejas arriba'
+              : 'cotizaciones aprobadas con workflow post-cierre pendiente'
+            }
+          </div>
+          <button onClick={() => setSearchParams({}, { replace: true })} style={{ padding:'5px 12px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, fontWeight:600, color:COLORS.slate600, cursor:'pointer' }}>
+            ✕ Quitar filtro
+          </button>
+        </div>
+      )}
 
       {loading && <LoadingState/>}
 
