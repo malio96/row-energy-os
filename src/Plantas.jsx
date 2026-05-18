@@ -32,8 +32,12 @@ export default function Plantas({ usuario }) {
   const [busqueda, setBusqueda] = useState('')
   const isMobile = useIsMobile()
 
-  const puedeEditar = ['direccion', 'director_proyectos', 'admin'].includes(usuario?.rol)
+  // v16.9.3: usar helper centralizado en vez de hardcoded
+  const puedeEditar = puedeGestionarProyecto(usuario)
   const puedeBorrar = rolPuedeEliminar(usuario)
+  // v16.9.3: orden persistido por usuario en localStorage (faltaba — causaba ReferenceError)
+  const [sort, setSort] = useState(() => loadPref('sort.plantas', { field:'nombre', dir:'asc' }))
+  useEffect(() => { savePref('sort.plantas', sort) }, [sort])
 
   const cargar = async () => {
     setLoading(true)
