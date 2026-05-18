@@ -51,7 +51,9 @@ export function generarAlertas({ usuario, config, facturas = [], actividades = [
   // ---------- Actividades retrasadas ----------
   if (config.actividades_retrasadas) {
     let retrasadas = actividades.filter(a => {
-      if (['Completada', 'Cancelada'].includes(a.estado)) return false
+      // v16.9.6: excluye Bloqueada (su propio estado, no se mezcla con Retrasada)
+      if (['Completada', 'Cancelada', 'Bloqueada'].includes(a.estado)) return false
+      if (a.completada === true) return false
       if (!a.fin) return false
       return new Date(a.fin) < hoy
     })

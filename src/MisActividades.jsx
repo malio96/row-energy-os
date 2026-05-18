@@ -26,10 +26,12 @@ const ESTADOS = {
 const FILTROS = {
   retrasadas: {
     titulo: 'Actividades retrasadas',
-    descripcion: 'Actividades cuya fecha fin ya pasó y no están completadas ni canceladas.',
+    descripcion: 'Actividades cuya fecha fin ya pasó y no están completadas, canceladas ni bloqueadas.',
     color: '#DC2626',
     test: (a) => {
-      if (['Completada', 'Cancelada'].includes(a.estado)) return false
+      // v16.9.6: excluye Bloqueada (es su propio estado, no se mezcla con Retrasada)
+      if (['Completada', 'Cancelada', 'Bloqueada'].includes(a.estado)) return false
+      if (a.completada === true) return false
       if (!a.fin) return false
       const hoyStr = new Date().toISOString().slice(0,10)
       return a.fin < hoyStr

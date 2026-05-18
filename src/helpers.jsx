@@ -209,7 +209,12 @@ export function SortControl({ value, onChange, fields, label='Ordenar' }) {
 // ambos usan este helper para que coincidan visualmente.
 export function estadoEfectivo(act) {
   if (!act) return ''
-  if (act.estado === 'Completada' || act.estado === 'Cancelada') return act.estado
+  // v16.9.6: 'Bloqueada' es estado explicito del usuario — no debe sobrescribirse
+  // por 'Retrasada' aunque la fecha haya pasado. Si Malio marca algo como
+  // bloqueado (esperando algo externo), ese es el estado primario. Antes:
+  // header proyecto contaba bloqueadas (raw) pero Gantt/TabActividades las
+  // mostraba como Retrasada → inconsistencia confusa.
+  if (['Completada', 'Cancelada', 'Bloqueada'].includes(act.estado)) return act.estado
   if (act.completada === true) return 'Completada'
   const hoy = new Date()
   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
