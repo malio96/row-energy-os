@@ -1,7 +1,7 @@
 {
   "name": "row-energy-os",
   "private": true,
-  "version": "16.9.3",
+  "version": "16.9.4",
   "type": "module",
   "scripts": {
     "dev": "vite",

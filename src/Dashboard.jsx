@@ -161,78 +161,69 @@ export default function Dashboard({ usuario, onNavigate }) {
 // onAlertaClick: callback opcional con la alerta. Si retorna true,
 //   no se hace navegación por módulo (handler ya manejó la acción).
 // ============================================================
-function BannerAlertas({ alertas, onNavigate, onAlertaClick }) {
-  const [expandido, setExpandido] = useState(false)
+// v16.9.4: Banner alertas re-diseñado como grid de KPI cards compactas (antes
+// eran rows full-width que ocupaban demasiado vertical). Cada card:
+// - Conteo grande + label (estilo KPI igual que Proyectos activos / Pipeline)
+// - Click drill-down a /actividades?filtro=X (o handler custom)
+// - Border-left coloreado por severidad
+const LABELS_ALERTA = {
+  facturas_vencidas:       'Facturas vencidas',
+  actividades_retrasadas:  'Actividades retrasadas',
+  actividades_bloqueadas:  'Actividades bloqueadas',
+  proyectos_cierre_proximo:'Cierre próximo (30d)',
+  cxp_autorizacion_pendiente:'CxP sin autorizar',
+  leads_sin_actividad:     'Leads sin actividad',
+  cotizaciones_sin_respuesta:'Cotizaciones sin respuesta',
+  colaborador_sobrecargado:'Colaborador sobrecargado',
+  tareas_post_cierre_vencidas:'Tareas post-cierre vencidas',
+}
+
+function AlertCard({ alerta, onClick }) {
+  const color = colorAlerta(alerta.severidad)
+  const count = alerta.data?.length ?? 0
+  const label = LABELS_ALERTA[alerta.tipo] || alerta.tipo
+  return (
+    <div onClick={onClick} style={{
+      background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${color}`,
+      borderRadius:12, padding:14, cursor:'pointer', transition:'all 0.15s',
+      display:'flex', flexDirection:'column', minHeight:96,
+    }}
+      onMouseEnter={e => { e.currentTarget.style.boxShadow='0 4px 16px rgba(10,37,64,0.08)' }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow='none' }}>
+      <div style={{ fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+        <span style={{ color, display:'inline-flex' }}>{Icon('Alert')}</span>
+        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
+      </div>
+      <div style={{ fontSize:24, fontWeight:500, color, fontFamily:'var(--font-sans)', lineHeight:1, marginBottom:4 }}>{count}</div>
+      <div style={{ fontSize:11, color:COLORS.slate500, marginTop:'auto' }}>Click para revisar →</div>
+    </div>
+  )
+}
+
+function BannerAlertas({ alertas, onNavigate, onAlertaClick, navigate, isMobile }) {
   if (!alertas || alertas.length === 0) return null
+  const totalAlertas = alertas.length
+  // Mostrar top 4 (cabe en 4 cols desktop / 2 mobile). Resto → link al centro.
+  const TOP_N = 4
+  const visibles = alertas.slice(0, TOP_N)
+  const ocultos = totalAlertas - TOP_N
 
   const handleClick = (alerta) => {
     if (onAlertaClick && onAlertaClick(alerta) === true) return
+    // v16.9.4: drill-down a vista filtrada en /actividades para tipos de actividad
+    if (alerta.tipo === 'actividades_retrasadas') return navigate?.('/actividades?filtro=retrasadas')
+    if (alerta.tipo === 'actividades_bloqueadas') return navigate?.('/actividades?filtro=bloqueadas')
     if (alerta.modulo) onNavigate?.(alerta.modulo)
   }
 
-  const TOP_N = 3
-  const visibles = expandido ? alertas : alertas.slice(0, TOP_N)
-  const ocultos = alertas.length - visibles.length
-  const totalAlertas = alertas.length
-
   return (
-    <div style={{ display:'grid', gap:6, marginBottom:20 }}>
-      {visibles.map(a => {
-        const color = colorAlerta(a.severidad)
-        return (
-          <div key={a.id} onClick={() => handleClick(a)} style={{
-            display:'flex', alignItems:'center', gap:10,
-            padding:'8px 14px', background:'white',
-            border:`1px solid ${COLORS.slate100}`,
-            borderLeft:`3px solid ${color}`,
-            borderRadius:8, cursor:'pointer',
-            transition:'background 0.15s',
-            minHeight: 40,
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = bgAlerta(a.severidad) }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
-          >
-            <div style={{ color, flexShrink:0 }}>{Icon('Alert')}</div>
-            <span style={{ flex:1, fontSize:12, color:COLORS.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.mensaje}</span>
-            <span style={{ fontSize:10, color:COLORS.slate400, textTransform:'uppercase', fontWeight:700, letterSpacing:'0.04em' }}>Ver →</span>
-          </div>
-        )
-      })}
-      {ocultos > 0 && !expandido && (
-        <button
-          onClick={() => setExpandido(true)}
-          style={{
-            display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            padding:'6px 12px', background:'transparent',
-            border:`1px dashed ${COLORS.slate200}`, borderRadius:8,
-            fontSize:11, fontWeight:600, color:COLORS.slate500, cursor:'pointer',
-            fontFamily:'inherit',
-          }}>
-          + {ocultos} alerta{ocultos === 1 ? '' : 's'} más
-        </button>
-      )}
-      {expandido && totalAlertas > TOP_N && (
-        <button
-          onClick={() => setExpandido(false)}
-          style={{
-            display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            padding:'6px 12px', background:'transparent',
-            border:`1px dashed ${COLORS.slate200}`, borderRadius:8,
-            fontSize:11, fontWeight:600, color:COLORS.slate500, cursor:'pointer',
-            fontFamily:'inherit',
-          }}>
-          ← Mostrar menos
-        </button>
-      )}
-      {totalAlertas > 5 && (
-        <button
-          onClick={() => onNavigate?.('alertas')}
-          style={{
-            background:'transparent', border:'none', padding:'4px 0',
-            fontSize:11, fontWeight:600, color:COLORS.teal, cursor:'pointer',
-            textAlign:'right', fontFamily:'inherit',
-          }}>
-          Ir al Centro de Alertas ({totalAlertas}) →
+    <div style={{ marginBottom:16 }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : `repeat(${Math.min(visibles.length, 4)}, 1fr)`, gap:12 }}>
+        {visibles.map(a => <AlertCard key={a.id} alerta={a} onClick={() => handleClick(a)}/>)}
+      </div>
+      {ocultos > 0 && (
+        <button onClick={() => onNavigate?.('alertas')} style={{ marginTop:10, background:'transparent', border:'none', padding:'4px 0', fontSize:11, fontWeight:600, color:COLORS.teal, cursor:'pointer', textAlign:'right', fontFamily:'inherit', display:'block', marginLeft:'auto' }}>
+          + {ocultos} alerta{ocultos === 1 ? '' : 's'} más en el Centro de Alertas →
         </button>
       )}
     </div>
@@ -245,6 +236,7 @@ function BannerAlertas({ alertas, onNavigate, onAlertaClick }) {
 // ============================================================
 function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, cargaColaboradores, setVista, setColaboradorInicialId }) {
   const { proyectos, cotizaciones, leads, hitos, facturas, tickets, actividades, cxp } = data
+  const routerNavigate = useNavigate()  // v16.9.4: para drill-down de alertas a /actividades?filtro=X
 
   // v16.9.3: usa helper centralizado para no divergir del filtro de /proyectos
   const proyectosActivos = proyectos.filter(p => esProyectoActivo(p.estado))
@@ -337,8 +329,8 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
 
   return (
     <>
-      {/* v12.5.9: Banner unificado de alertas */}
-      <BannerAlertas alertas={alertas} onNavigate={onNavigate} onAlertaClick={handleAlertaClick}/>
+      {/* v16.9.4: Banner alertas como KPI cards compactas (antes ocupaba mucho vertical) */}
+      <BannerAlertas alertas={alertas} onNavigate={onNavigate} onAlertaClick={handleAlertaClick} navigate={routerNavigate} isMobile={isMobile}/>
 
       {/* v15.1: Cuellos de botella (solo si hay) */}
       {cuellos.porEtapa.length > 0 && (
@@ -522,6 +514,8 @@ function BandejaPostCierre({ usuario, onNavigate }) {
 function CuellosBotellaWidget({ cuellos, isMobile }) {
   const navigate = useNavigate()
   const [expandido, setExpandido] = useState(null)
+  // v16.9.4: widget colapsado por defecto si hay más de 2 etapas — ocupaba mucho vertical
+  const [verTodo, setVerTodo] = useState(false)
   const { retrasadas, porEtapa } = cuellos
 
   // Para cada etapa, las actividades retrasadas que tienen ese nombre
@@ -539,20 +533,27 @@ function CuellosBotellaWidget({ cuellos, isMobile }) {
     if (a.proyecto?.id) navigate(`/proyectos?proyecto=${a.proyecto.id}&actividad=${a.id}`)
   }
 
+  // v16.9.4: si hay más de 2 etapas y no expandido, mostrar solo el resumen
+  const colapsado = !verTodo && porEtapa.length > 2
+  const etapasMostradas = colapsado ? porEtapa.slice(0, 2) : porEtapa
+
   return (
-    <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`4px solid ${COLORS.red}`, borderRadius:12, padding:18, marginBottom:20 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, flexWrap:'wrap', gap:8 }}>
-        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
-          Cuellos de botella detectados
+    <div style={{ background:'white', border:`1px solid #FECACA`, borderLeft:`4px solid ${COLORS.red}`, borderRadius:12, padding:14, marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: colapsado && porEtapa.length === 0 ? 0 : 10, flexWrap:'wrap', gap:8 }}>
+        <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.red, margin:0, fontFamily:'var(--font-sans)', display:'flex', alignItems:'center', gap:8 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+          Cuellos de botella
+          <span style={{ fontSize:11, color:COLORS.slate500, fontWeight:500, marginLeft:4 }}>· {retrasadas.length} retraso(s) en {porEtapa.length} etapa(s)</span>
         </h3>
-        <span style={{ fontSize:11, color:COLORS.slate500 }}>
-          {retrasadas.length} actividad(es) retrasadas · {porEtapa.length} etapa(s) recurrente(s)
-        </span>
+        {porEtapa.length > 2 && (
+          <button onClick={() => setVerTodo(!verTodo)} style={{ background:'transparent', border:'none', fontSize:11, fontWeight:600, color:COLORS.red, cursor:'pointer', fontFamily:'inherit' }}>
+            {verTodo ? 'Mostrar menos' : `Ver ${porEtapa.length - 2} más`} →
+          </button>
+        )}
       </div>
 
-      <div style={{ display:'grid', gap:8 }}>
-        {porEtapa.map((e, i) => {
+      <div style={{ display:'grid', gap:6 }}>
+        {etapasMostradas.map((e, i) => {
           const promDias = Math.round(e.totalDias / e.count)
           const isOpen = expandido === e.nombre
           const acts = actividadesPorEtapa[e.nombre] || []

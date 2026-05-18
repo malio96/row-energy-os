@@ -13,6 +13,7 @@ import Facturacion from './Facturacion'
 import Compras from './Compras'
 import Contratos from './Contratos'
 import Cierre from './Cierre'
+import MisActividades from './MisActividades'  // v16.9.4: drill-down de alertas Dashboard
 import Postventa from './Postventa'
 import Configuracion from './Configuracion'
 import Dashboard from './Dashboard'
@@ -390,6 +391,9 @@ function MainApp() {
 
         {/* v12.5.9c: Centro de Alertas — accesible para todos */}
         <Route path="/alertas" element={<CentroAlertas usuario={usuario}/>}/>
+
+        {/* v16.9.4: Vista de actividades filtradas (drill-down desde Dashboard) */}
+        <Route path="/actividades" element={<MisActividades usuario={usuario}/>}/>
 
           <Route path="/proyectos" element={
             <RutaProtegida usuario={usuario} modulo="proyectos">
