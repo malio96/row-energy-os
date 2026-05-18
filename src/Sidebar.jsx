@@ -152,7 +152,7 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
                       </div>
                     )}
                     {seccion.items.map(item => {
-                      const active = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path))
+                      const itemPathname = (item.path || '').split('?')[0]; const active = location.pathname === itemPathname || (itemPathname !== '/' && location.pathname.startsWith(itemPathname))
                       return (
                         <NavLink key={item.id} to={item.path} style={{ textDecoration:'none' }}>
                           <div style={{
@@ -189,7 +189,7 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
           paddingBottom:'env(safe-area-inset-bottom)',
         }}>
           {mobileNavItems.map(item => {
-            const active = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path))
+            const itemPathname = (item.path || '').split('?')[0]; const active = location.pathname === itemPathname || (itemPathname !== '/' && location.pathname.startsWith(itemPathname))
             return (
               <NavLink key={item.id} to={item.path} style={{ textDecoration:'none', flex:1 }}>
                 <div style={{
@@ -292,7 +292,7 @@ export default function Sidebar({ usuario, onLogout, onNavigate }) {
               <div style={{ height: 1, background: COLORS.slate100, margin: '8px 12px' }}/>
             )}
             {seccion.items.map(item => {
-              const active = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path))
+              const itemPathname = (item.path || '').split('?')[0]; const active = location.pathname === itemPathname || (itemPathname !== '/' && location.pathname.startsWith(itemPathname))
               return (
                 <NavLink
                   key={item.id}

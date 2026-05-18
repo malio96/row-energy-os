@@ -546,6 +546,13 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
           Reemplaza al CuellosBotellaWidget detallado anterior; el detalle vive en /actividades. */}
       <BannerAlertas alertas={alertas} onNavigate={onNavigate} onAlertaClick={handleAlertaClick} navigate={routerNavigate} isMobile={isMobile}/>
 
+      {/* v17.1.1: errorTareasPC ahora se renderiza (antes silent failure pese a convención v16.9.3) */}
+      {errorTareasPC && (
+        <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:12, color:'#DC2626' }}>
+          ⚠ Tareas post-cierre no se cargaron: {errorTareasPC}
+        </div>
+      )}
+
       {/* v16.1: Bandeja Post-Cierre — tareas pendientes del usuario */}
       <BandejaPostCierre usuario={usuario} onNavigate={onNavigate}/>
 
@@ -662,6 +669,12 @@ function BandejaPostCierre({ usuario, onNavigate }) {
   const depRol = usuario?.rol === 'admin' ? 'admin' : usuario?.rol === 'director_proyectos' ? 'proyectos' : usuario?.rol === 'direccion' ? 'legal' : null
   const mias = tareas.filter(t => verTodas || t.asignado_a === usuario?.id || t.departamento === depRol)
   if (loading) return null
+  // v17.1.1: errorCarga ahora se renderiza (antes silent failure pese a convención v16.9.3)
+  if (errorCarga) return (
+    <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:12, color:'#DC2626' }}>
+      ⚠ No se cargaron las tareas post-cierre: {errorCarga}
+    </div>
+  )
   if (mias.length === 0) return null
 
   return (
