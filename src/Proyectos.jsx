@@ -1012,6 +1012,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
   const scrollRef = useRef(null)
   const timelineRef = useRef(null)
   const dragStateRef = useRef(null)
+  const headerScrollRef = useRef(null)
+  const msgTimeoutRef = useRef(null)
 
   const [actividades, setActividades] = useState(actividadesProp)
   useEffect(() => { setActividades(actividadesProp) }, [actividadesProp])
@@ -1025,6 +1027,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
   // v14.1: toggle para mostrar/ocultar ruta crítica
   const [mostrarRutaCritica, setMostrarRutaCritica] = useState(() => loadPref('gantt.critical', false))
   useEffect(() => { savePref('gantt.critical', mostrarRutaCritica) }, [mostrarRutaCritica])
+  const [msgNoPuede, setMsgNoPuede] = useState(null)
 
   const numeracion = useMemo(() => generarNumeracion(actividades), [actividades])
 
@@ -1268,7 +1271,12 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
   }, [drag])
 
   const iniciarDrag = (e, act, tipo, from = null) => {
-    if (!puedeEditarAct(act)) return
+    if (!puedeEditarAct(act)) {
+      clearTimeout(msgTimeoutRef.current)
+      setMsgNoPuede('Esta actividad no está asignada a ti')
+      msgTimeoutRef.current = setTimeout(() => setMsgNoPuede(null), 3000)
+      return
+    }
     e.stopPropagation(); e.preventDefault()
     setTooltip(null)
     const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
@@ -1386,7 +1394,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
   }
 
   return (
-    <div ref={containerRef} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden', position:'relative', userSelect: drag ? 'none' : 'auto' }}>
+    <div ref={containerRef} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'clip', position:'relative', userSelect: drag ? 'none' : 'auto' }}>
       <div style={{ padding:'10px 14px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
         <div style={{ display:'flex', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, overflow:'hidden' }}>
           {[{k:'dia',l:'Día'},{k:'semana',l:'Sem'},{k:'cuartos',l:'Trim'}].map(z => (
@@ -1465,12 +1473,58 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           </div>
         </div>
       ) : (
-      <div style={{ display:'flex' }}>
-        <div style={{ width:LEFT_PANEL, flexShrink:0, borderRight:`2px solid ${COLORS.slate100}`, background:'white', zIndex:2 }}>
-          <div style={{ height:HEADER_HEIGHT, borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', alignItems:'flex-end', padding:'0 16px 12px', background:COLORS.slate50 }}>
+      <>
+        <div style={{ padding:'6px 20px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
+          {Object.entries(ESTADOS).map(([key, cfg]) => (
+            <div key={key} style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <div style={{ width:12, height:8, background:cfg.gradient, borderRadius:2 }}/>
+              <span style={{ color:COLORS.slate600, fontSize:10 }}>{key}</span>
+            </div>
+          ))}
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <svg width="20" height="8"><path d="M 0 4 L 20 4" stroke={COLORS.slate400} strokeWidth="1.3" fill="none"/><circle cx="18" cy="4" r="2.2" fill={COLORS.slate500}/></svg>
+            <span style={{ color:COLORS.slate600, fontSize:10 }}>Dep</span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:0, height:10, borderLeft:`1.5px dashed ${COLORS.red}` }}/>
+            <span style={{ color:COLORS.slate600, fontSize:10 }}>Hoy</span>
+          </div>
+          {mostrarRutaCritica && (
+            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <div style={{ width:14, height:8, background:'linear-gradient(135deg, #991B1B 0%, #DC2626 100%)', borderRadius:2 }}/>
+              <span style={{ color:COLORS.slate600, fontSize:10, fontWeight:600 }}>Ruta crítica</span>
+            </div>
+          )}
+        </div>
+        <div style={{ position:'sticky', top:0, zIndex:10, display:'flex', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ width:LEFT_PANEL, flexShrink:0, height:HEADER_HEIGHT, display:'flex', alignItems:'flex-end', padding:'0 16px 12px', background:COLORS.slate50, borderRight:`2px solid ${COLORS.slate100}`, borderBottom:`1px solid ${COLORS.slate100}` }}>
             <span style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.1em' }}>#  Actividad</span>
           </div>
-          {actOrdenadas.map(act => {
+          <div ref={headerScrollRef} style={{ flex:1, overflow:'hidden' }}>
+            <div style={{ width:totalWidth }}>
+              <div style={{ display:'flex', height: zoom === 'cuartos' ? HEADER_HEIGHT : HEADER_HEIGHT/2, borderBottom:`1px solid ${COLORS.slate100}` }}>
+                {headerSuperior.map(m => <div key={m.key} style={{ width: m.dias * DAY_WIDTH, borderRight:`1px solid ${COLORS.slate200}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:COLORS.navy, textTransform:'capitalize', background:'white' }}>{m.label}</div>)}
+              </div>
+              {zoom !== 'cuartos' && (
+                <div style={{ display:'flex', height:HEADER_HEIGHT/2 }}>
+                  {dias.map((d, i) => {
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                    const isToday = toStr(d) === hoy
+                    return (
+                      <div key={i} style={{ width: DAY_WIDTH, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background: isToday ? COLORS.tealLight : (isWeekend ? '#F8FAFC' : 'white'), borderRight:`1px solid ${COLORS.slate100}`, fontSize:10, color: isToday ? COLORS.teal : COLORS.slate500, fontWeight: isToday ? 700 : 500, fontFamily:'var(--font-mono)' }}>
+                        {zoom === 'dia' && <div style={{ fontSize:9, opacity:0.7 }}>{['D','L','M','M','J','V','S'][d.getDay()]}</div>}
+                        <div style={{ fontSize:10 }}>{d.getDate()}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div style={{ display:'flex' }}>
+          <div style={{ width:LEFT_PANEL, flexShrink:0, borderRight:`2px solid ${COLORS.slate100}`, background:'white', zIndex:2 }}>
+            {actOrdenadas.map(act => {
             const esPadre = act.es_servicio_padre
             const tieneHijos = actividades.some(a => a.parent_id === act.id)
             const isCollapsed = collapsed.has(act.id)
@@ -1513,28 +1567,8 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           </div>
         </div>
 
-        <div ref={scrollRef} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
+        <div ref={scrollRef} onScroll={e => { if (headerScrollRef.current) headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft }} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
           <div style={{ width:totalWidth, position:'relative' }}>
-            <div style={{ position:'sticky', top:0, zIndex:3, background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}` }}>
-              {/* v16.9.2: en zoom cuartos solo se muestra header superior (Q1..Q4 + año), los días no caben legible */}
-              <div style={{ display:'flex', height: zoom === 'cuartos' ? HEADER_HEIGHT : HEADER_HEIGHT/2, borderBottom:`1px solid ${COLORS.slate100}` }}>
-                {headerSuperior.map(m => <div key={m.key} style={{ width: m.dias * DAY_WIDTH, borderRight:`1px solid ${COLORS.slate200}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:COLORS.navy, textTransform:'capitalize', background:'white' }}>{m.label}</div>)}
-              </div>
-              {zoom !== 'cuartos' && (
-                <div style={{ display:'flex', height:HEADER_HEIGHT/2 }}>
-                  {dias.map((d, i) => {
-                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                    const isToday = toStr(d) === hoy
-                    return (
-                      <div key={i} style={{ width: DAY_WIDTH, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background: isToday ? COLORS.tealLight : (isWeekend ? '#F8FAFC' : 'white'), borderRight:`1px solid ${COLORS.slate100}`, fontSize:10, color: isToday ? COLORS.teal : COLORS.slate500, fontWeight: isToday ? 700 : 500, fontFamily:'var(--font-mono)' }}>
-                        {zoom === 'dia' && <div style={{ fontSize:9, opacity:0.7 }}>{['D','L','M','M','J','V','S'][d.getDay()]}</div>}
-                        <div style={{ fontSize:10 }}>{d.getDate()}</div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
             <div ref={timelineRef} style={{ position:'relative', height: totalHeight + ROW_HEIGHT }}>
               <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}>
                 {zoom !== 'cuartos' && dias.map((d, i) => {
@@ -1942,6 +1976,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           </div>
         </div>
       </div>
+      </>
       )}
 
       {tooltip && !drag && (
@@ -1977,29 +2012,12 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
         </div>
       )}
 
-      <div style={{ padding:'10px 20px', borderTop:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', gap:16, flexWrap:'wrap', fontSize:11, alignItems:'center' }}>
-        {Object.entries(ESTADOS).map(([key, cfg]) => (
-          <div key={key} style={{ display:'flex', alignItems:'center', gap:5 }}>
-            <div style={{ width:12, height:8, background:cfg.gradient, borderRadius:2 }}/>
-            <span style={{ color:COLORS.slate600, fontSize:10 }}>{key}</span>
-          </div>
-        ))}
-        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <svg width="20" height="8"><path d="M 0 4 L 20 4" stroke={COLORS.slate400} strokeWidth="1.3" fill="none"/><circle cx="18" cy="4" r="2.2" fill={COLORS.slate500}/></svg>
-          <span style={{ color:COLORS.slate600, fontSize:10 }}>Dep</span>
+      {msgNoPuede && (
+        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background:'rgba(10,37,64,0.93)', color:'white', padding:'10px 20px', borderRadius:8, fontSize:13, fontWeight:500, zIndex:9999, boxShadow:'0 4px 16px rgba(0,0,0,0.25)', pointerEvents:'none', display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          {msgNoPuede}
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <div style={{ width:0, height:10, borderLeft:`1.5px dashed ${COLORS.red}` }}/>
-          <span style={{ color:COLORS.slate600, fontSize:10 }}>Hoy</span>
-        </div>
-        {/* v14.1: leyenda ruta crítica cuando el toggle está ON */}
-        {mostrarRutaCritica && (
-          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-            <div style={{ width:14, height:8, background:'linear-gradient(135deg, #991B1B 0%, #DC2626 100%)', borderRadius:2 }}/>
-            <span style={{ color:COLORS.slate600, fontSize:10, fontWeight:600 }}>Ruta crítica</span>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }
