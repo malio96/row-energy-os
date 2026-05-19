@@ -1037,14 +1037,16 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
     Object.values(cpm).some(c => c.critica), [cpm])
 
   const fechaInicio = useMemo(() => {
-    if (actividades.length === 0) return toDate(toStr(new Date()))
-    const min = actividades.reduce((m, a) => a.inicio < m ? a.inicio : m, actividades[0].inicio)
+    const conFecha = actividades.filter(a => a.inicio)
+    if (conFecha.length === 0) return toDate(toStr(new Date()))
+    const min = conFecha.reduce((m, a) => a.inicio < m ? a.inicio : m, conFecha[0].inicio)
     const d = toDate(min); d.setDate(d.getDate() - 3); return d
   }, [actividades])
 
   const fechaFin = useMemo(() => {
-    if (actividades.length === 0) { const d = new Date(); d.setDate(d.getDate() + 90); return d }
-    const max = actividades.reduce((m, a) => a.fin > m ? a.fin : m, actividades[0].fin)
+    const conFecha = actividades.filter(a => a.fin)
+    if (conFecha.length === 0) { const d = new Date(); d.setDate(d.getDate() + 90); return d }
+    const max = conFecha.reduce((m, a) => a.fin > m ? a.fin : m, conFecha[0].fin)
     const d = toDate(max); d.setDate(d.getDate() + 14); return d
   }, [actividades])
 
