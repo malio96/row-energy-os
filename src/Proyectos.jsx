@@ -996,7 +996,9 @@ function PanelProyecto({ proyecto, clientes, usuarios, usuarioActual, onClose, o
   )
 }
 
-function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep, onUndoPush }) {
+function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep, onUndoPush }) {
+  // equipo_proyectos solo puede editar sus propias actividades
+  const puedeEditarAct = (act) => !usuario || usuario.rol !== 'equipo_proyectos' || act.responsable_id === usuario.id
   const [zoom, setZoom] = useState('dia')
   const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 6)
   const ROW_HEIGHT = 42
@@ -1266,6 +1268,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
   }, [drag])
 
   const iniciarDrag = (e, act, tipo, from = null) => {
+    if (!puedeEditarAct(act)) return
     e.stopPropagation(); e.preventDefault()
     setTooltip(null)
     const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
@@ -1783,7 +1786,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, onRecargar, onD
                                 : (isHovered || isDraggedNow ? `0 4px 12px rgba(10, 37, 64, 0.25)` : '0 1px 3px rgba(10, 37, 64, 0.1)'),
                           transition: drag ? 'none' : 'box-shadow 0.15s, background 0.2s',
                           overflow:'hidden',
-                          cursor: isDraggedNow && drag?.tipo === 'move' ? 'grabbing' : 'grab',
+                          cursor: !puedeEditarAct(act) ? 'default' : isDraggedNow && drag?.tipo === 'move' ? 'grabbing' : 'grab',
                         }}
                       >
                         {!esPadre && act.avance > 0 && <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${act.avance}%`, background:'rgba(255,255,255,0.25)', pointerEvents:'none' }}/>}
@@ -4058,7 +4061,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
 
       {tab === 'resumen' && <TabResumen proyecto={proyecto} actividades={actividades} hitos={hitos} usuarios={usuarios} puedeVerFinanciero={puedeVerFinanciero}/>}
       {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
-      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt} onUndoPush={pushUndo}/>}
+      {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} usuario={usuarioActual} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt} onUndoPush={pushUndo}/>}
 
       {/* v15.10.3: Toast de feedback para Ctrl+Z */}
       {toast && (
