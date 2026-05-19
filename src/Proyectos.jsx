@@ -1474,28 +1474,6 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
         </div>
       ) : (
       <>
-        <div style={{ padding:'6px 20px', borderBottom:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
-          {Object.entries(ESTADOS).map(([key, cfg]) => (
-            <div key={key} style={{ display:'flex', alignItems:'center', gap:5 }}>
-              <div style={{ width:12, height:8, background:cfg.gradient, borderRadius:2 }}/>
-              <span style={{ color:COLORS.slate600, fontSize:10 }}>{key}</span>
-            </div>
-          ))}
-          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-            <svg width="20" height="8"><path d="M 0 4 L 20 4" stroke={COLORS.slate400} strokeWidth="1.3" fill="none"/><circle cx="18" cy="4" r="2.2" fill={COLORS.slate500}/></svg>
-            <span style={{ color:COLORS.slate600, fontSize:10 }}>Dep</span>
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-            <div style={{ width:0, height:10, borderLeft:`1.5px dashed ${COLORS.red}` }}/>
-            <span style={{ color:COLORS.slate600, fontSize:10 }}>Hoy</span>
-          </div>
-          {mostrarRutaCritica && (
-            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-              <div style={{ width:14, height:8, background:'linear-gradient(135deg, #991B1B 0%, #DC2626 100%)', borderRadius:2 }}/>
-              <span style={{ color:COLORS.slate600, fontSize:10, fontWeight:600 }}>Ruta crítica</span>
-            </div>
-          )}
-        </div>
         <div style={{ position:'sticky', top:0, zIndex:10, display:'flex', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ width:LEFT_PANEL, flexShrink:0, height:HEADER_HEIGHT, display:'flex', alignItems:'flex-end', padding:'0 16px 12px', background:COLORS.slate50, borderRight:`2px solid ${COLORS.slate100}`, borderBottom:`1px solid ${COLORS.slate100}` }}>
             <span style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.1em' }}>#  Actividad</span>
@@ -1975,6 +1953,28 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
             </div>
           </div>
         </div>
+      </div>
+      <div style={{ position:'sticky', bottom:0, zIndex:10, padding:'8px 20px', borderTop:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
+        {Object.entries(ESTADOS).map(([key, cfg]) => (
+          <div key={key} style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:12, height:8, background:cfg.gradient, borderRadius:2 }}/>
+            <span style={{ color:COLORS.slate600, fontSize:10 }}>{key}</span>
+          </div>
+        ))}
+        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <svg width="20" height="8"><path d="M 0 4 L 20 4" stroke={COLORS.slate400} strokeWidth="1.3" fill="none"/><circle cx="18" cy="4" r="2.2" fill={COLORS.slate500}/></svg>
+          <span style={{ color:COLORS.slate600, fontSize:10 }}>Dep</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <div style={{ width:0, height:10, borderLeft:`1.5px dashed ${COLORS.red}` }}/>
+          <span style={{ color:COLORS.slate600, fontSize:10 }}>Hoy</span>
+        </div>
+        {mostrarRutaCritica && (
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:14, height:8, background:'linear-gradient(135deg, #991B1B 0%, #DC2626 100%)', borderRadius:2 }}/>
+            <span style={{ color:COLORS.slate600, fontSize:10, fontWeight:600 }}>Ruta crítica</span>
+          </div>
+        )}
       </div>
       </>
       )}
