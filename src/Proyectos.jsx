@@ -1249,6 +1249,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
             prevInicio: d.originalInicio, prevFin: d.originalFin,
             newInicio: cambios.inicio ?? d.originalInicio,
             newFin: cambios.fin ?? d.originalFin,
+            snapshotActividades: d.snapshotActividades,
           })
           await recalcularFechasDesde(d.actId)
           if (parentId) await recalcularPadre(parentId)
@@ -1279,7 +1280,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
     }
     e.stopPropagation(); e.preventDefault()
     setTooltip(null)
-    const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin }
+    const state = { tipo, actId: act.id, from, startX: e.clientX, mouseX: e.clientX, mouseY: e.clientY, originalInicio: act.inicio, originalFin: act.fin, snapshotActividades: actividades.map(a => ({ id: a.id, inicio: a.inicio, fin: a.fin })) }
     dragStateRef.current = state
     setDrag(state)
   }
@@ -3843,7 +3844,19 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
         case 'move':
         case 'resize-left':
         case 'resize-right':
-          await actualizarActividad(action.actId, { inicio: action.prevInicio, fin: action.prevFin })
+          if (action.snapshotActividades?.length) {
+            // Restaurar todas las actividades afectadas (incluye cascada automática)
+            const currentActs = proyecto?.actividades || []
+            const toRestore = action.snapshotActividades.filter(snap => {
+              const curr = currentActs.find(a => a.id === snap.id)
+              return curr && (curr.inicio !== snap.inicio || curr.fin !== snap.fin)
+            })
+            await Promise.all(toRestore.map(snap =>
+              actualizarActividad(snap.id, { inicio: snap.inicio, fin: snap.fin })
+            ))
+          } else {
+            await actualizarActividad(action.actId, { inicio: action.prevInicio, fin: action.prevFin })
+          }
           break
         case 'addDep':
           await quitarDependencia(action.sucId, action.predId)
