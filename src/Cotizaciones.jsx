@@ -7,6 +7,16 @@ import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
 
+function extraerClienteNombre(cot) {
+  if (cot.cliente?.razon_social) return cot.cliente.razon_social
+  const n = cot.nombre_proyecto || ''
+  for (const sep of [' - ', ' – ', ' — ']) {
+    const i = n.indexOf(sep)
+    if (i > 0) return n.slice(0, i).trim()
+  }
+  return '(Sin cliente)'
+}
+
 export default function Cotizaciones({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
   // Deep-link desde Centro de Alertas: capturar ?cotizacion=X en el primer render
@@ -20,6 +30,11 @@ export default function Cotizaciones({ usuario }) {
   useEffect(() => { savePref('sort.cotizaciones', sort) }, [sort])
   // v17.0.4: filtro especial via URL (?filtro=pendientes|sin_respuesta|workflow_pendiente desde Dashboard "Ver todos")
   const filtroEspecial = searchParams.get('filtro')  // 'pendientes' | 'sin_respuesta' | 'workflow_pendiente' | null
+  const [filtroAño, setFiltroAño] = useState('todos')
+  const [filtroMes, setFiltroMes] = useState('todos')
+  const [busqueda, setBusqueda] = useState('')
+  const [agruparCliente, setAgruparCliente] = useState(() => loadPref('cots.agrupar', false))
+
   const cotsOrdenadas = useMemo(() => {
     let r = cots
     // v17.0.4: filtro especial drill-down desde Dashboard
@@ -33,6 +48,17 @@ export default function Cotizaciones({ usuario }) {
       // Simplificado: cotizaciones aprobadas con workflow no aprobado aún
       r = r.filter(c => c.estado === 'Aprobada' && !c.workflow_aprobado_en)
     }
+    // Filtros normales
+    if (filtroAño !== 'todos') r = r.filter(c => c.fecha_emision?.startsWith(filtroAño))
+    if (filtroMes !== 'todos') r = r.filter(c => c.fecha_emision?.slice(5, 7) === filtroMes)
+    if (busqueda.trim()) {
+      const q = busqueda.toLowerCase()
+      r = r.filter(c =>
+        c.codigo?.toLowerCase().includes(q) ||
+        c.nombre_proyecto?.toLowerCase().includes(q) ||
+        extraerClienteNombre(c).toLowerCase().includes(q)
+      )
+    }
     // v17.0.4: override sort según filtro especial
     let sortEffective = sort
     if (filtroEspecial === 'pendientes') sortEffective = { field:'fecha', dir:'desc' }
@@ -41,12 +67,23 @@ export default function Cotizaciones({ usuario }) {
     return aplicarSort(r, sortEffective, {
       codigo:   c => c.codigo || '',
       proyecto: c => (c.nombre_proyecto || '').toLowerCase(),
-      cliente:  c => (c.cliente?.razon_social || '').toLowerCase(),
+      cliente:  c => extraerClienteNombre(c).toLowerCase(),
       total:    c => Number(c.total || 0),
       estado:   c => c.estado || '',
       fecha:    c => c.fecha_emision || '',
     })
-  }, [cots, sort, filtroEspecial])
+  }, [cots, sort, filtroEspecial, filtroAño, filtroMes, busqueda])
+
+  const cotsPorCliente = useMemo(() => {
+    if (!agruparCliente) return null
+    const map = new Map()
+    for (const c of cotsOrdenadas) {
+      const k = extraerClienteNombre(c)
+      if (!map.has(k)) map.set(k, [])
+      map.get(k).push(c)
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'es'))
+  }, [cotsOrdenadas, agruparCliente])
 
   const cargar = async () => { setLoading(true); setCots(await getCotizaciones()); setLoading(false) }
   useEffect(() => { cargar() }, [])
@@ -69,7 +106,12 @@ export default function Cotizaciones({ usuario }) {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
           <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Cotizaciones</h1>
-          <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{cots.length} cotización{cots.length!==1?'es':''}</p>
+          <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>
+            {cotsOrdenadas.length !== cots.length
+              ? <>{cotsOrdenadas.length} de {cots.length} cotizaciones</>
+              : <>{cots.length} cotización{cots.length!==1?'es':''}</>
+            }
+          </p>
         </div>
         <div style={{ display:'flex', gap:10, alignItems:'center' }}>
           <SortControl value={sort} onChange={setSort} fields={[
@@ -84,6 +126,39 @@ export default function Cotizaciones({ usuario }) {
             {Icon('Plus')} Nueva cotización
           </button>
         </div>
+      </div>
+
+      {/* Filtros año / mes / búsqueda / agrupar */}
+      <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
+        <input
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="Buscar código, proyecto, cliente..."
+          style={{ ...inputStyle, width:260, margin:0, padding:'8px 12px' }}
+        />
+        <select value={filtroAño} onChange={e => setFiltroAño(e.target.value)} style={{ ...selectStyle, width:130 }}>
+          <option value="todos">Todos los años</option>
+          <option value="2024">2024</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+        </select>
+        <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={{ ...selectStyle, width:140 }}>
+          <option value="todos">Todos los meses</option>
+          {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m, i) => (
+            <option key={m} value={String(i+1).padStart(2,'0')}>{m}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => { const next = !agruparCliente; setAgruparCliente(next); savePref('cots.agrupar', next) }}
+          style={{ padding:'8px 14px', background: agruparCliente ? COLORS.navy : 'white', color: agruparCliente ? 'white' : COLORS.slate600, border:`1px solid ${agruparCliente ? COLORS.navy : COLORS.slate200}`, borderRadius:8, fontSize:12, fontWeight:500, cursor:'pointer', whiteSpace:'nowrap' }}
+        >
+          Agrupar por cliente
+        </button>
+        {(filtroAño !== 'todos' || filtroMes !== 'todos' || busqueda.trim()) && (
+          <button onClick={() => { setFiltroAño('todos'); setFiltroMes('todos'); setBusqueda('') }} style={{ padding:'6px 12px', background:'transparent', border:`1px solid ${COLORS.slate200}`, borderRadius:8, fontSize:11, color:COLORS.slate500, cursor:'pointer' }}>
+            ✕ Limpiar filtros
+          </button>
+        )}
       </div>
 
       {/* v17.0.4: banner cuando hay filtro especial drill-down desde Dashboard */}
@@ -113,27 +188,55 @@ export default function Cotizaciones({ usuario }) {
         />
       )}
 
-      {!loading && cots.length > 0 && (
-        <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 130px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
+      {!loading && cots.length > 0 && cotsOrdenadas.length === 0 && (
+        <EmptyState titulo="Sin resultados" descripcion="Ninguna cotización coincide con los filtros aplicados."/>
+      )}
+
+      {!loading && cotsOrdenadas.length > 0 && (() => {
+        const COLS = '100px 1fr 200px 140px 120px 130px'
+        const Header = () => (
+          <div style={{ display:'grid', gridTemplateColumns:COLS, padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
             <div>Código</div><div>Proyecto</div><div>Cliente</div><div>Total</div><div>Estado</div><div>Emitida</div>
           </div>
-          {cotsOrdenadas.map(c => (
-            <div key={c.id} onClick={() => setSelId(c.id)} style={{ display:'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 130px', padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', cursor:'pointer', transition:'background 0.12s' }}
-              onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
-              <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
-              <div>
-                <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{c.nombre_proyecto}</div>
-                {c.capacidad_mw && <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.capacidad_mw} MW · {c.ubicacion || ''}</div>}
-              </div>
-              <div style={{ fontSize:12, color:COLORS.slate600 }}>{c.cliente?.razon_social || '—'}</div>
-              <div style={{ fontSize:13, fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(c.total)} <span style={{ fontSize:10, color:COLORS.slate400, fontWeight:400 }}>{c.moneda}</span></div>
-              <div><Badge texto={c.estado} mapa={ESTADOS_COT}/></div>
-              <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_emision}</div>
+        )
+        const CotRow = ({ c }) => (
+          <div key={c.id} onClick={() => setSelId(c.id)} style={{ display:'grid', gridTemplateColumns:COLS, padding:'14px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', cursor:'pointer', transition:'background 0.12s' }}
+            onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+            <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
+            <div>
+              <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{c.nombre_proyecto}</div>
+              {c.capacidad_mw && <div style={{ fontSize:11, color:COLORS.slate500 }}>{c.capacidad_mw} MW{c.ubicacion ? ` · ${c.ubicacion}` : ''}</div>}
             </div>
-          ))}
-        </div>
-      )}
+            <div style={{ fontSize:12, color:COLORS.slate600 }}>{extraerClienteNombre(c)}</div>
+            <div style={{ fontSize:13, fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(c.total)} <span style={{ fontSize:10, color:COLORS.slate400, fontWeight:400 }}>{c.moneda}</span></div>
+            <div><Badge texto={c.estado} mapa={ESTADOS_COT}/></div>
+            <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_emision}</div>
+          </div>
+        )
+
+        if (cotsPorCliente) {
+          return cotsPorCliente.map(([cliente, items]) => (
+            <div key={cliente} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden', marginBottom:12 }}>
+              <div style={{ padding:'10px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', alignItems:'center', gap:10 }}>
+                <span style={{ fontSize:13, fontWeight:700, color:COLORS.navy }}>{cliente}</span>
+                <span style={{ fontSize:11, color:COLORS.slate400 }}>{items.length} cotización{items.length!==1?'es':''}</span>
+                <span style={{ fontSize:11, color:COLORS.slate500, marginLeft:'auto', fontFamily:'var(--font-mono)', fontWeight:600 }}>
+                  {fmtMoney(items.reduce((s, c) => s + Number(c.total || 0), 0))} MXN
+                </span>
+              </div>
+              <Header/>
+              {items.map(c => <CotRow key={c.id} c={c}/>)}
+            </div>
+          ))
+        }
+
+        return (
+          <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+            <Header/>
+            {cotsOrdenadas.map(c => <CotRow key={c.id} c={c}/>)}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -227,6 +330,7 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
   if (!cot) return null
 
   const esBorrador = cot.estado === 'Borrador'
+  const clienteNombre = extraerClienteNombre(cot)
 
   const cambiarEstado = async (nuevo) => {
     if (nuevo === 'Aprobada' && !confirm('Al aprobar se creará el proyecto automáticamente con los hitos 50/40/10 y se dispararán las 3 tareas post-cierre (Legal/Admin/Proyectos). ¿Continuar?')) return
@@ -254,7 +358,7 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
             <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:500 }}>{cot.codigo}</span>
             <Badge texto={cot.estado} mapa={ESTADOS_COT}/>
-            {cot.cliente && <span style={{ fontSize:12, color:COLORS.slate500 }}>· {cot.cliente.razon_social}</span>}
+            {clienteNombre !== '(Sin cliente)' && <span style={{ fontSize:12, color:COLORS.slate500 }}>· {clienteNombre}</span>}
           </div>
           <h1 style={{ fontSize:26, fontWeight:500, color:COLORS.navy, margin:0, fontFamily:'var(--font-sans)', letterSpacing:'-0.02em' }}>{cot.nombre_proyecto}</h1>
           <p style={{ fontSize:12, color:COLORS.slate500, margin:'4px 0 0' }}>Vendedor: {cot.vendedor?.nombre || '—'} · Emitida: {cot.fecha_emision}</p>
@@ -273,7 +377,16 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
           <div style={{ display:'grid', gridTemplateColumns:'30px 1fr 100px 110px 140px 80px 40px', padding:'10px 20px', background:COLORS.slate50, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', borderBottom:`1px solid ${COLORS.slate100}` }}>
             <div>#</div><div>Servicio</div><div>Cant.</div><div>Precio unit.</div><div>% Pagos</div><div>Total</div><div></div>
           </div>
-          {cot.items.length === 0 && <div style={{ padding:30, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin servicios. Agrega el primero.</div>}
+          {cot.items.length === 0 && (
+            <div style={{ padding:30, textAlign:'center' }}>
+              <div style={{ color:COLORS.slate500, fontSize:13, marginBottom:4 }}>
+                {esBorrador ? 'Sin servicios.' : 'Cotización importada — sin desglose de ítems.'}
+              </div>
+              <div style={{ color:COLORS.slate400, fontSize:11 }}>
+                {esBorrador ? 'Agrega el primero con el botón de arriba.' : 'El monto total proviene del registro histórico.'}
+              </div>
+            </div>
+          )}
           {cot.items.map(item => (
             <div
               key={item.id}
@@ -315,7 +428,7 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
               <h3 style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, margin:0, textTransform:'uppercase', letterSpacing:'0.08em' }}>Información</h3>
               <button onClick={() => setEditandoInfo(true)} style={{ padding:'4px 10px', background:'transparent', border:`1px solid ${COLORS.slate200}`, color:COLORS.slate600, borderRadius:6, fontSize:11, fontWeight:500, cursor:'pointer' }}>Editar</button>
             </div>
-            {[['Cliente', cot.cliente?.razon_social], ['Capacidad', cot.capacidad_mw ? `${cot.capacidad_mw} MW` : '—'], ['Ubicación', cot.ubicacion], ['Fecha emisión', cot.fecha_emision], ['Vigencia', cot.fecha_vigencia]].map(([k,v]) => (
+            {[['Cliente', clienteNombre !== '(Sin cliente)' ? clienteNombre : null], ['Capacidad', cot.capacidad_mw ? `${cot.capacidad_mw} MW` : '—'], ['Ubicación', cot.ubicacion], ['Fecha emisión', cot.fecha_emision], ['Vigencia', cot.fecha_vigencia]].map(([k,v]) => (
               <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:12 }}>
                 <span style={{ color:COLORS.slate500 }}>{k}</span><span style={{ fontWeight:500, color:COLORS.ink }}>{v || '—'}</span>
               </div>
@@ -827,13 +940,16 @@ function ModalEditarItem({ item, onClose, onGuardado }) {
 function ModalEditarInfo({ cot, onClose, onGuardado }) {
   const [form, setForm] = useState({
     nombre_proyecto: cot.nombre_proyecto || '',
+    cliente_id: cot.cliente_id || '',
     capacidad_mw: cot.capacidad_mw ?? '',
     ubicacion: cot.ubicacion || '',
     fecha_emision: cot.fecha_emision || '',
     fecha_vigencia: cot.fecha_vigencia || '',
     notas: cot.notas || '',
   })
+  const [clientes, setClientes] = useState([])
   const [guardando, setGuardando] = useState(false)
+  useEffect(() => { getClientes().then(setClientes) }, [])
 
   const guardar = async () => {
     if (!form.nombre_proyecto.trim()) { alert('El nombre del proyecto es requerido'); return }
@@ -841,6 +957,7 @@ function ModalEditarInfo({ cot, onClose, onGuardado }) {
     try {
       await actualizarCotizacion(cot.id, {
         nombre_proyecto: form.nombre_proyecto.trim(),
+        cliente_id: form.cliente_id || null,
         capacidad_mw: form.capacidad_mw === '' ? null : parseFloat(form.capacidad_mw),
         ubicacion: form.ubicacion || null,
         fecha_emision: form.fecha_emision || null,
@@ -858,7 +975,7 @@ function ModalEditarInfo({ cot, onClose, onGuardado }) {
         <div style={{ padding:'20px 28px', borderBottom:`1px solid ${COLORS.slate100}`, display:'flex', justifyContent:'space-between' }}>
           <div>
             <h2 style={{ fontSize:18, fontWeight:500, margin:0, color:COLORS.navy, fontFamily:'var(--font-sans)' }}>Editar información</h2>
-            <p style={{ fontSize:11, color:COLORS.slate500, margin:'4px 0 0' }}>{cot.codigo} · {cot.cliente?.razon_social || ''}</p>
+            <p style={{ fontSize:11, color:COLORS.slate500, margin:'4px 0 0' }}>{cot.codigo}</p>
           </div>
           <button onClick={onClose} style={{ border:'none', background:'transparent', cursor:'pointer' }}>{Icon('X')}</button>
         </div>
@@ -866,6 +983,13 @@ function ModalEditarInfo({ cot, onClose, onGuardado }) {
           <div style={{ marginBottom:12 }}>
             <label style={labelStyle}>Nombre del proyecto *</label>
             <input value={form.nombre_proyecto} onChange={e=>setForm({...form, nombre_proyecto:e.target.value})} style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom:12 }}>
+            <label style={labelStyle}>Cliente</label>
+            <select value={form.cliente_id} onChange={e=>setForm({...form, cliente_id:e.target.value})} style={selectStyle}>
+              <option value="">Sin cliente vinculado</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.razon_social}</option>)}
+            </select>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
             <div><label style={labelStyle}>Capacidad (MW)</label><input type="number" step="0.1" value={form.capacidad_mw} onChange={e=>setForm({...form, capacidad_mw:e.target.value})} style={inputStyle}/></div>
