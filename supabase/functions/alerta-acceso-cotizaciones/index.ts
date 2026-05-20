@@ -19,7 +19,7 @@ import { serve } from 'https://deno.land/std@0.208.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALERT_EMAIL = 'mmartinez@row.energy'
-const FROM_EMAIL  = 'alertas@app.row.energy'  // dominio verificado en Resend
+const FROM_EMAIL  = 'noreply@row.energy'  // dominio verificado en Resend
 
 // Roles autorizados por módulo/evento
 const ROLES_COTIZACIONES = new Set(['direccion', 'admin', 'ventas'])
