@@ -4340,9 +4340,10 @@ function FormEditarEtapaSim({ etapa, usuarios, guardando, onCancelar, onGuardar 
 export default function Proyectos({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
   // Deep-link desde Centro de Alertas: capturar params en el primer render para que sobrevivan al cleanup de URL
+  const location = useLocation()
   const deepLinkRef = useRef({
-    proyectoId: searchParams.get('proyecto'),
-    actividadId: searchParams.get('actividad'),
+    proyectoId: searchParams.get('proyecto') || location.state?.proyectoId || null,
+    actividadId: searchParams.get('actividad') || null,
     aplicado: false,
   })
   const [proyectos, setProyectos] = useState([])
@@ -4358,13 +4359,13 @@ export default function Proyectos({ usuario }) {
   // v16.9.3: orden persistido por usuario en localStorage
   const [sort, setSort] = useState(() => loadPref('sort.proyectos', { field:'nombre', dir:'asc' }))
   useEffect(() => { savePref('sort.proyectos', sort) }, [sort])
-  const location = useLocation()
 
   // Click en sidebar "Proyectos" estando dentro de un DetalleProyecto debe
   // regresar a la lista. React Router cambia location.key incluso al navegar
   // al mismo path, así que escuchamos eso para resetear el state local.
+  // Excepción: si viene con state.proyectoId (navegación desde Plantas) no resetear.
   useEffect(() => {
-    if (!location.search) {
+    if (!location.search && !location.state?.proyectoId) {
       setProyectoSel(null)
       setDeepLinkActividadId(null)
     }

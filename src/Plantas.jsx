@@ -15,7 +15,7 @@ import {
   btnPrimary, Icon, EmptyState, LoadingState, useIsMobile, SortControl, aplicarSort,
   loadPref, savePref,
 } from './helpers'
-import { puede, puedeEliminar as rolPuedeEliminar, puedeGestionarProyecto } from './permisos'
+import { puede, puedeEliminar as rolPuedeEliminar, puedeGestionarProyecto, esRolEn } from './permisos'
 import { TabDocumentos } from './Proyectos'
 
 export default function Plantas({ usuario }) {
@@ -227,8 +227,8 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
   const [editando, setEditando] = useState(false)
   const navigate = useNavigate()
 
-  // v16.9.3: helper centralizado (era hardcoded — mismo array que en lista principal)
-  const puedeEditar = puedeGestionarProyecto(usuario)
+  // v16.9.3: helper centralizado. Edición también para equipo_proyectos (info técnica de planta)
+  const puedeEditar = puedeGestionarProyecto(usuario) || esRolEn(usuario, ['equipo_proyectos'])
   const puedeBorrar = rolPuedeEliminar(usuario)
 
   const cargar = async () => {
@@ -305,7 +305,7 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
             </div>
             {planta.proyectos.length === 0 && <div style={{ padding:16, textAlign:'center', color:COLORS.slate400, fontSize:12 }}>Sin proyectos vinculados todavía. Edita un proyecto y selecciona esta planta para vincularlo.</div>}
             {planta.proyectos.map(p => (
-              <div key={p.id} onClick={() => navigate(`/proyectos?proyecto=${p.id}`)} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderBottom:`1px solid ${COLORS.slate100}`, cursor:'pointer' }}
+              <div key={p.id} onClick={() => navigate('/proyectos', { state: { proyectoId: p.id } })} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderBottom:`1px solid ${COLORS.slate100}`, cursor:'pointer' }}
                 onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50 }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
