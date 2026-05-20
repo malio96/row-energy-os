@@ -69,6 +69,7 @@ export const PERMISOS_POR_ROL = {
     modulos: [
       'dashboard', 'cobranza', 'facturacion',
       'contratos', 'compras', 'cierre',
+      'plantas',
       'actividades',  // v16.9.x
     ],
     puedeEliminar: false,
@@ -77,7 +78,7 @@ export const PERMISOS_POR_ROL = {
   equipo_proyectos: {
     label: 'Equipo de Proyectos',
     descripcion: 'Ejecución de actividades en proyectos. Dashboard personal.',
-    modulos: ['dashboard', 'proyectos', 'actividades'],
+    modulos: ['dashboard', 'proyectos', 'plantas', 'actividades'],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
   },
@@ -152,12 +153,12 @@ export function puedeAprobarCotizacion(usuario) {
 
 // ¿Puede VER el tab financiero de un proyecto (totales, hitos)?
 export function puedeVerFinanciero(usuario) {
-  return esRolEn(usuario, ['direccion', 'admin', 'cobranza', 'ventas'])
+  return esRolEn(usuario, ['direccion', 'admin', 'ventas'])
 }
 
 // ¿Puede EDITAR el tab financiero (crear/editar hitos, marcar cobrado)?
 export function puedeEditarFinanciero(usuario) {
-  return esRolEn(usuario, ['direccion', 'admin', 'cobranza'])
+  return esRolEn(usuario, ['direccion', 'admin'])
 }
 
 // ¿Puede gestionar operaciones de proyecto (estado, plantilla, fechas)?

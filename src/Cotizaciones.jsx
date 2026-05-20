@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS, getTareasPostCierre, completarTareaPostCierre, asignarTareaPostCierre, aprobarWorkflowPostCierre, DEPARTAMENTOS_POST_CIERRE, ESTADOS_TAREA_PC } from './supabase'
 // v17.0.2: loadPref/savePref desde helpers (antes shim local sin sync a BD)
-import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort, loadPref, savePref } from './helpers'
+import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort, loadPref, savePref, trackEvent } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
@@ -87,6 +87,18 @@ export default function Cotizaciones({ usuario }) {
 
   const cargar = async () => { setLoading(true); setCots(await getCotizaciones()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  // Audit: entrada y salida del módulo con duración
+  useEffect(() => {
+    const t0 = Date.now()
+    trackEvent('acceso_modulo', { modulo: 'cotizaciones' })
+    return () => {
+      trackEvent('salida_modulo', {
+        modulo: 'cotizaciones',
+        metadata: { duracion_seg: Math.round((Date.now() - t0) / 1000) },
+      })
+    }
+  }, [])
 
   useEffect(() => {
     if (deepLinkRef.current.aplicado) return
@@ -325,6 +337,17 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
 
   const cargar = async () => { setLoading(true); setCot(await getCotizacion(id)); setLoading(false) }
   useEffect(() => { cargar() }, [id])
+
+  // Audit: cotización específica abierta
+  useEffect(() => {
+    if (!cot) return
+    trackEvent('ver_cotizacion', {
+      modulo: 'cotizaciones',
+      entidad_tipo: 'cotizacion',
+      entidad_id: cot.id,
+      metadata: { codigo: cot.codigo, nombre: cot.nombre_proyecto, accion: 'ver_cotizacion' },
+    })
+  }, [cot?.id])
 
   if (loading) return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>
   if (!cot) return null

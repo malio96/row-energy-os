@@ -31,7 +31,7 @@ import {
 // v16.9.3: sort + persistencia + ESTADOS_HITO canonico (en helpers, no local)
 // v17.0.2: loadPref/savePref desde helpers (antes shim local sin prefijo rowenergy:
 // que causaba leak cross-user en browser compartido + no sincronizaba a BD)
-import { estadoEfectivo, aplicarSort, SortControl, ESTADOS_HITO, loadPref, savePref, daysUntil } from './helpers'
+import { estadoEfectivo, aplicarSort, SortControl, ESTADOS_HITO, loadPref, savePref, daysUntil, trackEvent } from './helpers'
 // v16.4.0: helpers de permisos centralizados
 import {
   puedeEliminar,
@@ -3823,6 +3823,17 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     if (act) setPanelAct(act)
     deepLinkActRef.current = true
   }, [proyecto, actividadInicialId])
+
+  // Audit: track cuando se abre el tab financiero
+  useEffect(() => {
+    if (tab !== 'financiero' || !proyecto) return
+    trackEvent('ver_financiero', {
+      modulo: 'proyectos',
+      entidad_tipo: 'proyecto',
+      entidad_id: proyecto.id,
+      metadata: { codigo: proyecto.codigo, nombre: proyecto.nombre },
+    })
+  }, [tab, proyecto?.id])
 
   // v15.10.3: undo stack — registra acciones en el Gantt para revertir con Ctrl+Z
   const showToast = useCallback((mensaje, tipo = 'info') => {

@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getPlantas, getPlanta, crearPlanta, actualizarPlanta, eliminarPlanta,
-  getClientes, TIPOS_TECNOLOGIA_PLANTA, ESTADOS_PLANTA, templateCotizacionPorCapacidad,
+  getClientes, TIPOS_TECNOLOGIA_PLANTA, ESTADOS_PLANTA,
 } from './supabase'
 // v17.0.2: loadPref/savePref desde helpers (antes shim local sin sync a BD)
 import {
@@ -251,7 +251,6 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
   if (!planta) return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Planta no encontrada</div>
 
   const estadoMeta = ESTADOS_PLANTA[planta.estado] || ESTADOS_PLANTA.Planeacion
-  const templateDocx = templateCotizacionPorCapacidad(planta.capacidad_mw)
 
   return (
     <div>
@@ -332,25 +331,6 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
 
         {/* COLUMNA DERECHA */}
         <div>
-          {/* Template de cotización según rango MW */}
-          {templateDocx && (
-            <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16 }}>
-              <h3 style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.08em' }}>Template de cotización</h3>
-              <p style={{ fontSize:12, color:COLORS.slate600, margin:'0 0 12px', lineHeight:1.4 }}>
-                Plantilla de propuesta técnica-económica correspondiente a esta capacidad ({Number(planta.capacidad_mw).toFixed(1)} MW).
-              </p>
-              <a href={`/templates/${encodeURIComponent(templateDocx)}`} download
-                style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'10px 14px', background:COLORS.navy, color:'white', borderRadius:8, fontSize:12, fontWeight:600, textDecoration:'none' }}>
-                {Icon('Download')} Descargar .docx
-              </a>
-            </div>
-          )}
-          {!templateDocx && planta.capacidad_mw != null && (
-            <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18, marginBottom:16, fontSize:12, color:COLORS.slate500 }}>
-              No hay template asociado para esta capacidad ({Number(planta.capacidad_mw).toFixed(1)} MW). Templates disponibles: 0.5–10 MW y 10.1–1000 MW.
-            </div>
-          )}
-
           {/* Auditoría */}
           <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
             <h3 style={{ fontSize:11, fontWeight:600, color:COLORS.slate500, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.08em' }}>Auditoría</h3>
