@@ -73,38 +73,26 @@ serve(async (req) => {
 
   // ── Cotizaciones ──────────────────────────────────────────
   if (modulo === 'cotizaciones') {
-    const duracion   = metadata.duracion_seg != null ? `${metadata.duracion_seg} segundos` : '—'
-    const cotCodigo  = metadata.codigo  ?? '—'
-    const cotNombre  = metadata.nombre  ?? '—'
-    const accion     = metadata.accion  ?? tipoEvento
+    // Usuarios autorizados: silencio total — el log queda en BD para auditoría
+    if (esAutorizado) return new Response('authorized_skip', { status: 200 })
 
-    // Para usuarios autorizados, solo alertar en ver_cotizacion (evitar spam de carga de lista)
-    if (esAutorizado && tipoEvento !== 'ver_cotizacion') {
-      return new Response('authorized_skip', { status: 200 })
-    }
-
-    const asunto = esAutorizado
-      ? `📋 ${nombre} vio cotización ${cotCodigo}`
-      : `🚨 ACCESO NO AUTORIZADO a Cotizaciones — ${nombre} (${rol})`
-
-    const colorAlerta = esAutorizado ? '#1B3A6B' : '#DC2626'
-    const badgeColor  = esAutorizado ? '#E0EDFF'  : '#FEF2F2'
+    const cotCodigo = metadata.codigo ?? '—'
+    const cotNombre = metadata.nombre ?? '—'
+    const accion    = metadata.accion ?? tipoEvento
+    const asunto    = `🚨 ACCESO NO AUTORIZADO a Cotizaciones — ${nombre} (${rol})`
 
     const html = buildHtml({
-      titulo: esAutorizado ? '📋 Actividad en Cotizaciones' : '🚨 Acceso No Autorizado — Cotizaciones',
-      timestamp, colorAlerta,
+      titulo: '🚨 Acceso No Autorizado — Cotizaciones',
+      timestamp, colorAlerta: '#DC2626',
       filas: [
         { label: 'Usuario', valor: nombre, bold: true },
         { label: 'Email', valor: email },
-        { label: 'Rol', valor: rol, badge: { bg: badgeColor, color: colorAlerta } },
+        { label: 'Rol', valor: rol, badge: { bg: '#FEF2F2', color: '#DC2626' } },
         { label: 'Acción', valor: accion },
         ...(cotCodigo !== '—' ? [{ label: 'Cotización', valor: `${cotCodigo} — ${cotNombre}`, mono: true, bold: true }] : []),
-        ...(duracion !== '—' ? [{ label: 'Tiempo en módulo', valor: duracion }] : []),
         { label: 'User-Agent', valor: (ev.user_agent ?? '—').slice(0, 80), small: true },
       ],
-      alerta: !esAutorizado
-        ? `El rol <strong>${rol}</strong> no tiene permiso para ver Cotizaciones. Verifica si hubo un cambio en los permisos o si la protección de ruta falló.`
-        : null,
+      alerta: `El rol <strong>${rol}</strong> no tiene permiso para ver Cotizaciones. Verifica si hubo un cambio en los permisos o si la protección de ruta falló.`,
     })
 
     return sendEmail(asunto, html)
