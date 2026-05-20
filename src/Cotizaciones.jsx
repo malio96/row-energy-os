@@ -417,9 +417,32 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
               )}
             </div>
           ))}
-          <div style={{ padding:'16px 20px', display:'flex', justifyContent:'flex-end', gap:20, background:COLORS.slate50, borderTop:`1px solid ${COLORS.slate100}` }}>
-            <div><span style={{ fontSize:11, color:COLORS.slate500 }}>Total: </span><span style={{ fontSize:18, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(cot.total)}</span> <span style={{ fontSize:11, color:COLORS.slate400 }}>{cot.moneda}</span></div>
-          </div>
+          {(() => {
+            const subtotal = cot.items.length > 0
+              ? cot.items.reduce((s, it) => s + Number(it.total || 0), 0)
+              : Number(cot.total || 0)
+            const iva = subtotal * 0.16
+            const total = subtotal + iva
+            const mono = { fontFamily:'var(--font-mono)', fontWeight:600 }
+            return (
+              <div style={{ padding:'16px 20px', background:COLORS.slate50, borderTop:`1px solid ${COLORS.slate100}` }}>
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
+                  <div style={{ display:'flex', gap:32, alignItems:'center' }}>
+                    <span style={{ fontSize:11, color:COLORS.slate500, minWidth:100, textAlign:'right' }}>Subtotal</span>
+                    <span style={{ ...mono, fontSize:14, color:COLORS.ink, minWidth:140, textAlign:'right' }}>{fmtMoney(subtotal)} <span style={{ fontSize:10, color:COLORS.slate400, fontWeight:400 }}>{cot.moneda}</span></span>
+                  </div>
+                  <div style={{ display:'flex', gap:32, alignItems:'center' }}>
+                    <span style={{ fontSize:11, color:COLORS.slate500, minWidth:100, textAlign:'right' }}>IVA 16%</span>
+                    <span style={{ ...mono, fontSize:14, color:COLORS.slate600, minWidth:140, textAlign:'right' }}>{fmtMoney(iva)} <span style={{ fontSize:10, color:COLORS.slate400, fontWeight:400 }}>{cot.moneda}</span></span>
+                  </div>
+                  <div style={{ display:'flex', gap:32, alignItems:'center', paddingTop:6, borderTop:`1px solid ${COLORS.slate200}`, marginTop:2 }}>
+                    <span style={{ fontSize:12, fontWeight:600, color:COLORS.ink, minWidth:100, textAlign:'right' }}>Total</span>
+                    <span style={{ ...mono, fontSize:18, color:COLORS.navy, minWidth:140, textAlign:'right' }}>{fmtMoney(total)} <span style={{ fontSize:10, color:COLORS.slate400, fontWeight:400 }}>{cot.moneda}</span></span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
         <div>
