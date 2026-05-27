@@ -1549,7 +1549,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           </div>
         </div>
 
-        <div ref={scrollRef} onScroll={e => { const x = e.currentTarget.scrollLeft; if (headerScrollRef.current) headerScrollRef.current.scrollLeft = x; if (bottomScrollRef.current) bottomScrollRef.current.scrollLeft = x }} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
+        <div ref={scrollRef} className="gantt-body-scroll" onScroll={e => { const x = e.currentTarget.scrollLeft; if (headerScrollRef.current) headerScrollRef.current.scrollLeft = x; if (bottomScrollRef.current) bottomScrollRef.current.scrollLeft = x }} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
           <div style={{ width:totalWidth, position:'relative' }}>
             <div ref={timelineRef} style={{ position:'relative', height: totalHeight + ROW_HEIGHT }}>
               <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}>

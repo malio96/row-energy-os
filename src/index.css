@@ -72,3 +72,7 @@ button, input, select, textarea {
 ::-webkit-scrollbar-track { background: #F1F5F9; }
 ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* Gantt: cuerpo scrolleable sin barra propia — la barra horizontal vive en el footer sticky */
+.gantt-body-scroll { scrollbar-width: none; }
+.gantt-body-scroll::-webkit-scrollbar { display: none; }
