@@ -1013,6 +1013,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
   const timelineRef = useRef(null)
   const dragStateRef = useRef(null)
   const headerScrollRef = useRef(null)
+  const bottomScrollRef = useRef(null)
   const msgTimeoutRef = useRef(null)
 
   const [actividades, setActividades] = useState(actividadesProp)
@@ -1548,7 +1549,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           </div>
         </div>
 
-        <div ref={scrollRef} onScroll={e => { if (headerScrollRef.current) headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft }} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
+        <div ref={scrollRef} onScroll={e => { const x = e.currentTarget.scrollLeft; if (headerScrollRef.current) headerScrollRef.current.scrollLeft = x; if (bottomScrollRef.current) bottomScrollRef.current.scrollLeft = x }} style={{ flex:1, overflowX:'auto', overflowY:'hidden' }}>
           <div style={{ width:totalWidth, position:'relative' }}>
             <div ref={timelineRef} style={{ position:'relative', height: totalHeight + ROW_HEIGHT }}>
               <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}>
@@ -1957,7 +1958,12 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           </div>
         </div>
       </div>
-      <div style={{ position:'sticky', bottom:0, zIndex:10, padding:'8px 20px', borderTop:`1px solid ${COLORS.slate100}`, background:COLORS.slate50, display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
+      <div style={{ position:'sticky', bottom:0, zIndex:11, background:COLORS.slate50, borderTop:`1px solid ${COLORS.slate100}` }}>
+      {/* Barra de scroll horizontal sincronizada — fija al pie del viewport para no tener que bajar todo el Gantt */}
+      <div ref={bottomScrollRef} onScroll={e => { const x = e.currentTarget.scrollLeft; if (scrollRef.current) scrollRef.current.scrollLeft = x; if (headerScrollRef.current) headerScrollRef.current.scrollLeft = x }} style={{ marginLeft:LEFT_PANEL, overflowX:'auto', overflowY:'hidden', borderBottom:`1px solid ${COLORS.slate100}` }}>
+        <div style={{ width: totalWidth, height:1 }}/>
+      </div>
+      <div style={{ padding:'8px 20px', display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
         {Object.entries(ESTADOS).map(([key, cfg]) => (
           <div key={key} style={{ display:'flex', alignItems:'center', gap:5 }}>
             <div style={{ width:12, height:8, background:cfg.gradient, borderRadius:2 }}/>
@@ -1978,6 +1984,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
             <span style={{ color:COLORS.slate600, fontSize:10, fontWeight:600 }}>Ruta crítica</span>
           </div>
         )}
+      </div>
       </div>
       </>
       )}
