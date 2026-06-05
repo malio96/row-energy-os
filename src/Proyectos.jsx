@@ -2213,7 +2213,7 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
 // collapse/expand, header sticky e indent en celda Nombre. Antes la lista
 // crecía vertical sin estructura; con 7,252 actividades post-migración
 // Monday era inmanejable.
-function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, puedeEditarPeso }) {
+function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onInlineFechas, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, puedeEditarPeso }) {
   const [nombreNueva, setNombreNueva] = useState('')
   const [creandoBajo, setCreandoBajo] = useState(null)
   const [creando, setCreando] = useState(false)
@@ -2224,6 +2224,9 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
   const GRID_COLS = isMobile
     ? '24px 1fr auto'
     : '32px 28px 1fr 90px 90px 60px 140px 120px auto'
+
+  // v17.3.1: input de fecha compacto para edición inline en la tabla
+  const fechaInputStyle = { width:'100%', minWidth:0, boxSizing:'border-box', padding:'3px 4px', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate600, background:'white', cursor:'pointer' }
 
   const childrenMap = useMemo(() => {
     const m = new Map()
@@ -2444,13 +2447,17 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                   </div>
                   {esRoot && <BadgeImportancia importancia={act.importancia} tamano="normal"/>}
                 </div>
-                {/* Inicio */}
+                {/* Inicio — v17.3.1: editable inline (salvo padres con hijos: fechas derivadas). */}
                 <div onContextMenu={onCtx} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
-                  {act.inicio ? fmtDate(act.inicio) : '—'}
+                  {tieneHijos
+                    ? (act.inicio ? fmtDate(act.inicio) : '—')
+                    : <input type="date" value={act.inicio || ''} onClick={e => e.stopPropagation()} onChange={e => onInlineFechas(act.id, { inicio: e.target.value })} style={fechaInputStyle}/>}
                 </div>
                 {/* Fin */}
                 <div onContextMenu={onCtx} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
-                  {act.fin ? fmtDate(act.fin) : '—'}
+                  {tieneHijos
+                    ? (act.fin ? fmtDate(act.fin) : '—')
+                    : <input type="date" value={act.fin || ''} onClick={e => e.stopPropagation()} onChange={e => onInlineFechas(act.id, { fin: e.target.value })} style={fechaInputStyle}/>}
                 </div>
                 {/* Duración */}
                 <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'center', fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
@@ -2467,10 +2474,10 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onA
                     El select sigue mostrando el estado en BD (editable), pero con colores del derivado. */}
                 <div onContextMenu={onCtx} style={{ ...cellBase }}>
                   {(() => {
+                    // v17.3.1: estado editable inline también para actividades principales (antes era Badge de solo lectura).
                     const eff = estadoEfectivo(act)
-                    if (esRoot) return <Badge texto={eff} mapa={ESTADOS}/>
                     return (
-                      <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} title={eff !== act.estado ? `Mostrado como '${eff}' (fecha fin vencida)` : undefined} style={{ padding:'4px 6px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[eff]?.bg, color: ESTADOS[eff]?.color, fontWeight:500, cursor:'pointer', fontFamily:'inherit', width:'100%' }}>
+                      <select value={act.estado} onChange={e => onInlineUpdate(act.id, { estado: e.target.value })} title={eff !== act.estado ? `Mostrado como '${eff}' (fecha fin vencida)` : undefined} style={{ padding:'4px 6px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, background: ESTADOS[eff]?.bg, color: ESTADOS[eff]?.color, fontWeight: esRoot?600:500, cursor:'pointer', fontFamily:'inherit', width:'100%' }}>
                         {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
                       </select>
                     )
@@ -3928,6 +3935,24 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     catch (e) { alertaActividad(e); cargar() }
   }, [cargar])
 
+  // v17.3.1: edición inline de fechas (inicio/fin) desde la tabla. A diferencia de
+  // actualizarInline, recalcula dependencias y fechas del padre (igual que el drag del Gantt).
+  const actualizarFechasInline = useCallback(async (actId, cambios) => {
+    const acts = proyecto?.actividades || []
+    const act = acts.find(a => a.id === actId)
+    // Guard: fin no puede ser anterior a inicio
+    const inicio = cambios.inicio ?? act?.inicio
+    const fin = cambios.fin ?? act?.fin
+    if (inicio && fin && fin < inicio) { alert('La fecha de fin no puede ser anterior a la de inicio.'); return }
+    setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => a.id === actId ? { ...a, ...cambios } : a) }))
+    try {
+      await actualizarActividad(actId, cambios)
+      await recalcularFechasDesde(actId)
+      if (act?.parent_id) await recalcularPadre(act.parent_id)
+      await cargar()
+    } catch (e) { alertaActividad(e); cargar() }
+  }, [proyecto, cargar])
+
   const crearNuevaActividad = useCallback(async ({ nombre, parentId = null }) => {
     const acts = proyecto?.actividades || []
     const siblings = acts.filter(a => (a.parent_id || null) === parentId)
@@ -4119,7 +4144,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
       </div>
 
       {tab === 'resumen' && <TabResumen proyecto={proyecto} actividades={actividades} hitos={hitos} usuarios={usuarios} puedeVerFinanciero={puedeVerFinanciero}/>}
-      {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
+      {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onInlineFechas={actualizarFechasInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
       {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} usuario={usuarioActual} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt} onUndoPush={pushUndo}/>}
 
       {/* v15.10.3: Toast de feedback para Ctrl+Z */}
