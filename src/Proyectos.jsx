@@ -42,6 +42,12 @@ import {
   puedeGestionarProyecto,
 } from './permisos'
 
+// v17.3.0: notificación amable cuando la RLS de actividades bloquea por no estar
+// asignado al proyecto (en vez del error crudo de Postgres/PostgREST).
+function alertaActividad(e) {
+  if (e?.code === 'NO_AUTORIZADO_PROYECTO') { alert(e.message); return }
+  alert('Error: ' + e.message)
+}
 
 const COLORS = {
   navy:'#0A2540', navy2:'#1B3A6B', teal:'#0F6E56', tealLight:'#E1F5EE',
@@ -565,7 +571,7 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
     try {
       await actualizarActividad(actividad.id, cambios)
       onCambio()
-    } catch (e) { alert('Error: ' + e.message) }
+    } catch (e) { alertaActividad(e); onCambio() }
     setGuardando(false)
   }
 
@@ -1259,7 +1265,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
           onRecargarRef.current?.()
         } catch (err) {
           setActividades(actividadesPropRef.current)
-          alert('Error: ' + err.message)
+          alertaActividad(err)
         }
       }
       dragStateRef.current = null
@@ -3919,7 +3925,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   const actualizarInline = useCallback(async (actId, cambios) => {
     setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => a.id === actId ? { ...a, ...cambios } : a) }))
     try { await actualizarActividad(actId, cambios) }
-    catch (e) { alert('Error: ' + e.message); cargar() }
+    catch (e) { alertaActividad(e); cargar() }
   }, [cargar])
 
   const crearNuevaActividad = useCallback(async ({ nombre, parentId = null }) => {
@@ -3931,19 +3937,21 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     const lastFin = siblings.length > 0 ? siblings.reduce((m, a) => a.fin > m ? a.fin : m, siblings[0].fin) : (proyecto.inicio || new Date().toISOString().split('T')[0])
     const inicio = addDays(lastFin, 1)
     const fin = addDays(inicio, 4)
-    const nueva = await crearActividad({
-      proyecto_id: proyectoId, parent_id: parentId, nombre,
-      numero: maxNumGlobal + 1, inicio, fin, avance: 0,
-      estado: 'Sin iniciar', es_milestone: false, es_servicio_padre: false,
-    })
-    if (nueva?.id) pushUndo({ type: 'create', actId: nueva.id })
-    await cargar()
+    try {
+      const nueva = await crearActividad({
+        proyecto_id: proyectoId, parent_id: parentId, nombre,
+        numero: maxNumGlobal + 1, inicio, fin, avance: 0,
+        estado: 'Sin iniciar', es_milestone: false, es_servicio_padre: false,
+      })
+      if (nueva?.id) pushUndo({ type: 'create', actId: nueva.id })
+      await cargar()
+    } catch (e) { alertaActividad(e); cargar() }
   }, [proyecto, proyectoId, cargar, pushUndo])
 
   const toggleActividad = async (a) => {
     const nueva = { completada: !a.completada, avance: !a.completada ? 100 : 0, estado: !a.completada ? 'Completada' : 'Sin iniciar' }
     setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(x => x.id === a.id ? { ...x, ...nueva } : x) }))
-    try { await actualizarActividad(a.id, nueva) } catch (e) { alert('Error: ' + e.message); cargar() }
+    try { await actualizarActividad(a.id, nueva) } catch (e) { alertaActividad(e); cargar() }
   }
 
   // v8: Handlers menú contextual

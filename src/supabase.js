@@ -211,9 +211,25 @@ export async function actualizarProyecto(id, cambios) {
   return data
 }
 
+// v17.3.0: la RLS de actividades sólo deja a equipo_proyectos tocar proyectos
+// donde está asignado (y a jefes/dirección, todo). Cuando NO tiene permiso:
+//  - UPDATE afecta 0 filas → .single() lanzaba "Cannot coerce ... single JSON object"
+//  - INSERT lanza 42501 "new row violates row-level security policy"
+// Traducimos ambos a un error reconocible para mostrar una notificación amable.
+function errorNoAsignadoProyecto() {
+  const e = new Error('No estás asignado a este proyecto, no puedes crear ni modificar sus actividades. Pídele al director del proyecto que te asigne.')
+  e.code = 'NO_AUTORIZADO_PROYECTO'
+  return e
+}
+function mapearErrorActividad(error) {
+  if (error?.code === '42501' || /row-level security/i.test(error?.message || '')) return errorNoAsignadoProyecto()
+  return error
+}
+
 export async function actualizarActividad(id, cambios) {
-  const { data, error } = await supabase.from('actividades').update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id).select().single()
-  if (error) throw error
+  const { data, error } = await supabase.from('actividades').update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id).select().maybeSingle()
+  if (error) throw mapearErrorActividad(error)
+  if (!data) throw errorNoAsignadoProyecto()  // 0 filas = RLS lo bloqueó
   return data
 }
 
@@ -233,7 +249,7 @@ export async function crearActividad(actividad) {
     actividad.numero = ((maxRow?.numero) || 0) + 1
   }
   const { data, error } = await supabase.from('actividades').insert(actividad).select().single()
-  if (error) throw error
+  if (error) throw mapearErrorActividad(error)
   return data
 }
 
