@@ -21,6 +21,7 @@ import Dashboard from './Dashboard'
 import CommandPalette from './CommandPalette'
 import CentroAlertas from './CentroAlertas'  // v12.5.9c
 import Plantas from './Plantas'  // v15.8.0
+import { DialogHost } from './Dialogs'  // v17.4.0: toast + confirm propios (reemplazan alert/confirm nativos)
 
 // ============================================================
 // v12.5.9c: agregada ruta /alertas (Centro de Alertas)
@@ -343,6 +344,8 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword/>}/>
         <Route path="*" element={<MainApp/>}/>
       </Routes>
+      {/* v17.4.0: host global de toasts + confirmaciones propias (estilo Klar) */}
+      <DialogHost/>
     </BrowserRouter>
   )
 }
