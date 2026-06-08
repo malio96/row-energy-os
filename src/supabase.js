@@ -234,8 +234,12 @@ export async function actualizarActividad(id, cambios) {
 }
 
 export async function eliminarActividad(id) {
-  const { error } = await supabase.from('actividades').delete().eq('id', id)
-  if (error) throw error
+  // v17.3.2: bajo RLS, un DELETE que no matchea filas devuelve éxito con 0 filas
+  // borradas y sin error. Usamos .select() para detectar ese bloqueo silencioso
+  // y lanzar un error reconocible (mismo patrón que actualizarActividad).
+  const { data, error } = await supabase.from('actividades').delete().eq('id', id).select('id')
+  if (error) throw mapearErrorActividad(error)
+  if (!data || data.length === 0) throw errorNoAsignadoProyecto()  // 0 filas = RLS lo bloqueó
 }
 
 export async function crearActividad(actividad) {
