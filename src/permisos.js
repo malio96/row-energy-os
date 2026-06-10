@@ -26,6 +26,7 @@ export const PERMISOS_POR_ROL = {
     ],
     puedeEliminar: true,
     puedeGestionarUsuarios: true,
+    puedeCrearUsuarios: true,  // v17.5.0
   },
   admin: {
     label: 'Administración',
@@ -47,9 +48,11 @@ export const PERMISOS_POR_ROL = {
       'dashboard', 'proyectos', 'cierre', 'postventa',
       'plantas',
       'actividades',  // v16.9.x
+      'config',  // v17.5.0: acceso a Configuración para dar de alta equipo
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
+    puedeCrearUsuarios: true,  // v17.5.0: solo puede crear equipo_proyectos
   },
   ventas: {
     label: 'Ventas',
@@ -59,9 +62,11 @@ export const PERMISOS_POR_ROL = {
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',
       'actividades',  // v16.9.x
+      'config',  // v17.5.0: acceso a Configuración para dar de alta equipo
     ],
     puedeEliminar: false,
     puedeGestionarUsuarios: false,
+    puedeCrearUsuarios: true,  // v17.5.0: solo puede crear equipo_proyectos
   },
   cobranza: {
     label: 'Cobranza',
@@ -106,10 +111,27 @@ export function puedeEliminar(usuario) {
   return PERMISOS_POR_ROL[usuario.rol]?.puedeEliminar === true
 }
 
-// ¿El usuario puede gestionar otros usuarios? (solo dirección)
+// ¿El usuario puede gestionar OTROS usuarios por completo (editar rol, desactivar,
+// eliminar, reinvitar)? — solo dirección.
 export function puedeGestionarUsuarios(usuario) {
   if (!usuario || !usuario.rol) return false
   return PERMISOS_POR_ROL[usuario.rol]?.puedeGestionarUsuarios === true
+}
+
+// v17.5.0: ¿El usuario puede DAR DE ALTA usuarios? (acción acotada: crear + invitar)
+// Dirección puede crear cualquier rol; director_proyectos y ventas solo equipo_proyectos.
+// El control real vive en la Edge Function `invitar-usuario`; esto solo decide UI.
+export function puedeCrearUsuarios(usuario) {
+  if (!usuario || !usuario.rol) return false
+  return PERMISOS_POR_ROL[usuario.rol]?.puedeCrearUsuarios === true
+}
+
+// v17.5.0: ¿Puede crear un usuario con ESTE rol? Dirección → cualquiera; el resto,
+// solo 'equipo_proyectos' (guardarraíl anti-escalada de privilegios).
+export function puedeCrearRol(usuario, rol) {
+  if (!puedeCrearUsuarios(usuario)) return false
+  if (usuario.rol === 'direccion') return true
+  return rol === 'equipo_proyectos'
 }
 
 // Helper legible para UI: retorna los módulos a los que tiene acceso

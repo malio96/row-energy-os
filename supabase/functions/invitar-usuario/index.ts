@@ -4,6 +4,10 @@
 // Crea un usuario en la tabla 'usuarios' Y le da acceso vía Supabase Auth
 // (dos modos: invitación por email O password temporal generada).
 //
+// v5 (2026-06-10): amplía quién puede invitar. Dirección crea cualquier rol;
+// director_proyectos y ventas pueden dar de alta SOLO equipo_proyectos
+// (guardarraíl anti-escalada de privilegios). El resto: 403.
+//
 // v4 (2026-05-14): soporta password temporal
 // - generar_password_temporal:true en el body → crea auth user con password
 //   aleatoria segura (CSPRNG). Retorna la password en respuesta UNA vez al
@@ -17,7 +21,8 @@
 // v2 (2026-05): soporta usuario huérfano (existe en tabla usuarios sin
 // auth_id) — solo dispara invite y linkea auth_id sin recrear el row.
 //
-// Requiere que quien llama tenga rol 'direccion' en la tabla usuarios.
+// Requiere que quien llama tenga rol direccion, director_proyectos o ventas
+// en la tabla usuarios (ver guardarraíl de rol objetivo más abajo).
 // El service_role key vive como secret en Supabase, nunca toca el frontend.
 // ============================================================
 
@@ -96,9 +101,15 @@ serve(async (req) => {
       .eq('email', user.email!.toLowerCase())
       .single()
 
-    if (!usuarioLlamante || usuarioLlamante.rol !== 'direccion') {
-      return json({ error: 'Solo usuarios con rol Dirección pueden invitar' }, 403, cors)
+    // v5 (2026-06-10): además de Dirección, director_proyectos y ventas pueden
+    // dar de alta usuarios, PERO solo con rol equipo_proyectos (guardarraíl
+    // anti-escalada). La validación del rol objetivo se hace más abajo, una vez
+    // que se conoce el rol efectivo (nuevo o huérfano existente).
+    const PUEDEN_INVITAR = ['direccion', 'director_proyectos', 'ventas']
+    if (!usuarioLlamante || !PUEDEN_INVITAR.includes(usuarioLlamante.rol)) {
+      return json({ error: 'No tienes permiso para invitar usuarios' }, 403, cors)
     }
+    const esDireccion = usuarioLlamante.rol === 'direccion'
 
     const body = await req.json()
     const { nombre, email, rol, telefono, capacidad_horas_semana, generar_password_temporal } = body
@@ -118,6 +129,14 @@ serve(async (req) => {
       .select('id, auth_id, nombre, rol')
       .eq('email', emailLower)
       .maybeSingle()
+
+    // v5: guardarraíl anti-escalada. Quien no es Dirección solo puede dar de alta
+    // (o reinvitar) usuarios con rol equipo_proyectos. Se valida antes de insertar
+    // para no dejar rows huérfanos.
+    const rolObjetivo = existente ? existente.rol : rol
+    if (!esDireccion && rolObjetivo !== 'equipo_proyectos') {
+      return json({ error: 'Solo Dirección puede invitar usuarios con ese rol. Tú únicamente puedes dar de alta colaboradores de Equipo de Proyectos.' }, 403, cors)
+    }
 
     let usuarioRow
     let creadoAhora = false

@@ -11,7 +11,7 @@ import { COLORS, Avatar, Icon, SortControl, aplicarSort, loadPref, savePref } fr
 import { useModal } from './Modal'
 import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
-  puedeGestionarUsuarios, labelRol, descripcionRol,
+  puedeGestionarUsuarios, puedeCrearUsuarios, labelRol, descripcionRol,
 } from './permisos'
 import { ETIQUETAS_ALERTAS } from './alertas'
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso para crear/editar cliente
@@ -29,8 +29,9 @@ const OPCIONES_ROL = ROLES_DISPONIBLES.map(r => ({
 }))
 
 export default function Configuracion({ usuario }) {
-  const puedeGestionar = puedeGestionarUsuarios(usuario)
-  const [tab, setTab] = useState(puedeGestionar ? 'usuarios' : 'sistema')
+  const puedeGestionar = puedeGestionarUsuarios(usuario)  // edición total: solo dirección
+  const puedeCrear = puedeCrearUsuarios(usuario)          // v17.5.0: alta de usuarios
+  const [tab, setTab] = useState(puedeCrear ? 'usuarios' : 'sistema')
   const [usuarios, setUsuarios] = useState([])
   const [clientes, setClientes] = useState([])
   const [refreshTick, setRefreshTick] = useState(0)
@@ -44,8 +45,8 @@ export default function Configuracion({ usuario }) {
   const recargar = () => setRefreshTick(t => t + 1)
 
   const tabs = [
-    ...(puedeGestionar ? [{ k:'usuarios', l:'Usuarios' }] : []),
-    { k:'clientes', l:'Clientes' },
+    ...(puedeCrear ? [{ k:'usuarios', l:'Usuarios' }] : []),
+    ...(puedeGestionar ? [{ k:'clientes', l:'Clientes' }] : []),  // v17.5.0: clientes sigue solo dirección
     { k:'alertas', l:'Mis alertas' },
     { k:'cuenta', l:'Mi cuenta' },  // v16.7.0: cambio de contraseña
     { k:'sistema', l:'Sistema' },
@@ -72,11 +73,11 @@ export default function Configuracion({ usuario }) {
         ))}
       </div>
 
-      {tab === 'usuarios' && puedeGestionar && (
-        <TabUsuarios usuarios={usuarios} usuarioActual={usuario} modal={modal} recargar={recargar}/>
+      {tab === 'usuarios' && puedeCrear && (
+        <TabUsuarios usuarios={usuarios} usuarioActual={usuario} modal={modal} recargar={recargar} puedeGestionar={puedeGestionar}/>
       )}
 
-      {tab === 'clientes' && <TabClientes clientes={clientes}/>}
+      {tab === 'clientes' && puedeGestionar && <TabClientes clientes={clientes}/>}
       {tab === 'alertas' && <TabMisAlertas usuario={usuario} modal={modal}/>}
       {tab === 'cuenta' && <TabMiCuenta usuario={usuario} modal={modal}/>}
       {tab === 'sistema' && <TabSistema usuario={usuario}/>}
@@ -87,20 +88,28 @@ export default function Configuracion({ usuario }) {
 // ============================================================
 // TAB USUARIOS
 // ============================================================
-function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
+function TabUsuarios({ usuarios, usuarioActual, modal, recargar, puedeGestionar }) {
+
+  // v17.5.0: solo Dirección elige rol libremente. director_proyectos y ventas
+  // dan de alta exclusivamente colaboradores de Equipo de Proyectos.
+  const puedeElegirRol = usuarioActual.rol === 'direccion'
 
   // v12.5.8: crear usuario con invitación automática
   // v16.7.0: dos métodos: invitar por email o crear con password temporal
   const abrirModalCrear = async () => {
     const resultado = await modal.editor({
-      titulo: 'Nuevo usuario',
-      mensaje: 'Crea el registro en la BD. Elige cómo darle acceso: invitación por email (más seguro, el destinatario crea su password) o password temporal (instantáneo, comparte por canal seguro y pídele que la cambie).',
+      titulo: puedeElegirRol ? 'Nuevo usuario' : 'Nuevo colaborador de Equipo',
+      mensaje: puedeElegirRol
+        ? 'Crea el registro en la BD. Elige cómo darle acceso: invitación por email (más seguro, el destinatario crea su password) o password temporal (instantáneo, comparte por canal seguro y pídele que la cambie).'
+        : 'Darás de alta un colaborador con rol Equipo de Proyectos. Elige cómo darle acceso: invitación por email (más seguro, crea su propia password) o password temporal (instantáneo, comparte por canal seguro y pídele que la cambie).',
       icono: 'Plus',
       textoBoton: 'Crear',
       campos: [
         { key: 'nombre',   label: 'Nombre completo', tipo: 'text',   required: true, placeholder: 'Ej: Juan Pérez' },
         { key: 'email',    label: 'Email',            tipo: 'text',   required: true, placeholder: 'juan@row.energy' },
-        { key: 'rol',      label: 'Rol',              tipo: 'select', required: true, defaultValue: 'ventas', opciones: OPCIONES_ROL },
+        ...(puedeElegirRol
+          ? [{ key: 'rol', label: 'Rol', tipo: 'select', required: true, defaultValue: 'ventas', opciones: OPCIONES_ROL }]
+          : []),
         { key: 'telefono', label: 'Teléfono',         tipo: 'text',   placeholder: 'Opcional' },
         { key: 'capacidad_horas_semana', label: 'Capacidad horas/semana', tipo: 'number', defaultValue: 40 },
         { key: 'metodo',   label: 'Método de acceso', tipo: 'select', required: true, defaultValue: 'invite_email',
@@ -113,12 +122,13 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
     if (!resultado) return
 
     const usarPasswordTemporal = resultado.metodo === 'password_temporal'
+    const rolFinal = puedeElegirRol ? resultado.rol : 'equipo_proyectos'
 
     try {
       const respuesta = await invitarUsuarioViaEdge({
         nombre: resultado.nombre,
         email: resultado.email,
-        rol: resultado.rol,
+        rol: rolFinal,
         telefono: resultado.telefono,
         capacidad_horas_semana: resultado.capacidad_horas_semana,
         generar_password_temporal: usarPasswordTemporal,
@@ -289,8 +299,9 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
         </div>
       </div>
 
-      {/* v16.1.4: banner advertencia si hay usuarios huérfanos (sin auth) */}
-      {(() => {
+      {/* v16.1.4: banner advertencia si hay usuarios huérfanos (sin auth).
+          v17.5.0: solo para Dirección — el botón Invitar por fila es exclusivo suyo. */}
+      {puedeGestionar && (() => {
         const huerfanos = usuarios.filter(u => u.activo && !u.auth_id)
         if (huerfanos.length === 0) return null
         return (
@@ -345,35 +356,41 @@ function TabUsuarios({ usuarios, usuarioActual, modal, recargar }) {
               </span>
             </div>
             <div style={{ display:'flex', gap:4 }}>
-              {sinInvitar && !esYo(u) && (
-                <button onClick={() => reinvitar(u)} title="Enviar invitación por email" style={{
-                  padding:'6px 12px', background:COLORS.navy, color:'white',
-                  border:'none', borderRadius:6, fontSize:11, fontWeight:600,
-                  cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4,
-                }}>
-                  ✉ Invitar
-                </button>
-              )}
-              <button onClick={() => abrirModalEditar(u)} title="Editar" style={botonIcon()}
-                onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}>
-                {Icon('Edit')}
-              </button>
-              {!esYo(u) && (
+              {/* v17.5.0: editar/activar/desactivar/eliminar/reinvitar solo Dirección.
+                  director_proyectos y ventas solo pueden dar de alta (lista de solo lectura). */}
+              {puedeGestionar && (
                 <>
-                  <button onClick={() => toggleActivo(u)} title={u.activo ? 'Desactivar' : 'Activar'} style={botonIcon()}
-                    onMouseEnter={e => { e.currentTarget.style.background = u.activo ? '#FEF3C7' : '#E1F5EE'; e.currentTarget.style.color = u.activo ? COLORS.amber : COLORS.teal }}
+                  {sinInvitar && !esYo(u) && (
+                    <button onClick={() => reinvitar(u)} title="Enviar invitación por email" style={{
+                      padding:'6px 12px', background:COLORS.navy, color:'white',
+                      border:'none', borderRadius:6, fontSize:11, fontWeight:600,
+                      cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4,
+                    }}>
+                      ✉ Invitar
+                    </button>
+                  )}
+                  <button onClick={() => abrirModalEditar(u)} title="Editar" style={botonIcon()}
+                    onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50; e.currentTarget.style.color = COLORS.navy }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}>
-                    {u.activo
-                      ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                      : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 16 9"/></svg>
-                    }
+                    {Icon('Edit')}
                   </button>
-                  <button onClick={() => eliminar(u)} title="Eliminar" style={botonIcon()}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = COLORS.red; e.currentTarget.style.borderColor = '#FECACA' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500; e.currentTarget.style.borderColor = COLORS.slate200 }}>
-                    {Icon('Trash')}
-                  </button>
+                  {!esYo(u) && (
+                    <>
+                      <button onClick={() => toggleActivo(u)} title={u.activo ? 'Desactivar' : 'Activar'} style={botonIcon()}
+                        onMouseEnter={e => { e.currentTarget.style.background = u.activo ? '#FEF3C7' : '#E1F5EE'; e.currentTarget.style.color = u.activo ? COLORS.amber : COLORS.teal }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500 }}>
+                        {u.activo
+                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 16 9"/></svg>
+                        }
+                      </button>
+                      <button onClick={() => eliminar(u)} title="Eliminar" style={botonIcon()}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = COLORS.red; e.currentTarget.style.borderColor = '#FECACA' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = COLORS.slate500; e.currentTarget.style.borderColor = COLORS.slate200 }}>
+                        {Icon('Trash')}
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -460,6 +477,12 @@ function MatrizPermisos() {
                         fontSize:10, padding:'2px 8px', borderRadius:4,
                         background:COLORS.teal, color:'white', fontWeight:600,
                       }}>gestiona usuarios</span>
+                    )}
+                    {config.puedeCrearUsuarios && !config.puedeGestionarUsuarios && (
+                      <span style={{
+                        fontSize:10, padding:'2px 8px', borderRadius:4,
+                        background:COLORS.navy, color:'white', fontWeight:600,
+                      }}>crea equipo</span>
                     )}
                   </div>
                 </div>
