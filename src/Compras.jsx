@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getCompras, crearCompra, actualizarCompra, eliminarCompra, getProyectos, getUsuarios } from './supabase'
 import { COLORS, ESTADOS_COMPRA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort, loadPref, savePref } from './helpers'
 import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
+import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 export default function Compras({ usuario }) {
   const puedeEditar = puedeEditarFinanciero(usuario)
@@ -160,9 +161,9 @@ export default function Compras({ usuario }) {
                     <button
                       onClick={async (ev) => {
                         ev.stopPropagation()
-                        if (!confirm(`¿Eliminar compra ${c.codigo}? Esta acción no se puede deshacer.`)) return
+                        if (!(await confirmDialog({ title: 'Eliminar compra', message: `Se eliminará la compra ${c.codigo}. Esta acción no se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
                         try { await eliminarCompra(c.id); cargar() }
-                        catch (e) { alert('Error: ' + e.message) }
+                        catch (e) { toast('Error: ' + e.message, 'error') }
                       }}
                       title="Eliminar compra"
                       style={{ border:'none', background:'transparent', color:COLORS.red, cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}
@@ -185,7 +186,7 @@ function ModalNuevaCompra({ usuario, onClose, onCreada }) {
   useEffect(() => { getProyectos().then(setProyectos) }, [])
 
   const crear = async () => {
-    if (!form.proveedor || !form.monto) { alert('Completa proveedor y monto'); return }
+    if (!form.proveedor || !form.monto) { toast('Completa proveedor y monto', 'error'); return }
     await crearCompra({ ...form, monto: Number(form.monto), proyecto_id: form.proyecto_id || null, solicitado_por: usuario.id })
     onCreada()
   }
@@ -242,14 +243,14 @@ function PanelCompra({ compra: c, usuario, onClose, onCambio }) {
       }
       await actualizarCompra(c.id, cambios)
       onCambio()
-    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    } catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const borrar = async () => {
-    if (!confirm(`¿Eliminar compra ${c.codigo}? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmDialog({ title: 'Eliminar compra', message: `Se eliminará la compra ${c.codigo}. Esta acción no se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
     setGuardando(true)
     try { await eliminarCompra(c.id); onCambio() }
-    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const irAProyecto = () => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getPostventaTickets, crearTicket, actualizarTicket, getProyectos, getUsuarios } from './supabase'
 import { COLORS, ESTADOS_TICKET, Badge, fmtDate, relativeTime, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
+import { toast } from './Dialogs'  // v17.4.1: diálogos propios
 
 const PRIORIDAD_COLOR = {
   'Alta': { bg:'#FEF2F2', color:'#DC2626' },
@@ -145,7 +146,7 @@ function ModalNuevoTicket({ usuario, onClose, onCreado }) {
   useEffect(() => { Promise.all([getProyectos(), getUsuarios()]).then(([p, u]) => { setProyectos(p); setUsuarios(u) }) }, [])
 
   const crear = async () => {
-    if (!form.titulo) { alert('Ingresa un título'); return }
+    if (!form.titulo) { toast('Ingresa un título', 'error'); return }
     await crearTicket({ ...form, proyecto_id: form.proyecto_id || null, responsable_id: form.responsable_id || null })
     onCreado()
   }

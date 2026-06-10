@@ -6,6 +6,7 @@ import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, 
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
+import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 function extraerClienteNombre(cot) {
   if (cot.cliente?.razon_social) return cot.cliente.razon_social
@@ -273,7 +274,7 @@ function ModalNuevaCotizacion({ usuario, onClose, onCreada }) {
   }
 
   const crear = async () => {
-    if (!form.nombre_proyecto || !form.cliente_id) { alert('Completa nombre y cliente'); return }
+    if (!form.nombre_proyecto || !form.cliente_id) { toast('Completa nombre y cliente', 'error'); return }
     setCreando(true)
     try {
       const cot = await crearCotizacion({
@@ -284,7 +285,7 @@ function ModalNuevaCotizacion({ usuario, onClose, onCreada }) {
         fecha_vigencia: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
       })
       onCreada(cot)
-    } catch (e) { alert('Error: ' + e.message); setCreando(false) }
+    } catch (e) { toast('Error: ' + e.message, 'error'); setCreando(false) }
   }
 
   return (
@@ -356,18 +357,18 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
   const clienteNombre = extraerClienteNombre(cot)
 
   const cambiarEstado = async (nuevo) => {
-    if (nuevo === 'Aprobada' && !confirm('Al aprobar se creará el proyecto automáticamente con los hitos 50/40/10 y se dispararán las 3 tareas post-cierre (Legal/Admin/Proyectos). ¿Continuar?')) return
+    if (nuevo === 'Aprobada' && !(await confirmDialog({ title: 'Aprobar cotización', message: 'Al aprobar se creará el proyecto automáticamente con los hitos 50/40/10 y se dispararán las 3 tareas post-cierre (Legal/Admin/Proyectos).', confirmLabel: 'Aprobar', variant: 'info' }))) return
     try {
       await actualizarCotizacion(cot.id, { estado: nuevo })
       cargar()
-      if (nuevo === 'Aprobada') setTimeout(() => alert('✓ Proyecto creado y tareas post-cierre asignadas. Revisa el bloque Post-cierre abajo y el módulo Proyectos.'), 500)
+      if (nuevo === 'Aprobada') setTimeout(() => toast('Proyecto creado y tareas post-cierre asignadas. Revisa el bloque Post-cierre y el módulo Proyectos.', 'success'), 500)
     } catch (e) {
       // El trigger BEFORE UPDATE puede bloquear si el cliente no tiene RFC/dirección
-      alert('No se pudo cambiar de estado:\n\n' + (e.message || e))
+      toast('No se pudo cambiar de estado: ' + (e.message || e), 'error')
     }
   }
 
-  const delItem = async (itemId) => { if (!confirm('¿Eliminar item?')) return; await eliminarCotizacionItem(itemId); cargar() }
+  const delItem = async (itemId) => { if (!(await confirmDialog({ title: 'Eliminar ítem', message: '¿Eliminar este ítem de la cotización?', confirmLabel: 'Eliminar' }))) return; await eliminarCotizacionItem(itemId); cargar() }
 
   return (
     <div>
@@ -495,7 +496,7 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
                   const m = await import('./exportCotizacion')
                   await m.exportarCotizacionPDF(cot)
                 } catch (e) {
-                  alert('Error al generar PDF: ' + (e.message || e))
+                  toast('Error al generar PDF: ' + (e.message || e), 'error')
                 }
               }}
               style={{ width:'100%', padding:'12px', background:'white', color:COLORS.navy, border:`1px solid ${COLORS.navy}`, borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
@@ -515,9 +516,9 @@ function CotizacionDetalle({ id, usuario, onVolver }) {
             <div style={{ marginTop:16, paddingTop:14, borderTop:`1px solid ${COLORS.slate100}` }}>
               <button
                 onClick={async () => {
-                  if (!confirm(`¿Eliminar la cotización ${cot.codigo}? Se borrarán todos sus items. Esta acción no se puede deshacer.`)) return
+                  if (!(await confirmDialog({ title: 'Eliminar cotización', message: `Se eliminará ${cot.codigo} y todos sus ítems. Esta acción no se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
                   try { await eliminarCotizacion(cot.id); onVolver() }
-                  catch (e) { alert('Error: ' + e.message) }
+                  catch (e) { toast('Error: ' + e.message, 'error') }
                 }}
                 style={{ width:'100%', padding:'10px', background:'transparent', border:`1px solid ${COLORS.red}`, color:COLORS.red, borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}
               >
@@ -561,7 +562,7 @@ function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
   useEffect(() => { cargar() }, [cotizacion.id])
 
   const completar = async (tareaId) => {
-    if (!confirm('¿Marcar esta tarea como completada?')) return
+    if (!(await confirmDialog({ title: 'Completar tarea', message: '¿Marcar esta tarea como completada?', confirmLabel: 'Completar', variant: 'info' }))) return
     setCompletandoId(tareaId)
     try {
       await completarTareaPostCierre(tareaId, {
@@ -570,17 +571,17 @@ function WorkflowPostCierre({ cotizacion, usuario, onCambio }) {
         cotizacionId: cotizacion.id,
       })
       cargar()
-    } catch (e) { alert('Error: ' + e.message) }
+    } catch (e) { toast('Error: ' + e.message, 'error') }
     setCompletandoId(null)
   }
 
   const aprobarTodo = async () => {
-    if (!confirm('¿Confirmar que las 3 tareas están bien y arrancar el calendario de cobranza? Esta acción es definitiva.')) return
+    if (!(await confirmDialog({ title: 'Arrancar cobranza', message: '¿Confirmar que las 3 tareas están bien y arrancar el calendario de cobranza? Esta acción es definitiva.', confirmLabel: 'Confirmar', variant: 'info' }))) return
     try {
       await aprobarWorkflowPostCierre(cotizacion.id)
-      alert('✓ Workflow aprobado. Cobranza puede arrancar el calendario de pagos.')
+      toast('Workflow aprobado. Cobranza puede arrancar el calendario de pagos.', 'success')
       onCambio?.()
-    } catch (e) { alert('Error: ' + e.message) }
+    } catch (e) { toast('Error: ' + e.message, 'error') }
   }
 
   const completadas = tareas.filter(t => t.estado === 'completada').length
@@ -755,8 +756,8 @@ function ModalNuevoItem({ cotizacionId, onClose, onAgregado }) {
   }
 
   const agregar = async () => {
-    if (!form.servicio || !form.precio_unitario) { alert('Completa servicio y precio'); return }
-    if (suma !== 100) { alert('Los porcentajes deben sumar 100%'); return }
+    if (!form.servicio || !form.precio_unitario) { toast('Completa servicio y precio', 'error'); return }
+    if (suma !== 100) { toast('Los porcentajes deben sumar 100%', 'error'); return }
     const total = Number(form.cantidad) * Number(form.precio_unitario)
     await agregarCotizacionItem(cotizacionId, { ...form, precio_unitario: Number(form.precio_unitario), cantidad: Number(form.cantidad), total })
     onAgregado()
@@ -913,8 +914,8 @@ function ModalEditarItem({ item, onClose, onGuardado }) {
   }
 
   const guardar = async () => {
-    if (!form.servicio || !form.precio_unitario) { alert('Completa servicio y precio'); return }
-    if (suma !== 100) { alert('Los porcentajes deben sumar 100%'); return }
+    if (!form.servicio || !form.precio_unitario) { toast('Completa servicio y precio', 'error'); return }
+    if (suma !== 100) { toast('Los porcentajes deben sumar 100%', 'error'); return }
     setGuardando(true)
     try {
       const total = Number(form.cantidad) * Number(form.precio_unitario)
@@ -929,7 +930,7 @@ function ModalEditarItem({ item, onClose, onGuardado }) {
         total,
       })
       onGuardado()
-    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    } catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   return (
@@ -998,7 +999,7 @@ function ModalEditarInfo({ cot, onClose, onGuardado }) {
   useEffect(() => { getClientes().then(setClientes) }, [])
 
   const guardar = async () => {
-    if (!form.nombre_proyecto.trim()) { alert('El nombre del proyecto es requerido'); return }
+    if (!form.nombre_proyecto.trim()) { toast('El nombre del proyecto es requerido', 'error'); return }
     setGuardando(true)
     try {
       await actualizarCotizacion(cot.id, {
@@ -1011,7 +1012,7 @@ function ModalEditarInfo({ cot, onClose, onGuardado }) {
         notas: form.notas || null,
       })
       onGuardado()
-    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    } catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   return (

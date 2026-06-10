@@ -33,7 +33,7 @@ import {
 // que causaba leak cross-user en browser compartido + no sincronizaba a BD)
 import { estadoEfectivo, aplicarSort, SortControl, ESTADOS_HITO, loadPref, savePref, daysUntil, trackEvent } from './helpers'
 // v17.4.0: diálogos propios (reemplazan alert/confirm nativos del navegador)
-import { toast, confirmDialog } from './Dialogs'
+import { toast, confirmDialog, promptDialog } from './Dialogs'
 // v16.4.0: helpers de permisos centralizados
 import {
   puedeEliminar,
@@ -4045,7 +4045,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   }, [cargar])
 
   const handleAgregarHijo = useCallback(async (actividad) => {
-    const nombre = prompt(`Nombre de la nueva sub-actividad de "${actividad.nombre}":`)
+    const nombre = await promptDialog({ title: 'Nueva sub-actividad', message: `Sub-actividad de "${actividad.nombre}":`, placeholder: 'Nombre de la sub-actividad', confirmLabel: 'Crear' })
     if (!nombre?.trim()) return
     try { await crearNuevaActividad({ nombre: nombre.trim(), parentId: actividad.id }) }
     catch (e) { toast('Error: ' + e.message, 'error') }
@@ -4423,7 +4423,7 @@ export default function Proyectos({ usuario }) {
   const handleDuplicarProyecto = async (proyecto, e) => {
     e.stopPropagation()
     const nombreSugerido = `${proyecto.nombre} (copia)`
-    const nuevoNombre = prompt(`Nombre del nuevo proyecto:`, nombreSugerido)
+    const nuevoNombre = await promptDialog({ title: 'Duplicar proyecto', message: 'Nombre del nuevo proyecto:', defaultValue: nombreSugerido, confirmLabel: 'Duplicar' })
     if (!nuevoNombre?.trim()) return
     setDuplicando(true)
     try {

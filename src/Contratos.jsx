@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { getContratos, crearContrato, actualizarContrato, getProyectos } from './supabase'
 import { COLORS, ESTADOS_CONTRATO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 import { esDirOAdmin } from './permisos'  // v16.4.0
+import { toast } from './Dialogs'  // v17.4.1: diálogos propios
 
 export default function Contratos({ usuario }) {
   const [contratos, setContratos] = useState([])
@@ -160,7 +161,7 @@ function ModalNuevoContrato({ onClose, onCreado }) {
   useEffect(() => { getProyectos().then(setProyectos) }, [])
 
   const crear = async () => {
-    if (!form.proyecto_id) { alert('Selecciona un proyecto'); return }
+    if (!form.proyecto_id) { toast('Selecciona un proyecto', 'error'); return }
     const p = proyectos.find(x => x.id === form.proyecto_id)
     await crearContrato({ ...form, cliente_id: p.cliente_id, monto_total: Number(form.monto_total) || null })
     onCreado()

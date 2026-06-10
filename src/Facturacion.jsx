@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { getFacturas, crearFactura, actualizarFactura, eliminarFactura, getHitos, getClientes } from './supabase'
 import { COLORS, ESTADOS_FACTURA, Badge, fmtMoney, fmtDate, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
+import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 export default function Facturacion({ usuario }) {
   const puedeEditar = puedeEditarFinanciero(usuario)
@@ -160,9 +161,9 @@ export default function Facturacion({ usuario }) {
                   <button
                     onClick={async (ev) => {
                       ev.stopPropagation()
-                      if (!confirm(`¿Eliminar factura ${f.folio}? Esta acción no se puede deshacer.`)) return
+                      if (!(await confirmDialog({ title: 'Eliminar factura', message: `Se eliminará la factura ${f.folio}. Esta acción no se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
                       try { await eliminarFactura(f.id); cargar() }
-                      catch (e) { alert('Error: ' + e.message) }
+                      catch (e) { toast('Error: ' + e.message, 'error') }
                     }}
                     title="Eliminar factura"
                     style={{ border:'none', background:'transparent', color:COLORS.red, cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}
@@ -193,7 +194,7 @@ function ModalNuevaFactura({ onClose, onCreada }) {
   }
 
   const crear = async () => {
-    if (!form.hito_cobranza_id) { alert('Selecciona un hito'); return }
+    if (!form.hito_cobranza_id) { toast('Selecciona un hito', 'error'); return }
     const h = hitos.find(x => x.id === form.hito_cobranza_id)
     await crearFactura({ hito_cobranza_id: form.hito_cobranza_id, proyecto_id: h.proyecto_id, cliente_id: h.proyecto?.cliente_id, subtotal: Number(form.subtotal), iva: Number(form.iva), total: Number(form.total), fecha_vencimiento: form.fecha_vencimiento || null })
     onCreada()
@@ -247,14 +248,14 @@ function PanelFactura({ factura: f, usuario, onClose, onCambio }) {
     try {
       await actualizarFactura(f.id, { estado, fecha_pago: fechaPago || null, uuid_sat: uuid || null })
       onCambio()
-    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    } catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const borrar = async () => {
-    if (!confirm(`¿Eliminar factura ${f.folio}? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmDialog({ title: 'Eliminar factura', message: `Se eliminará la factura ${f.folio}. Esta acción no se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
     setGuardando(true)
     try { await eliminarFactura(f.id); onCambio() }
-    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const irAProyecto = () => {

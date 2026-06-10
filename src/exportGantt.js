@@ -6,6 +6,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
+import { toast } from './Dialogs'  // v17.4.1: diálogos propios
 import { saveAs } from 'file-saver'
 
 // Construye las filas tabulares a partir de las actividades + usuarios
@@ -76,7 +77,7 @@ export function exportarGanttPDF(proyecto, actividades, usuarios) {
     .sort((a, b) => (a.numero || 0) - (b.numero || 0))
 
   if (actsOrdenadas.length === 0) {
-    alert('No hay actividades con fechas para exportar.')
+    toast('No hay actividades con fechas para exportar.', 'error')
     return
   }
 
@@ -93,7 +94,7 @@ export function exportarGanttPDF(proyecto, actividades, usuarios) {
   maxDate.setUTCDate(maxDate.getUTCDate() + 15)
   const rangoMs = maxDate - minDate
   if (rangoMs <= 0) {
-    alert('Rango de fechas inválido.')
+    toast('Rango de fechas inválido.', 'error')
     return
   }
 

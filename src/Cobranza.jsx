@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getHitos, actualizarHito, eliminarHito } from './supabase'
 import { COLORS, ESTADOS_HITO, Badge, fmtMoney, fmtDate, daysUntil, inputStyle, selectStyle, labelStyle, btnPrimary, btnSecondary, Icon, EmptyState, LoadingState, useIsMobile, loadPref, savePref, SortControl, aplicarSort } from './helpers'
 import { puedeEliminar, puedeEditarFinanciero } from './permisos'  // v16.4.0
+import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 // ============================================================
 // CONFIG — lo que pidió la jefa de admin
@@ -65,7 +66,7 @@ export default function Cobranza({ usuario }) {
     if (nuevo === 'Facturado') cambios.fecha_facturacion = new Date().toISOString().split('T')[0]
     if (nuevo === 'Cobrado')   cambios.fecha_cobro       = new Date().toISOString().split('T')[0]
     try { await actualizarHito(id, cambios); cargar() }
-    catch (e) { alert('Error: ' + e.message) }
+    catch (e) { toast('Error: ' + e.message, 'error') }
   }
 
   if (loading) return <LoadingState/>
@@ -836,14 +837,14 @@ function PanelHito({ hito, usuario, onClose, onCambio }) {
         notas: notas || null,
       })
       onCambio()
-    } catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    } catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const borrar = async () => {
-    if (!confirm(`¿Eliminar el hito "${hito.nombre}"? No se puede deshacer.`)) return
+    if (!(await confirmDialog({ title: 'Eliminar hito', message: `Se eliminará el hito "${hito.nombre}". No se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
     setGuardando(true)
     try { await eliminarHito(hito.id); onCambio() }
-    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const irAProyecto = () => {

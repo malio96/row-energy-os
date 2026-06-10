@@ -17,6 +17,7 @@ import {
 } from './helpers'
 import { puede, puedeEliminar as rolPuedeEliminar, puedeGestionarProyecto, esRolEn } from './permisos'
 import { TabDocumentos } from './Proyectos'
+import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 export default function Plantas({ usuario }) {
   const [plantas, setPlantas] = useState(null)  // null = no cargado / tabla no existe
@@ -43,7 +44,7 @@ export default function Plantas({ usuario }) {
       const data = await getPlantas()
       if (data === null) { setTablaNoExiste(true); setPlantas([]) }
       else { setPlantas(data); setTablaNoExiste(false) }
-    } catch (e) { alert('Error cargando plantas: ' + e.message) }
+    } catch (e) { toast('Error cargando plantas: ' + e.message, 'error') }
     setLoading(false)
   }
   useEffect(() => { cargar() }, [])
@@ -234,17 +235,17 @@ function DetallePlanta({ plantaId, usuario, onVolver, onEliminada }) {
   const cargar = async () => {
     setLoading(true)
     try { setPlanta(await getPlanta(plantaId)) }
-    catch (e) { alert('Error: ' + e.message) }
+    catch (e) { toast('Error: ' + e.message, 'error') }
     setLoading(false)
   }
   useEffect(() => { cargar() }, [plantaId])
 
   const handleEliminar = async () => {
-    if (!confirm(`¿Eliminar la planta "${planta.nombre}"? Los proyectos asociados quedarán sin planta vinculada (no se eliminan).`)) return
+    if (!(await confirmDialog({ title: 'Eliminar planta', message: `Se eliminará "${planta.nombre}". Los proyectos asociados quedarán sin planta vinculada (no se eliminan).`, confirmLabel: 'Eliminar planta' }))) return
     try {
       await eliminarPlanta(plantaId)
       onEliminada()
-    } catch (e) { alert('Error eliminando: ' + e.message) }
+    } catch (e) { toast('Error eliminando: ' + e.message, 'error') }
   }
 
   if (loading) return <LoadingState/>
@@ -385,7 +386,7 @@ function ModalPlanta({ usuario, planta, onClose, onGuardada }) {
   useEffect(() => { getClientes().then(setClientes).catch(()=>{}) }, [])
 
   const guardar = async () => {
-    if (!form.nombre.trim()) { alert('Nombre es requerido'); return }
+    if (!form.nombre.trim()) { toast('Nombre es requerido', 'error'); return }
     setGuardando(true)
     try {
       const result = esEdicion
@@ -393,7 +394,7 @@ function ModalPlanta({ usuario, planta, onClose, onGuardada }) {
         : await crearPlanta(form)
       onGuardada(result)
     } catch (e) {
-      alert('Error: ' + e.message)
+      toast('Error: ' + e.message, 'error')
       setGuardando(false)
     }
   }

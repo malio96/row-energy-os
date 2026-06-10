@@ -20,6 +20,7 @@ import { generarAlertas, colorAlerta, bgAlerta } from './alertas'
 import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref, esProyectoActivo } from './helpers'
 // v12.5.5: Modal custom (reemplaza prompt/confirm/alert nativos)
 import { useModal } from './Modal'
+import { toast, promptDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 // ============================================================
 // CONFIG: Nombres de mes en español
@@ -248,7 +249,7 @@ function VistaMisTareas({ data, usuario, isMobile, recargar }) {
       await actualizarActividad(act.id, { estado: 'Completada', avance: 100, fecha_fin_real: hoyISO })
       recargar?.()
     } catch (e) {
-      alert('No se pudo marcar como completada: ' + (e?.message || 'error'))
+      toast('No se pudo marcar como completada: ' + (e?.message || 'error'), 'error')
     } finally {
       setCompletandoId(null)
     }
@@ -1754,13 +1755,13 @@ function RedSocial({ titulo, color, metrics, data, onChange, isMobile }) {
               <div style={{ fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', marginBottom:10 }}>{m}</div>
               <div style={{ display:'flex', gap:6, alignItems:'flex-end', justifyContent:'center', height:80, marginBottom:8 }}>
                 <div style={{ width:16, height: `${(v1/max)*80}px`, background:COLORS.slate400, borderRadius:'3px 3px 0 0', minHeight:2, cursor:'pointer' }}
-                  onClick={() => {
-                    const nuevo = window.prompt(`${m} - Semana 1:`, v1)
+                  onClick={async () => {
+                    const nuevo = await promptDialog({ title: `${m} — Semana 1`, defaultValue: String(v1), confirmLabel: 'Guardar' })
                     if (nuevo !== null) onChange({ ...data, s1: { ...data.s1, [m]: Number(nuevo)||0 } })
                   }}/>
                 <div style={{ width:16, height: `${(v2/max)*80}px`, background:color, borderRadius:'3px 3px 0 0', minHeight:2, cursor:'pointer' }}
-                  onClick={() => {
-                    const nuevo = window.prompt(`${m} - Semana 2:`, v2)
+                  onClick={async () => {
+                    const nuevo = await promptDialog({ title: `${m} — Semana 2`, defaultValue: String(v2), confirmLabel: 'Guardar' })
                     if (nuevo !== null) onChange({ ...data, s2: { ...data.s2, [m]: Number(nuevo)||0 } })
                   }}/>
               </div>

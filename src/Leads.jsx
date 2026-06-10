@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getLeads, crearLead, actualizarLead, eliminarLead, getUsuarios, getClientes } from './supabase'
 import { COLORS, ETAPAS_LEAD, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 export default function Leads({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -93,7 +94,7 @@ function ModalNuevoLead({ usuario, onClose, onCreado }) {
   useEffect(() => { getUsuarios().then(setUsuarios) }, [])
 
   const crear = async () => {
-    if (!form.razon_social) { alert('Completa razón social'); return }
+    if (!form.razon_social) { toast('Completa razón social', 'error'); return }
     await crearLead({ ...form, monto_estimado: Number(form.monto_estimado) || 0, probabilidad: Number(form.probabilidad), capacidad_mw: form.capacidad_mw ? parseFloat(form.capacidad_mw) : null, owner_id: usuario.id })
     onCreado()
   }
@@ -152,16 +153,16 @@ function PanelLead({ lead, onClose, onCambio }) {
       })
       onCambio()
     } catch (e) {
-      alert('Error: ' + e.message)
+      toast('Error: ' + e.message, 'error')
       setGuardando(false)
     }
   }
 
   const eliminar = async () => {
-    if (!confirm(`¿Eliminar lead "${lead.razon_social}"? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmDialog({ title: 'Eliminar lead', message: `Se eliminará "${lead.razon_social}". Esta acción no se puede deshacer.`, confirmLabel: 'Eliminar' }))) return
     setGuardando(true)
     try { await eliminarLead(lead.id); onCambio() }
-    catch (e) { alert('Error: ' + e.message); setGuardando(false) }
+    catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
 
   const fmtFecha = (iso) => iso ? new Date(iso).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }) : '—'

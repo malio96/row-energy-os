@@ -7,12 +7,13 @@
 //   if (await confirmDialog({ title: 'Eliminar', message: '¿Seguro?' })) { ... }
 //
 // Montar <DialogHost/> UNA sola vez cerca de la raíz (App.jsx).
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { COLORS, useIsMobile } from './helpers'
 
 // ── Store a nivel de módulo (sin context: accesible desde cualquier import) ──
 let _toasts = []
 let _confirm = null
+let _prompt = null
 let _version = 0
 let _idSeq = 0
 const _listeners = new Set()
@@ -47,6 +48,25 @@ export function confirmDialog(opts = {}) {
       cancelLabel: opts.cancelLabel || 'Cancelar',
       variant: opts.variant || 'danger',
       _done: (val) => { _confirm = null; _emit(); resolve(val) },
+    }
+    _emit()
+  })
+}
+
+/**
+ * Prompt modal con input de texto. Devuelve Promise<string|null> (null si cancela).
+ * opts: { title, message, defaultValue='', placeholder='', confirmLabel='Aceptar', cancelLabel='Cancelar' }
+ */
+export function promptDialog(opts = {}) {
+  return new Promise(resolve => {
+    _prompt = {
+      title: opts.title || '',
+      message: opts.message || '',
+      defaultValue: opts.defaultValue != null ? String(opts.defaultValue) : '',
+      placeholder: opts.placeholder || '',
+      confirmLabel: opts.confirmLabel || 'Aceptar',
+      cancelLabel: opts.cancelLabel || 'Cancelar',
+      _done: (val) => { _prompt = null; _emit(); resolve(val) },
     }
     _emit()
   })
@@ -138,10 +158,73 @@ function ConfirmModal({ data }) {
   )
 }
 
-/** Host único: renderiza la pila de toasts + el modal de confirmación. */
+function PromptModal({ data }) {
+  const isMobile = useIsMobile()
+  const [val, setVal] = useState(data.defaultValue)
+
+  const submit = () => { if (val.trim()) data._done(val) }
+
+  return (
+    <div onClick={() => data._done(null)} style={{
+      position:'fixed', inset:0, background:'rgba(10, 37, 64, 0.35)', backdropFilter:'blur(2px)',
+      zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: isMobile ? 'calc(100% - 32px)' : 460, background:'white', borderRadius:14,
+        boxShadow:'0 20px 60px rgba(10, 37, 64, 0.25)', overflow:'hidden', fontFamily:'var(--font-sans)',
+      }}>
+        <div style={{ padding:'22px 24px 16px' }}>
+          {data.title && (
+            <h3 style={{ margin:0, fontSize:16, fontWeight:600, color:COLORS.navy, letterSpacing:'-0.01em' }}>
+              {data.title}
+            </h3>
+          )}
+          {data.message && (
+            <p style={{ margin:'6px 0 0', fontSize:13, color:COLORS.slate500, lineHeight:1.5, whiteSpace:'pre-line' }}>
+              {data.message}
+            </p>
+          )}
+          <input
+            autoFocus
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') data._done(null) }}
+            placeholder={data.placeholder}
+            style={{
+              width:'100%', marginTop:14, padding:'10px 12px', border:`1px solid ${COLORS.slate200}`,
+              borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box',
+            }}
+          />
+        </div>
+        <div style={{
+          padding:'14px 24px 18px', display:'flex', justifyContent:'flex-end', gap:10,
+          background:COLORS.slate50, borderTop:`1px solid ${COLORS.slate100}`,
+        }}>
+          <button onClick={() => data._done(null)} style={{
+            padding:'9px 18px', background:'white', color:COLORS.slate600,
+            border:`1px solid ${COLORS.slate200}`, borderRadius:8, fontSize:13, fontWeight:600,
+            cursor:'pointer', fontFamily:'inherit',
+          }}>
+            {data.cancelLabel}
+          </button>
+          <button onClick={submit} disabled={!val.trim()} style={{
+            padding:'9px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:8,
+            fontSize:13, fontWeight:600, cursor: val.trim() ? 'pointer' : 'not-allowed',
+            opacity: val.trim() ? 1 : 0.6, fontFamily:'inherit',
+          }}>
+            {data.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Host único: renderiza la pila de toasts + los modales de confirmación/prompt. */
 export function DialogHost() {
   useSyncExternalStore(_subscribe, _getSnapshot, _getSnapshot)
   const confirm = _confirm
+  const promptReq = _prompt
   const toasts = _toasts
 
   return (
@@ -168,6 +251,7 @@ export function DialogHost() {
         </div>
       )}
       {confirm && <ConfirmModal data={confirm}/>}
+      {promptReq && <PromptModal data={promptReq}/>}
     </>
   )
 }

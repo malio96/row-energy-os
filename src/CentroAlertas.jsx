@@ -13,6 +13,7 @@ import {
 } from './alertas'
 import { COLORS, useIsMobile } from './helpers'
 import IconAlerta from './IconAlerta'  // v15.8.6
+import { toast } from './Dialogs'  // v17.4.1: diálogos propios
 
 // ============================================================
 // CentroAlertas v12.5.9c
@@ -111,7 +112,7 @@ export default function CentroAlertas({ usuario }) {
       // Quitar el item del listado optimistamente (sin recargar todo)
       setItems(prev => prev.filter(i => i.id !== item.id))
     } catch (e) {
-      alert('Error: ' + (e?.message || 'No se pudo completar'))
+      toast('Error: ' + (e?.message || 'No se pudo completar'), 'error')
     }
     setCompletando(null)
   }

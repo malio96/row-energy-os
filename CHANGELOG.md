@@ -4,8 +4,23 @@ Registro detallado de cada versión entregada. Para contexto de sesión activa v
 
 ---
 
-## v17.x (may 2026)
+## v17.x (may–jun 2026)
 
+- **v17.4.1** (8 jun) — barrido global: TODOS los `alert`/`confirm`/`prompt` nativos del navegador → diálogos propios en 13 módulos (Cotizaciones, Plantas, Facturación, Compras, Leads, Cobranza, MisActividades, Postventa, Dashboard, Contratos, CentroAlertas, exportGantt + Proyectos de v17.4.0). Cero diálogos nativos en la app. `promptDialog` agregado a `Dialogs.jsx`.
+- **v17.4.0** (8 jun) — sistema global de diálogos `src/Dialogs.jsx`: `toast()` + `confirmDialog()` a nivel de módulo (sin context ni props), `<DialogHost/>` montado una vez en App.jsx, estilo Klar. Proyectos.jsx migrado (7 confirm + ~30 alert); toast local de DetalleProyecto unificado al global.
+- **v17.3.2** (8 jun) — **fix borrado de actividades**: la política RLS `acts_delete` no incluía la rama `equipo_proyectos AND app_es_miembro_proyecto` que sí tenían insert/update → los miembros podían crear/editar pero el DELETE fallaba en silencio (RLS bloquea 0 filas, sin error) y reaparecían al recargar. Migración alinea `acts_delete` con `acts_update`. `eliminarActividad` usa `.select('id')` y lanza `NO_AUTORIZADO_PROYECTO` si 0 filas. **+ hardening seguridad** (3 migraciones post-advisors): cerrar funciones trigger/cron a RPC (revoke EXECUTE a public/anon/authenticated), fijar `search_path` en 2 funciones, revocar PUBLIC en helpers RLS de actividades (ya no anon-ejecutables).
+- **v17.3.1** — edición inline de estado (actividades principales) + fechas en tabla de actividades
+- **v17.3.0** — RLS actividades: equipo por proyecto (`app_es_miembro_proyecto`) + jefes de proyectos (flag `usuarios.es_jefe_proyectos`). Fix: equipo_proyectos no podía cambiar estado/crear subactividades (política exigía responsable_id = uid pero 96% tienen responsable NULL)
+- **v17.2.3** — Gantt: oculta la barra de scroll propia del cuerpo (doble scroll al final)
+- **v17.2.2** — Gantt: barra de scroll horizontal fija al pie del viewport
+- **v17.2.1** — alertas de acceso solo a no-autorizados (silencio total para roles con permiso) + webhook `alerta_accesos_sensibles` (pg_net trigger) + fix deeplink Plantas→proyecto + edición de planta para equipo_proyectos
+- **v17.2.0** — audit tracking cotizaciones + financiero + limpieza plantas
+- **v17.1.8** — cotizaciones detalle: desglose Subtotal / IVA 16% / Total
+- **v17.1.7** — cotizaciones: filtros año/mes/búsqueda, agrupar por cliente, editar cliente en modal, items importados desde PDFs
+- **v17.1.5** — fix Gantt fechaInicio/fechaFin con actividades sin fecha (117 proyectos)
+- **v17.1.4** — Gantt undo incluye cascada: Ctrl+Z deshace drag + recalcularFechasDesde
+- **v17.1.3** — fix Gantt sticky: leyenda al fondo sticky bottom, header sticky top
+- **v17.1.2** — Gantt UX: leyenda arriba, header sticky, toast no-puede-editar + fix drag para equipo_proyectos en actividades ajenas
 - **v17.1.1** — render error states + sidebar active state respeta query string
 - **v17.1.0** — audit log completo (BD triggers + frontend tracking + vista admin + auto-purga)
 - **v17.0.4** — drill-downs Dashboard → módulos con filtros pre-aplicados (replica del patrón v17.0.3)

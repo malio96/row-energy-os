@@ -12,6 +12,7 @@ import {
   LoadingState, EmptyState, useIsMobile, SortControl, aplicarSort,
   loadPref, savePref, estadoEfectivo,
 } from './helpers'
+import { toast } from './Dialogs'  // v17.4.1: diálogos propios
 
 const ESTADOS = {
   'Completada': { bg:'#E1F5EE', color:'#0F6E56' },
@@ -138,7 +139,7 @@ export default function MisActividades({ usuario }) {
     try {
       await actualizarActividad(act.id, { estado: nuevoEstado })
       await cargar()
-    } catch (e) { alert('Error: ' + (e?.message || 'No se pudo actualizar')) }
+    } catch (e) { toast('Error: ' + (e?.message || 'No se pudo actualizar'), 'error') }
     setUpdating(null)
   }
 
@@ -147,7 +148,7 @@ export default function MisActividades({ usuario }) {
     try {
       await actualizarActividad(act.id, { estado: 'Completada', avance: 100, completada: true })
       await cargar()
-    } catch (e) { alert('Error: ' + (e?.message || 'No se pudo completar')) }
+    } catch (e) { toast('Error: ' + (e?.message || 'No se pudo completar'), 'error') }
     setUpdating(null)
   }
 
