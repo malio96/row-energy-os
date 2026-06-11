@@ -8,6 +8,7 @@ import Sidebar from './Sidebar'
 import Proyectos from './Proyectos'
 import Cotizaciones from './Cotizaciones'
 import Leads from './Leads'
+import Ventas from './Ventas'
 import Cobranza from './Cobranza'
 import Facturacion from './Facturacion'
 import Compras from './Compras'
@@ -480,6 +481,11 @@ function MainApp() {
           <Route path="/leads" element={
             <RutaProtegida usuario={usuario} modulo="leads">
               <Leads usuario={usuario}/>
+            </RutaProtegida>
+          }/>
+          <Route path="/ventas" element={
+            <RutaProtegida usuario={usuario} modulo="ventas">
+              <Ventas usuario={usuario}/>
             </RutaProtegida>
           }/>
           <Route path="/cobranza" element={

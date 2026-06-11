@@ -327,7 +327,7 @@ function ModalNuevaCotizacion({ usuario, onClose, onCreada }) {
   )
 }
 
-function CotizacionDetalle({ id, usuario, onVolver }) {
+export function CotizacionDetalle({ id, usuario, onVolver }) {
   const [cot, setCot] = useState(null)
   const [loading, setLoading] = useState(true)
   const [modalItem, setModalItem] = useState(false)

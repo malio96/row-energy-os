@@ -17,7 +17,7 @@ export const PERMISOS_POR_ROL = {
     label: 'Dirección',
     descripcion: 'Acceso total a todo el sistema',
     modulos: [
-      'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
+      'dashboard', 'proyectos', 'ventas', 'cotizaciones', 'contratos', 'leads',
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',  // v15.8.0
       'actividades',  // v16.9.x: drill-down vista
@@ -32,7 +32,7 @@ export const PERMISOS_POR_ROL = {
     label: 'Administración',
     descripcion: 'Acceso a todo excepto configuración; no puede eliminar registros',
     modulos: [
-      'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
+      'dashboard', 'proyectos', 'ventas', 'cotizaciones', 'contratos', 'leads',
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',  // v15.8.0
       'actividades',  // v16.9.x
@@ -45,7 +45,7 @@ export const PERMISOS_POR_ROL = {
     label: 'Director de Proyectos',
     descripcion: 'Operaciones: proyectos, cierre, postventa, plantas',
     modulos: [
-      'dashboard', 'proyectos', 'cierre', 'postventa',
+      'dashboard', 'proyectos', 'ventas', 'cierre', 'postventa',
       'plantas',
       'actividades',  // v16.9.x
       'config',  // v17.5.0: acceso a Configuración para dar de alta equipo
@@ -58,7 +58,7 @@ export const PERMISOS_POR_ROL = {
     label: 'Ventas',
     descripcion: 'Acceso amplio de lectura: comercial + visibilidad de operaciones',
     modulos: [
-      'dashboard', 'proyectos', 'cotizaciones', 'contratos', 'leads',
+      'dashboard', 'proyectos', 'ventas', 'cotizaciones', 'contratos', 'leads',
       'cobranza', 'facturacion', 'compras', 'cierre', 'postventa',
       'plantas',
       'actividades',  // v16.9.x
@@ -72,7 +72,7 @@ export const PERMISOS_POR_ROL = {
     label: 'Cobranza',
     descripcion: 'Finanzas entrantes + visibilidad de contratos, compras y cierre',
     modulos: [
-      'dashboard', 'cobranza', 'facturacion',
+      'dashboard', 'ventas', 'cobranza', 'facturacion',
       'contratos', 'compras', 'cierre',
       'plantas',
       'actividades',  // v16.9.x
