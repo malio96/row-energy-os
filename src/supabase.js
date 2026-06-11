@@ -507,6 +507,28 @@ export async function actualizarLead(id, cambios) {
   return data
 }
 
+// v18.0.0 — Módulo Ventas: una "oportunidad" = lead + su cotización adjunta (vínculo 1:1).
+// Join cliente-side por lead_id (robusto sin depender de FK para embedding de PostgREST).
+export async function getOportunidades() {
+  const [leads, cots] = await Promise.all([getLeads(), getCotizaciones()])
+  const cotPorLead = {}
+  for (const c of cots) if (c.lead_id) cotPorLead[c.lead_id] = c
+  return leads.map(l => ({ ...l, cotizacion: cotPorLead[l.id] || null }))
+}
+
+// Mueve la fase de la oportunidad (5 fases) -> etapa canónica de lead.
+// El trigger sync (v17.6.0) refleja el estado de la cotización automáticamente.
+export async function cambiarFaseOportunidad(leadId, fase) {
+  const mapa = {
+    'Cotización enviada': 'Propuesta enviada',
+    'Negociación': 'Negociación',
+    'Ganado': 'Ganado',
+    'Perdido': 'Perdido',
+  }
+  const etapa = mapa[fase] || 'Nuevo'
+  return actualizarLead(leadId, { etapa, ultima_actividad: new Date().toISOString() })
+}
+
 export async function eliminarLead(id) {
   const { error } = await supabase.from('leads').delete().eq('id', id)
   if (error) throw error

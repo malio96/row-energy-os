@@ -50,6 +50,37 @@ export const ETAPAS_LEAD = [
   { key:'Perdido', color:'#DC2626', bg:'#FEF2F2', prob:0 },
 ]
 
+// v18.0.0 — Módulo Ventas: 5 fases simples del pipeline (agrupan las 7 etapas de lead).
+export const FASES_VENTA = [
+  { key:'Nuevo', color:'#94A3B8', bg:'#F1F5F9', prob:10 },
+  { key:'Cotización enviada', color:'#D97706', bg:'#FEF3C7', prob:55 },
+  { key:'Negociación', color:'#C89B3C', bg:'#FEF9E6', prob:75 },
+  { key:'Ganado', color:'#0F6E56', bg:'#E1F5EE', prob:100 },
+  { key:'Perdido', color:'#DC2626', bg:'#FEF2F2', prob:0 },
+]
+
+// Mapea la etapa de lead (7 valores) a la fase de Ventas (5).
+export function faseDeEtapa(etapa) {
+  switch (etapa) {
+    case 'Propuesta enviada': return 'Cotización enviada'
+    case 'Negociación':       return 'Negociación'
+    case 'Ganado':            return 'Ganado'
+    case 'Perdido':           return 'Perdido'
+    default:                  return 'Nuevo'  // Nuevo, En contacto, Calificando
+  }
+}
+
+// Fase de Ventas (5) → etapa canónica de lead que se persiste al mover una tarjeta.
+export function etapaCanonicaDeFase(fase) {
+  switch (fase) {
+    case 'Cotización enviada': return 'Propuesta enviada'
+    case 'Negociación':        return 'Negociación'
+    case 'Ganado':             return 'Ganado'
+    case 'Perdido':            return 'Perdido'
+    default:                   return 'Nuevo'
+  }
+}
+
 export const ESTADOS_HITO = {
   'Pendiente':  { bg:'#F1F5F9', color:'#64748B' },
   'Facturado':  { bg:'#E0EDFF', color:'#1B3A6B' },
