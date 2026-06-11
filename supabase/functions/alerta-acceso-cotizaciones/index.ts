@@ -18,8 +18,10 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const ALERT_EMAIL = 'mmartinez@row.energy'
-const FROM_EMAIL  = 'noreply@row.energy'  // dominio verificado en Resend
+// v17.8.0: email destino/origen configurables vía secret (fallback al histórico).
+// Para cambiarlos sin redeploy: supabase secrets set ALERT_EMAIL=... ALERT_FROM_EMAIL=...
+const ALERT_EMAIL = Deno.env.get('ALERT_EMAIL') || 'mmartinez@row.energy'
+const FROM_EMAIL  = Deno.env.get('ALERT_FROM_EMAIL') || 'noreply@row.energy'  // dominio verificado en Resend
 
 // Roles autorizados por módulo/evento
 const ROLES_COTIZACIONES = new Set(['direccion', 'admin', 'ventas'])

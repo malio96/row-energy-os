@@ -18,6 +18,14 @@ dist-ssr
 .playwright-mcp/
 skills-lock.json
 
+# v17.8.0: backups locales de desarrollo + basura de templates (no commitear; borrar a mano si se quiere)
+src/*_backup_*.jsx
+src/*_backup_*.js
+templates/.bin/
+templates/.vite/
+templates/.package-lock.json
+templates/COTIZACION_REFERENCIA.pdf
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
