@@ -17,7 +17,7 @@ import {
 // v12.5.9: sistema de alertas configurables
 import { getAlertasConfig } from './supabase'
 import { generarAlertas, colorAlerta, bgAlerta } from './alertas'
-import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref, esProyectoActivo, aniosDisponibles, ANIO_ACTUAL } from './helpers'
+import { COLORS, ETAPAS_LEAD, FASES_VENTA, faseDeEtapa, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref, esProyectoActivo, aniosDisponibles, ANIO_ACTUAL } from './helpers'
 // v12.5.5: Modal custom (reemplaza prompt/confirm/alert nativos)
 import { useModal } from './Modal'
 import { toast, promptDialog } from './Dialogs'  // v17.4.1: diálogos propios
@@ -480,8 +480,9 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
     return new Date(f.fecha_pago) >= inicioMes
   }).reduce((s,f) => s + Number(f.total || 0), 0)
 
-  const pipelinePorEtapa = ETAPAS_LEAD.filter(e => !['Ganado','Perdido'].includes(e.key)).map(e => {
-    const arr = leads.filter(l => l.etapa === e.key)
+  // v18.2.0: el widget agrupa por las 5 fases del módulo Ventas (coherente con el pipeline)
+  const pipelinePorEtapa = FASES_VENTA.filter(e => !['Ganado','Perdido'].includes(e.key)).map(e => {
+    const arr = leads.filter(l => faseDeEtapa(l.etapa) === e.key)
     return {
       etapa: e.key,
       count: arr.length,
@@ -653,8 +654,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
         <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14 }}>Acciones rápidas</h3>
         <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:10 }}>
-          <QuickAction icon="Plus" label="Nueva cotización" onClick={() => onNavigate?.('cotizaciones')}/>
-          <QuickAction icon="Users" label="Nuevo lead" onClick={() => onNavigate?.('leads')}/>
+          <QuickAction icon="Plus" label="Nueva oportunidad" onClick={() => onNavigate?.('ventas')}/>
           <QuickAction icon="Dollar" label="Ver cobranza" onClick={() => onNavigate?.('cobranza')}/>
           <QuickAction icon="Search" label="Buscar (⌘K)" onClick={() => document.dispatchEvent(new CustomEvent('open-command-palette'))}/>
         </div>

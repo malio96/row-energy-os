@@ -32,11 +32,14 @@ export default function Ventas({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkRef = useRef({ leadId: searchParams.get('lead'), cotId: searchParams.get('cotizacion'), aplicado: false })
 
+  // v18.2.0: drill-downs del Dashboard (?filtro=pendientes|sin_respuesta)
+  const filtroEspecial = searchParams.get('filtro')
+
   const [opps, setOpps] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('kanban')      // 'kanban' | 'tabla'
   const [busqueda, setBusqueda] = useState('')
-  const [filtroAño, setFiltroAño] = useState(String(ANIO_ACTUAL))
+  const [filtroAño, setFiltroAño] = useState(() => filtroEspecial ? 'todos' : String(ANIO_ACTUAL))
   const [filtroOwner, setFiltroOwner] = useState('todos')
   const [sort, setSort] = useState(() => loadPref('sort.ventas', { field:'fecha', dir:'desc' }))
   useEffect(() => { savePref('sort.ventas', sort) }, [sort])
@@ -70,6 +73,14 @@ export default function Ventas({ usuario }) {
 
   const filtradas = useMemo(() => {
     let r = opps
+    // v18.2.0: drill-downs del Dashboard
+    if (filtroEspecial === 'pendientes') {
+      r = r.filter(o => !['Ganado','Perdido'].includes(faseDeEtapa(o.etapa)))
+    } else if (filtroEspecial === 'sin_respuesta') {
+      const hace5d = new Date(); hace5d.setDate(hace5d.getDate() - 5)
+      r = r.filter(o => faseDeEtapa(o.etapa) === 'Cotización enviada' &&
+        new Date(o.ultima_actividad || o.updated_at || o.created_at) < hace5d)
+    }
     if (filtroAño !== 'todos') r = r.filter(o => (o.created_at || '').startsWith(filtroAño))
     if (filtroOwner !== 'todos') r = r.filter(o => o.owner?.id === filtroOwner)
     if (busqueda.trim()) {
@@ -82,7 +93,7 @@ export default function Ventas({ usuario }) {
       )
     }
     return r
-  }, [opps, filtroAño, filtroOwner, busqueda])
+  }, [opps, filtroAño, filtroOwner, busqueda, filtroEspecial])
 
   // Orden (default: más nuevas primero). Aplica a Kanban (dentro de cada columna) y a la Tabla.
   const ordenadas = useMemo(() => aplicarSort(filtradas, sort, {
@@ -155,6 +166,11 @@ export default function Ventas({ usuario }) {
 
       {/* Filtros */}
       <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
+        {filtroEspecial && (
+          <button onClick={() => setSearchParams({}, { replace:true })} style={{ padding:'7px 12px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            ✕ {filtroEspecial === 'sin_respuesta' ? 'Sin respuesta +5 días' : 'Pendientes'}
+          </button>
+        )}
         <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar empresa, código, contacto..." style={{ ...inputStyle, width:260, margin:0, padding:'8px 12px' }}/>
         <select value={filtroAño} onChange={e => setFiltroAño(e.target.value)} style={{ ...selectStyle, width:130 }}>
           <option value="todos">Todos los años</option>
@@ -194,6 +210,22 @@ export default function Ventas({ usuario }) {
                         <span style={{ fontSize:12, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(montoOpp(o))}</span>
                         {o.cotizacion && <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6, fontWeight:700, ...(ESTADO_COT_BADGE[o.cotizacion.estado] || {}) }}>{o.cotizacion.codigo}</span>}
                       </div>
+                      {/* v18.2.0: próxima acción visible en la tarjeta (rojo = vencida) */}
+                      {o.proxima_accion_fecha && !['Ganado','Perdido'].includes(fase.key) && (() => {
+                        const hoy = new Date().toISOString().slice(0,10)
+                        const vencida = o.proxima_accion_fecha < hoy
+                        const esHoy = o.proxima_accion_fecha === hoy
+                        return (
+                          <div title={o.proxima_accion || 'Próxima acción'} style={{
+                            marginTop:6, fontSize:10, padding:'3px 8px', borderRadius:6, display:'inline-block',
+                            background: vencida ? '#FEF2F2' : esHoy ? '#FEF3C7' : COLORS.slate50,
+                            color: vencida ? COLORS.red : esHoy ? '#D97706' : COLORS.slate500,
+                            fontWeight:600, maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                          }}>
+                            {vencida ? '⚠ ' : '◷ '}{o.proxima_accion ? `${o.proxima_accion} · ` : ''}{new Date(o.proxima_accion_fecha + 'T12:00').toLocaleDateString('es-MX', { day:'numeric', month:'short' })}
+                          </div>
+                        )
+                      })()}
                       {o.owner?.nombre && <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:6 }}><Avatar nombre={o.owner.nombre} size={18}/><span style={{ fontSize:10, color:COLORS.slate500 }}>{o.owner.nombre}</span></div>}
                     </div>
                   ))}
@@ -238,6 +270,9 @@ function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }
   const [etapa, setEtapa] = useState(opp.etapa)
   const [notas, setNotas] = useState(opp.notas || '')
   const [monto, setMonto] = useState(opp.monto_estimado || '')
+  // v18.2.0: accountability — todo trato vivo debe tener un siguiente paso con fecha
+  const [proxAccion, setProxAccion] = useState(opp.proxima_accion || '')
+  const [proxFecha, setProxFecha] = useState(opp.proxima_accion_fecha || '')
   const [guardando, setGuardando] = useState(false)
   const [openCot, setOpenCot] = useState(true)
   const [openAct, setOpenAct] = useState(false)
@@ -253,7 +288,12 @@ function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }
   const guardar = async () => {
     setGuardando(true)
     try {
-      await actualizarLead(opp.id, { etapa, notas, monto_estimado: Number(monto) || 0, ultima_actividad: new Date().toISOString() })
+      await actualizarLead(opp.id, {
+        etapa, notas, monto_estimado: Number(monto) || 0,
+        proxima_accion: proxAccion.trim() || null,
+        proxima_accion_fecha: proxFecha || null,
+        ultima_actividad: new Date().toISOString(),
+      })
       onCambio(); onClose()
     } catch (e) { toast('Error: ' + e.message, 'error'); setGuardando(false) }
   }
@@ -318,6 +358,18 @@ function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }
             <div>
               <label style={labelStyle}>Monto estimado (MXN)</label>
               <input type="number" value={monto} onChange={e => setMonto(e.target.value)} style={inputStyle}/>
+            </div>
+          </div>
+
+          {/* Próxima acción (accountability de seguimiento) */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 160px', gap:12, marginBottom:16 }}>
+            <div>
+              <label style={labelStyle}>Próxima acción</label>
+              <input value={proxAccion} onChange={e => setProxAccion(e.target.value)} placeholder="Ej: Llamar para dar seguimiento" style={inputStyle}/>
+            </div>
+            <div>
+              <label style={labelStyle}>Fecha</label>
+              <input type="date" value={proxFecha} onChange={e => setProxFecha(e.target.value)} style={inputStyle}/>
             </div>
           </div>
 
