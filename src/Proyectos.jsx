@@ -4524,51 +4524,58 @@ export default function Proyectos({ usuario }) {
       </div>
       {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
       {!loading && filtrados.length === 0 && <div style={{ padding:50, background:'white', border:`1px dashed ${COLORS.slate200}`, borderRadius:12, textAlign:'center', color:COLORS.slate500 }}>{busqueda ? 'Sin resultados' : 'Sin proyectos'}</div>}
-      {!loading && filtrados.length > 0 && (
-        <div style={{ display:'grid', gap:8 }}>
+      {!loading && filtrados.length > 0 && (() => {
+        // v18.3.0: lista en formato tabla — mismo formato que la Tabla de Ventas (un solo formato en toda la app)
+        const cols = isMobile ? 'minmax(0,1fr) 80px' : 'minmax(0,1fr) 130px 130px 90px 100px 76px'
+        return (
+        <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+          <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+            <span>Proyecto</span>
+            {!isMobile && <span>Estado</span>}
+            {!isMobile && <span>Tipo</span>}
+            <span>Avance</span>
+            {!isMobile && <span>Cierre</span>}
+            {!isMobile && <span/>}
+          </div>
           {filtrados.map(p => {
             const tieneBloqueadas = (p.actividades || []).some(a => a.estado === 'Bloqueada')
-            // v12: avance ponderado del proyecto
             const avancePond = p.actividades && p.actividades.length > 0
               ? calcularAvancePonderado(p.actividades, null)
               : (p.avance || 0)
             return (
               <div key={p.id} onClick={() => setProyectoSel(p.id)}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(10,37,64,0.08)'}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
-                style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${ESTADOS_PROY[p.estado]?.bar || COLORS.slate400}`, borderRadius:12, padding:16, cursor:'pointer', display:'flex', alignItems:'center', gap:12, transition:'box-shadow 0.15s' }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3, flexWrap:'wrap' }}>
+                onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50}
+                onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                style={{ display:'grid', gridTemplateColumns:cols, padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13, cursor:'pointer', gap:8 }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2, flexWrap:'wrap' }}>
                     <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:600 }}>{p.codigo}</span>
-                    <Badge texto={p.estado} mapa={ESTADOS_PROY}/>
-                    {/* v12: Badges de clasificación, prioridad, tipo */}
+                    {isMobile && <Badge texto={p.estado} mapa={ESTADOS_PROY}/>}
                     {p.clasificacion && <BadgeChip texto={p.clasificacion} mapa={CLASIFICACION} label="Clase"/>}
                     {p.prioridad && p.prioridad !== 'Media' && <BadgeChip texto={p.prioridad} mapa={PRIORIDAD} label="Prioridad"/>}
-                    {p.tipo_proyecto && p.tipo_proyecto !== 'Otros' && (
-                      <span style={{ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:4, background:COLORS.slate50, color:COLORS.slate600, whiteSpace:'nowrap' }}>{p.tipo_proyecto}</span>
-                    )}
                     {tieneBloqueadas && <span title="Actividades bloqueadas" style={{ color:COLORS.amber, display:'inline-flex' }}><Icon.Lock/></span>}
                   </div>
-                  <div style={{ fontSize:14, fontWeight:600, color:COLORS.ink, marginBottom:2 }}>{p.nombre}</div>
-                  <div style={{ fontSize:11, color:COLORS.slate500 }}>{p.cliente?.razon_social || 'Sin cliente'}{p.director?.nombre && ` · ${p.director.nombre}`}</div>
+                  <div style={{ fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nombre}</div>
+                  <div style={{ fontSize:11, color:COLORS.slate500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.cliente?.razon_social || 'Sin cliente'}{p.director?.nombre && ` · ${p.director.nombre}`}</div>
                 </div>
-                {/* v12: Avance ponderado visual */}
+                {!isMobile && <div><Badge texto={p.estado} mapa={ESTADOS_PROY}/></div>}
+                {!isMobile && <div style={{ fontSize:11, color:COLORS.slate500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.tipo_proyecto || '—'}</div>}
+                <div style={{ fontFamily:'var(--font-mono)', fontWeight:700, fontSize:13, color: avancePond >= 75 ? COLORS.teal : avancePond >= 40 ? COLORS.amber : COLORS.slate600 }}>{avancePond}%</div>
+                {!isMobile && <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{p.cierre ? fmtDate(p.cierre) : '—'}</div>}
                 {!isMobile && (
-                  <div style={{ minWidth:100, textAlign:'right' }}>
-                    <div style={{ fontSize:10, color:COLORS.slate500, fontWeight:600, marginBottom:3 }}>Avance ponderado</div>
-                    <div style={{ fontSize:14, fontFamily:'var(--font-mono)', fontWeight:700, color: avancePond >= 75 ? COLORS.teal : avancePond >= 40 ? COLORS.amber : COLORS.slate600 }}>{avancePond}%</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:4, justifyContent:'flex-end' }}>
+                    <button onClick={(e) => handleDuplicarProyecto(p, e)} title="Duplicar proyecto completo" style={{ padding:'6px 8px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}>
+                      <Icon.Duplicate/>
+                    </button>
+                    <span style={{ color:COLORS.slate400 }}>›</span>
                   </div>
                 )}
-                {/* v12: Botón duplicar */}
-                <button onClick={(e) => handleDuplicarProyecto(p, e)} title="Duplicar proyecto completo" style={{ padding:'6px 8px', background:'transparent', color:COLORS.slate500, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}>
-                  <Icon.Duplicate/>
-                </button>
-                <span style={{ color:COLORS.slate400 }}>›</span>
               </div>
             )
           })}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
