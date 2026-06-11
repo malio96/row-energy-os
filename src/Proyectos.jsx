@@ -4533,7 +4533,10 @@ export default function Proyectos({ usuario }) {
               ? calcularAvancePonderado(p.actividades, null)
               : (p.avance || 0)
             return (
-              <div key={p.id} onClick={() => setProyectoSel(p.id)} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${ESTADOS_PROY[p.estado]?.bar || COLORS.slate400}`, borderRadius:10, padding:16, cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
+              <div key={p.id} onClick={() => setProyectoSel(p.id)}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(10,37,64,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+                style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${ESTADOS_PROY[p.estado]?.bar || COLORS.slate400}`, borderRadius:12, padding:16, cursor:'pointer', display:'flex', alignItems:'center', gap:12, transition:'box-shadow 0.15s' }}>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3, flexWrap:'wrap' }}>
                     <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:600 }}>{p.codigo}</span>
@@ -4546,7 +4549,7 @@ export default function Proyectos({ usuario }) {
                     )}
                     {tieneBloqueadas && <span title="Actividades bloqueadas" style={{ color:COLORS.amber, display:'inline-flex' }}><Icon.Lock/></span>}
                   </div>
-                  <div style={{ fontSize:15, fontWeight:500, color:COLORS.ink, marginBottom:2 }}>{p.nombre}</div>
+                  <div style={{ fontSize:14, fontWeight:600, color:COLORS.ink, marginBottom:2 }}>{p.nombre}</div>
                   <div style={{ fontSize:11, color:COLORS.slate500 }}>{p.cliente?.razon_social || 'Sin cliente'}{p.director?.nombre && ` · ${p.director.nombre}`}</div>
                 </div>
                 {/* v12: Avance ponderado visual */}
