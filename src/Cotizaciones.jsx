@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getCotizaciones, getCotizacion, crearCotizacion, actualizarCotizacion, agregarCotizacionItem, actualizarCotizacionItem, eliminarCotizacionItem, eliminarCotizacion, getClientes, getUsuarios, getPlantillas, getPreciosServicios, listarServiciosPricing, buscarPrecioServicio, PRICING_TIPOS, getTareasPostCierre, completarTareaPostCierre, asignarTareaPostCierre, aprobarWorkflowPostCierre, DEPARTAMENTOS_POST_CIERRE, ESTADOS_TAREA_PC } from './supabase'
 // v17.0.2: loadPref/savePref desde helpers (antes shim local sin sync a BD)
-import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort, loadPref, savePref, trackEvent } from './helpers'
+import { COLORS, ESTADOS_COT, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, LoadingState, EmptyState, SortControl, aplicarSort, loadPref, savePref, trackEvent, aniosDisponibles } from './helpers'
 import { SERVICIOS_CATALOGO } from './serviciosCatalogo'  // v15.6.0
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso del form unificado
 import { puedeEliminar, puedeAprobarCotizacion, esDirOAdmin } from './permisos'  // v16.4.0
@@ -151,9 +151,7 @@ export default function Cotizaciones({ usuario }) {
         />
         <select value={filtroAño} onChange={e => setFiltroAño(e.target.value)} style={{ ...selectStyle, width:130 }}>
           <option value="todos">Todos los años</option>
-          <option value="2024">2024</option>
-          <option value="2025">2025</option>
-          <option value="2026">2026</option>
+          {aniosDisponibles().map(y => <option key={y} value={String(y)}>{y}</option>)}
         </select>
         <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={{ ...selectStyle, width:140 }}>
           <option value="todos">Todos los meses</option>

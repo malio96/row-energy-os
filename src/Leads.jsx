@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getLeads, crearLead, actualizarLead, eliminarLead, getUsuarios, getClientes } from './supabase'
-import { COLORS, ETAPAS_LEAD, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon } from './helpers'
+import { COLORS, ETAPAS_LEAD, Badge, Avatar, fmtMoney, inputStyle, selectStyle, labelStyle, Icon, aniosDisponibles, ANIO_ACTUAL } from './helpers'
 import { toast, confirmDialog } from './Dialogs'  // v17.4.1: diálogos propios
 
 export default function Leads({ usuario }) {
@@ -13,9 +13,30 @@ export default function Leads({ usuario }) {
   const [modal, setModal] = useState(false)
   const [dragLead, setDragLead] = useState(null)
   const [leadSel, setLeadSel] = useState(null)
+  // v17.7.0: filtros año/mes/búsqueda (mismo set que Cotizaciones). Año default
+  // = año actual (dinámico: cambia solo cada año). El "año" del lead viene de
+  // created_at, que el trigger/backfill fijan = fecha_emisión de su cotización.
+  const [filtroAño, setFiltroAño] = useState(String(ANIO_ACTUAL))
+  const [filtroMes, setFiltroMes] = useState('todos')
+  const [busqueda, setBusqueda] = useState('')
 
   const cargar = async () => { setLoading(true); setLeads(await getLeads()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  const leadsFiltrados = useMemo(() => {
+    let r = leads
+    if (filtroAño !== 'todos') r = r.filter(l => (l.created_at || '').startsWith(filtroAño))
+    if (filtroMes !== 'todos') r = r.filter(l => (l.created_at || '').slice(5, 7) === filtroMes)
+    if (busqueda.trim()) {
+      const q = busqueda.toLowerCase()
+      r = r.filter(l =>
+        l.razon_social?.toLowerCase().includes(q) ||
+        l.codigo?.toLowerCase().includes(q) ||
+        l.contacto_nombre?.toLowerCase().includes(q)
+      )
+    }
+    return r
+  }, [leads, filtroAño, filtroMes, busqueda])
 
   useEffect(() => {
     if (deepLinkRef.current.aplicado) return
@@ -32,7 +53,7 @@ export default function Leads({ usuario }) {
     cargar()
   }
 
-  const totalPonderado = leads.filter(l => !['Ganado','Perdido'].includes(l.etapa)).reduce((s,l) => s + (Number(l.monto_estimado) * Number(l.probabilidad) / 100), 0)
+  const totalPonderado = leadsFiltrados.filter(l => !['Ganado','Perdido'].includes(l.etapa)).reduce((s,l) => s + (Number(l.monto_estimado) * Number(l.probabilidad) / 100), 0)
 
   return (
     <div>
@@ -42,9 +63,29 @@ export default function Leads({ usuario }) {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
           <h1 style={{ fontSize:32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>Leads / CRM</h1>
-          <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{leads.length} leads · Pipeline ponderado: <strong style={{ color:COLORS.navy }}>{fmtMoney(totalPonderado)}</strong></p>
+          <p style={{ color:COLORS.slate500, fontSize:13, marginTop:6 }}>{leadsFiltrados.length}{leadsFiltrados.length !== leads.length ? ` de ${leads.length}` : ''} leads · Pipeline ponderado: <strong style={{ color:COLORS.navy }}>{fmtMoney(totalPonderado)}</strong></p>
         </div>
         <button onClick={() => setModal(true)} style={{ padding:'10px 20px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>{Icon('Plus')} Nuevo lead</button>
+      </div>
+
+      {/* v17.7.0: filtros año / mes / búsqueda (mismo set que Cotizaciones) */}
+      <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
+        <input
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="Buscar empresa, código, contacto..."
+          style={{ ...inputStyle, width:260, margin:0, padding:'8px 12px' }}
+        />
+        <select value={filtroAño} onChange={e => setFiltroAño(e.target.value)} style={{ ...selectStyle, width:130 }}>
+          <option value="todos">Todos los años</option>
+          {aniosDisponibles().map(y => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+        <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={{ ...selectStyle, width:140 }}>
+          <option value="todos">Todos los meses</option>
+          {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m, i) => (
+            <option key={m} value={String(i+1).padStart(2,'0')}>{m}</option>
+          ))}
+        </select>
       </div>
 
       {loading && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
@@ -52,7 +93,7 @@ export default function Leads({ usuario }) {
       {!loading && (
         <div style={{ display:'grid', gridTemplateColumns:`repeat(${ETAPAS_LEAD.length}, minmax(220px, 1fr))`, gap:10, overflowX:'auto', paddingBottom:10 }}>
           {ETAPAS_LEAD.map(etapa => {
-            const leadsEtapa = leads.filter(l => l.etapa === etapa.key)
+            const leadsEtapa = leadsFiltrados.filter(l => l.etapa === etapa.key)
             const total = leadsEtapa.reduce((s,l) => s + Number(l.monto_estimado || 0), 0)
             return (
               <div key={etapa.key} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragLead) { cambiarEtapa(dragLead, etapa.key); setDragLead(null) } }} style={{ minWidth:220 }}>

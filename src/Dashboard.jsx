@@ -17,7 +17,7 @@ import {
 // v12.5.9: sistema de alertas configurables
 import { getAlertasConfig } from './supabase'
 import { generarAlertas, colorAlerta, bgAlerta } from './alertas'
-import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref, esProyectoActivo } from './helpers'
+import { COLORS, ETAPAS_LEAD, Badge, fmtMoney, fmtDate, daysUntil, relativeTime, btnPrimary, Icon, LoadingState, useIsMobile, loadPref, savePref, esProyectoActivo, aniosDisponibles, ANIO_ACTUAL } from './helpers'
 // v12.5.5: Modal custom (reemplaza prompt/confirm/alert nativos)
 import { useModal } from './Modal'
 import { toast, promptDialog } from './Dialogs'  // v17.4.1: diálogos propios
@@ -53,6 +53,9 @@ export default function Dashboard({ usuario, onNavigate }) {
   const [vista, setVista] = useState(() => loadPref('dash_vista', defaultVista))
   const [colaboradorInicialId, setColaboradorInicialId] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)  // v12.5.4: trigger para recargar datos
+  // v17.7.0: filtro por año del dashboard (cotizaciones + leads). Default = año
+  // actual (dinámico: cambia solo cada año nuevo). 'todos' para histórico.
+  const [filtroAño, setFiltroAño] = useState(String(ANIO_ACTUAL))
   const [alertasConfig, setAlertasConfig] = useState(null)  // v12.5.9
   const isMobile = useIsMobile()
 
@@ -89,11 +92,14 @@ export default function Dashboard({ usuario, onNavigate }) {
         skipFinanciero ? Promise.resolve([]) : getCuentasPorPagar(),  // v12.5.4
       ])
       const actividades = proyectos.flatMap(p => (p.actividades || []).map(a => ({ ...a, proyecto: { id: p.id, codigo: p.codigo, nombre: p.nombre } })))
-      setData({ proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, actividades, gastos, cxp })
+      // v17.7.0: filtro por año (cotizaciones por fecha_emision, leads por created_at)
+      const cotizAño = filtroAño === 'todos' ? cotizaciones : cotizaciones.filter(c => c.fecha_emision?.startsWith(filtroAño))
+      const leadsAño = filtroAño === 'todos' ? leads : leads.filter(l => (l.created_at || '').startsWith(filtroAño))
+      setData({ proyectos, cotizaciones: cotizAño, leads: leadsAño, hitos, facturas, compras, tickets, clientes, usuarios, actividades, gastos, cxp })
       setLoading(false)
     }
     cargar()
-  }, [refreshTick, usuario?.rol])
+  }, [refreshTick, usuario?.rol, filtroAño])
 
   // v12.5.9: cargar config de alertas del usuario actual
   useEffect(() => {
@@ -143,13 +149,25 @@ export default function Dashboard({ usuario, onNavigate }) {
   return (
     <div>
       {/* HEADER */}
-      <div style={{ marginBottom:20 }}>
-        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>
-          Hola, {usuario?.nombre?.split(' ')[0] || 'Malio'}
-        </h1>
-        <p style={{ color:COLORS.slate500, fontSize:13, marginTop:4 }}>
-          Resumen · {new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' })}
-        </p>
+      <div style={{ marginBottom:20, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight:400, color:COLORS.navy, margin:0, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)' }}>
+            Hola, {usuario?.nombre?.split(' ')[0] || 'Malio'}
+          </h1>
+          <p style={{ color:COLORS.slate500, fontSize:13, marginTop:4 }}>
+            Resumen · {new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' })}
+          </p>
+        </div>
+        {/* v17.7.0: filtro por año (cotizaciones + leads). Default = año actual. */}
+        {usuario?.rol !== 'equipo_proyectos' && (
+          <select value={filtroAño} onChange={e => setFiltroAño(e.target.value)} title="Año de cotizaciones y leads" style={{
+            padding:'8px 12px', border:`1px solid ${COLORS.slate200}`, borderRadius:8,
+            fontSize:13, background:'white', cursor:'pointer', color:COLORS.navy, fontWeight:600,
+          }}>
+            <option value="todos">Todos los años</option>
+            {aniosDisponibles().map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Selector de vistas */}

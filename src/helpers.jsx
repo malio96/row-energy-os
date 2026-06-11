@@ -374,6 +374,17 @@ export const inputStyle = {
 
 export const selectStyle = { ...inputStyle, cursor:'pointer' }
 
+// v17.7.0 — Filtro por año dinámico (se actualiza solo cada año nuevo).
+// ANIO_ACTUAL se evalúa al cargar la app; aniosDisponibles() lista desde 2024
+// hasta el año actual (descendente) para los dropdowns de Cotizaciones/Leads/Dashboard.
+export const ANIO_ACTUAL = new Date().getFullYear()
+export function aniosDisponibles(desde = 2024) {
+  const fin = Math.max(desde, ANIO_ACTUAL)
+  const out = []
+  for (let y = fin; y >= desde; y--) out.push(y)
+  return out
+}
+
 export const labelStyle = {
   fontSize:10, fontWeight:600, color:COLORS.slate500,
   textTransform:'uppercase', letterSpacing:'0.06em',
