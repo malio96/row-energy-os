@@ -9,11 +9,12 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   getOportunidades, cambiarFaseOportunidad, crearLead, actualizarLead, eliminarLead,
-  getUsuarios, crearCotizacion, actualizarCotizacion,
+  getUsuarios, crearCotizacion, actualizarCotizacion, getCotizacion,
 } from './supabase'
 import {
   COLORS, FASES_VENTA, faseDeEtapa, fmtMoney, Avatar, Icon,
   inputStyle, selectStyle, labelStyle, aniosDisponibles, ANIO_ACTUAL,
+  SortControl, aplicarSort, loadPref, savePref,
 } from './helpers'
 import { toast, confirmDialog } from './Dialogs'
 import { CotizacionDetalle } from './Cotizaciones'
@@ -37,6 +38,8 @@ export default function Ventas({ usuario }) {
   const [busqueda, setBusqueda] = useState('')
   const [filtroAño, setFiltroAño] = useState(String(ANIO_ACTUAL))
   const [filtroOwner, setFiltroOwner] = useState('todos')
+  const [sort, setSort] = useState(() => loadPref('sort.ventas', { field:'fecha', dir:'desc' }))
+  useEffect(() => { savePref('sort.ventas', sort) }, [sort])
   const [dragId, setDragId] = useState(null)
   const [sel, setSel] = useState(null)             // oportunidad abierta (panel)
   const [cotFull, setCotFull] = useState(null)     // id de cotización en vista completa
@@ -81,6 +84,14 @@ export default function Ventas({ usuario }) {
     return r
   }, [opps, filtroAño, filtroOwner, busqueda])
 
+  // Orden (default: más nuevas primero). Aplica a Kanban (dentro de cada columna) y a la Tabla.
+  const ordenadas = useMemo(() => aplicarSort(filtradas, sort, {
+    fecha:   o => o.created_at || '',
+    empresa: o => (o.razon_social || '').toLowerCase(),
+    monto:   o => montoOpp(o),
+    fase:    o => faseDeEtapa(o.etapa),
+  }), [filtradas, sort])
+
   const pipelinePonderado = filtradas
     .filter(o => !['Ganado','Perdido'].includes(faseDeEtapa(o.etapa)))
     .reduce((s,o) => s + montoOpp(o) * Number(o.probabilidad || 0) / 100, 0)
@@ -123,6 +134,12 @@ export default function Ventas({ usuario }) {
           </p>
         </div>
         <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          <SortControl value={sort} onChange={setSort} fields={[
+            { key:'fecha',   label:'Más reciente' },
+            { key:'empresa', label:'Empresa' },
+            { key:'monto',   label:'Monto' },
+            { key:'fase',    label:'Fase' },
+          ]}/>
           <div style={{ display:'flex', background:COLORS.slate50, borderRadius:8, padding:3 }}>
             {['kanban','tabla'].map(v => (
               <button key={v} onClick={() => setVista(v)} style={{
@@ -156,7 +173,7 @@ export default function Ventas({ usuario }) {
       {!loading && vista === 'kanban' && (
         <div style={{ display:'grid', gridTemplateColumns:`repeat(${FASES_VENTA.length}, minmax(220px, 1fr))`, gap:10, overflowX:'auto', paddingBottom:10 }}>
           {FASES_VENTA.map(fase => {
-            const enFase = filtradas.filter(o => faseDeEtapa(o.etapa) === fase.key)
+            const enFase = ordenadas.filter(o => faseDeEtapa(o.etapa) === fase.key)
             const total = enFase.reduce((s,o) => s + montoOpp(o), 0)
             return (
               <div key={fase.key} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragId) { const o = opps.find(x => x.id === dragId); if (o) moverFase(o, fase.key); setDragId(null) } }} style={{ minWidth:220 }}>
@@ -193,8 +210,8 @@ export default function Ventas({ usuario }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 150px 130px 120px 140px', padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em' }}>
             <span>Empresa</span><span>Fase</span><span>Monto</span><span>Cotización</span><span>Responsable</span>
           </div>
-          {filtradas.length === 0 && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin oportunidades</div>}
-          {filtradas.map(o => {
+          {ordenadas.length === 0 && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin oportunidades</div>}
+          {ordenadas.map(o => {
             const fase = FASES_VENTA.find(f => f.key === faseDeEtapa(o.etapa))
             return (
               <div key={o.id} onClick={() => setSel(o)} style={{ display:'grid', gridTemplateColumns:'1fr 150px 130px 120px 140px', padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13, cursor:'pointer' }}
@@ -226,6 +243,12 @@ function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }
   const [openAct, setOpenAct] = useState(false)
   const [openMas, setOpenMas] = useState(false)
   const cot = opp.cotizacion
+  // v18.0.0: cargar partidas para la vista previa (ver qué se cotizó sin abrir la cotización completa)
+  const [items, setItems] = useState(null)
+  useEffect(() => {
+    if (cot?.id) getCotizacion(cot.id).then(c => setItems(c.items || [])).catch(() => setItems([]))
+    else setItems(null)
+  }, [cot?.id])
 
   const guardar = async () => {
     setGuardando(true)
@@ -306,6 +329,23 @@ function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }
                   <span style={{ color:COLORS.slate500 }}>{cot.codigo}</span>
                   <span style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(cot.total)}</span>
                 </div>
+                {/* Vista previa de partidas (qué se cotizó) */}
+                {items === null ? (
+                  <div style={{ fontSize:11, color:COLORS.slate400, marginBottom:8 }}>Cargando partidas...</div>
+                ) : items.length === 0 ? (
+                  <div style={{ fontSize:11, color:COLORS.slate400, fontStyle:'italic', marginBottom:8 }}>Cotización importada — sin desglose de partidas.</div>
+                ) : (
+                  <div style={{ marginBottom:10, border:`1px solid ${COLORS.slate100}`, borderRadius:8, overflow:'hidden' }}>
+                    {items.map((it, i) => (
+                      <div key={it.id || i} style={{ display:'flex', justifyContent:'space-between', gap:8, padding:'7px 10px', fontSize:12, borderBottom: i < items.length-1 ? `1px solid ${COLORS.slate100}` : 'none' }}>
+                        <span style={{ color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {it.cantidad > 1 ? `${it.cantidad}× ` : ''}{it.servicio || it.descripcion || 'Servicio'}
+                        </span>
+                        <span style={{ fontFamily:'var(--font-mono)', color:COLORS.slate600, whiteSpace:'nowrap' }}>{fmtMoney(it.total ?? it.precio_unitario ?? 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display:'flex', gap:8 }}>
                   <button onClick={() => onAbrirCotizacion(cot.id)} style={{ flex:1, padding:'9px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer' }}>Abrir cotización completa</button>
                   {cot.estado !== 'Aprobada' && <button onClick={aprobar} disabled={guardando} style={{ padding:'9px 14px', background:COLORS.teal, color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer' }}>Aprobar</button>}
