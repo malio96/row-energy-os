@@ -4,6 +4,32 @@
 > Pensado para ejecutar en una próxima sesión. Cada ítem trae **prioridad**, **esfuerzo** (S<2h / M medio día / L 1-3 días) y **riesgo de romper algo**.
 > Orden sugerido de ejecución: P0 → P1 → P2 → P3 → P4.
 
+---
+
+## ✅ ESTADO (actualizado 10-jun, v17.9.0 — ya ejecutado en esta sesión)
+
+**HECHO:**
+- ✅ **P0.2** search_path fijo en `cotizacion_aprobar_workflow` (migración v17.8.0)
+- ✅ **P1.1** políticas `leads`/`cotizaciones` `{public}`→`authenticated`
+- ✅ **P1.2** guardas de autorización en `duplicar_proyecto`/`duplicar_actividad` (rol gestión/membresía)
+- ✅ **P1.5** edge fn: `ALERT_EMAIL`/`ALERT_FROM_EMAIL` vía secret (desplegada)
+- ✅ **P2.1** 6 índices FK (migración v17.9.0)
+- ✅ **P4.1** `.gitignore` ignora backups + basura templates
+
+**PENDIENTE MANUAL (solo Malio, dashboards):**
+- ⏳ **P0.1** rotar credenciales (DB password + JWT secret + Vercel env) — **lo más urgente**
+- ⏳ **P0.3** HIBP (requiere upgrade Pro)
+- ⏳ **P2.4** estrategia de conexión Auth (dashboard)
+
+**DIFERIDO POR RIESGO/CRITERIO (no se rusheó autónomamente):**
+- ⏭️ **P1.2 helpers RLS** — NO revocar EXECUTE en `app_*`: las usan las políticas RLS, revocar rompería toda query. Aceptable como está (solo devuelven datos del propio caller).
+- ⏭️ **P1.4** IconAlerta `dangerouslySetInnerHTML` — seguro hoy (SVG estático). Conversión de 10 iconos = riesgo de regresión visual silenciosa. Hacer con verificación en navegador.
+- ⏭️ **P2.2** drop de índices sin uso — bajo valor, algún riesgo; los de `leads` son nuevos. No tocar aún.
+- ⏭️ **P2.3** mover `pg_net` de `public` — el webhook `alerta_accesos_sensibles` lo usa; mover puede romperlo. Hacer con prueba del webhook.
+- ⏭️ **P3.3** dedup `btnPrimary` — los locales de Proyectos son variante densa intencional; deduplicar cambia ~16 botones. No vale.
+- ⏭️ **P3.1/3.4/3.5/3.6/3.7/3.8/3.9** refactors grandes (splits de archivos, date utils, Sentry, select*, Gantt) — esfuerzo L, alto riesgo de regresión. Hacer incremental, un commit por pieza, con verificación.
+- ℹ️ **P4.2** el import `Fragment` SÍ se usa (4 veces) — era falso positivo, no tocar.
+
 ## ⚠️ Antes de empezar
 ```bash
 git fetch origin && git log --oneline HEAD..origin/main   # sync con remote
