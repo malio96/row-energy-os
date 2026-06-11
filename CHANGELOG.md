@@ -4,6 +4,10 @@ Registro detallado de cada versión entregada. Para contexto de sesión activa v
 
 ---
 
+## v18.x (jun 2026) — Rediseño "mejor CRM + proyectos, simple"
+
+- **v18.0.0** (11 jun) — **Módulo "Ventas" unificado (Leads + Cotizaciones)**. Reemplaza ambos módulos por uno solo: una **oportunidad** = lead con su cotización adjunta (vínculo 1:1 existente). Pipeline de **5 fases** (Nuevo → Cotización enviada → Negociación → Ganado → Perdido) con Kanban + tabla, filtros año (default actual)/búsqueda/responsable. Detalle con **progressive disclosure** (cabecera + secciones colapsables: cotización, actividad, más detalles). **Alta rápida** (≤3 campos). "Generar cotización" y aprobación reusan `CotizacionDetalle` (exportada) — partidas, PDF y workflow intactos. Sidebar: "Leads" y "Cotizaciones" → **"Ventas"**; `/leads` y `/cotizaciones` redirigen a `/ventas` preservando deep-links (`?lead=`, `?cotizacion=`). **Sin cambios de esquema** (reusa el sync 1:1 de v17.6.0). Módulos viejos quedan en el código (sin rutear) para rollback fácil. Spec/plan en `docs/superpowers/`. **Pendiente: QA manual en navegador** (clic-through del pipeline, generar/aprobar cotización, deep-links). Primer paso del rediseño; siguen: simplificación UX de Proyectos, captura sin fricción, PM serio-pero-simple.
+
 ## v17.x (may–jun 2026)
 
 - **v17.9.0** (10 jun) — **índices FK faltantes** (advisor performance): 6 índices en `cierre_checklist`, `compras`, `contratos`, `cotizaciones.workflow_aprobado_por`, `postventa_tickets`, `tareas_post_cierre.completada_por`.

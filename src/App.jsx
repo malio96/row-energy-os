@@ -6,8 +6,6 @@ import { puede } from './permisos'
 import Turnstile, { TURNSTILE_ENABLED } from './Turnstile'  // v16.6.0: captcha login
 import Sidebar from './Sidebar'
 import Proyectos from './Proyectos'
-import Cotizaciones from './Cotizaciones'
-import Leads from './Leads'
 import Ventas from './Ventas'
 import Cobranza from './Cobranza'
 import Facturacion from './Facturacion'
@@ -30,8 +28,9 @@ import { DialogHost } from './Dialogs'  // v17.4.0: toast + confirm propios (ree
 const RUTAS_POR_SECCION = {
   dashboard: '/',
   proyectos: '/proyectos',
-  cotizaciones: '/cotizaciones',
-  leads: '/leads',
+  ventas: '/ventas',
+  cotizaciones: '/ventas',  // v18.0.0: unificado en Ventas
+  leads: '/ventas',         // v18.0.0: unificado en Ventas
   cobranza: '/cobranza',
   facturacion: '/facturacion',
   compras: '/compras',
@@ -268,6 +267,12 @@ function RutaProtegida({ usuario, modulo, children }) {
   return children
 }
 
+// v18.0.0: /leads y /cotizaciones → /ventas, preservando query (?lead=, ?cotizacion=)
+function RedirectVentas() {
+  const location = useLocation()
+  return <Navigate to={`/ventas${location.search}`} replace/>
+}
+
 function DashboardWrapper({ usuario }) {
   const navigate = useNavigate()
   const goTo = (seccion) => { if (RUTAS_POR_SECCION[seccion]) navigate(RUTAS_POR_SECCION[seccion]) }
@@ -473,16 +478,9 @@ function MainApp() {
               <Proyectos usuario={usuario}/>
             </RutaProtegida>
           }/>
-          <Route path="/cotizaciones" element={
-            <RutaProtegida usuario={usuario} modulo="cotizaciones">
-              <Cotizaciones usuario={usuario}/>
-            </RutaProtegida>
-          }/>
-          <Route path="/leads" element={
-            <RutaProtegida usuario={usuario} modulo="leads">
-              <Leads usuario={usuario}/>
-            </RutaProtegida>
-          }/>
+          {/* v18.0.0: Leads y Cotizaciones se unificaron en Ventas. Redirigen preservando deep-links. */}
+          <Route path="/cotizaciones" element={<RedirectVentas/>}/>
+          <Route path="/leads" element={<RedirectVentas/>}/>
           <Route path="/ventas" element={
             <RutaProtegida usuario={usuario} modulo="ventas">
               <Ventas usuario={usuario}/>

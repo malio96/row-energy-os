@@ -31,9 +31,6 @@ const modulos = [
     { id:'proyectos', label:'Proyectos', path:'/proyectos', mobileNav:true,
       icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6"/></svg>
     },
-    { id:'cotizaciones', label:'Cotizaciones', path:'/cotizaciones', mobileNav:true,
-      icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 10h8M8 14h8M8 18h5"/></svg>
-    },
     { id:'contratos', label:'Contratos', path:'/contratos',
       icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
     },
@@ -41,9 +38,9 @@ const modulos = [
       icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M2 22h20M8 22V11l4-3 4 3v11"/><path d="M5 22V14M19 22V14"/></svg>
     },
   ]},
-  { seccion: 'CRM', items: [
-    { id:'leads', label:'Leads / CRM', path:'/leads', mobileNav:true,
-      icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+  { seccion: 'COMERCIAL', items: [
+    { id:'ventas', label:'Ventas', path:'/ventas', mobileNav:true,
+      icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
     },
   ]},
   { seccion: 'FINANZAS', items: [
