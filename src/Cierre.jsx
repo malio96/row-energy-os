@@ -60,27 +60,44 @@ export default function Cierre({ usuario }) {
               { key:'estado', label:'Estado' },
             ]}/>
           </div>
-          <div style={{ display:'grid', gap:10 }}>
-            {itemsOrdenados.map(p => <ProyectoCard key={p.id} p={p} onClick={() => setSelId(p.id)}/>)}
-          </div>
+          <TablaCierre items={itemsOrdenados} onSelect={setSelId} isMobile={isMobile}/>
         </>
       )}
     </div>
   )
 }
 
-function ProyectoCard({ p, onClick }) {
+const ESTADO_MAPA = { 'Terminado':{bg:'#E1F5EE', color:'#0F6E56'}, 'En cierre':{bg:'#FEF3C7', color:'#D97706'} }
+
+function TablaCierre({ items, onSelect, isMobile }) {
+  const cols = isMobile ? 'minmax(0,1fr) 90px' : 'minmax(0,1fr) 100px 120px 100px 24px'
   return (
-    <div onClick={onClick} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${p.estado === 'Terminado' ? COLORS.teal : COLORS.amber}`, borderRadius:10, padding:14, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
-      <div>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-          <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{p.codigo}</span>
-          <Badge texto={p.estado} mapa={{ 'Terminado':{bg:'#E1F5EE', color:'#0F6E56'}, 'En cierre':{bg:'#FEF3C7', color:'#D97706'} }}/>
-        </div>
-        <div style={{ fontSize:14, fontWeight:500, color:COLORS.ink }}>{p.nombre}</div>
-        <div style={{ fontSize:11, color:COLORS.slate500 }}>{p.cliente?.razon_social} · {fmtMoney(p.monto_contrato, true)}</div>
+    <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+      <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+        <span>Proyecto</span>
+        <span>Estado</span>
+        {!isMobile && <span style={{ textAlign:'right' }}>Monto</span>}
+        {!isMobile && <span>Cierre</span>}
+        {!isMobile && <span/>}
       </div>
-      <div style={{ color:COLORS.slate400 }}>{Icon('Back')}</div>
+      {items.map(p => (
+        <div key={p.id} onClick={() => onSelect(p.id)}
+          onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50}
+          onMouseLeave={e => e.currentTarget.style.background = 'white'}
+          style={{ display:'grid', gridTemplateColumns:cols, padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13, cursor:'pointer', gap:8 }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontWeight:500, color:COLORS.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.nombre}</div>
+            <div style={{ fontSize:11, color:COLORS.slate500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              <span style={{ fontFamily:'var(--font-mono)', fontWeight:600 }}>{p.codigo}</span>
+              {p.cliente?.razon_social ? ` · ${p.cliente.razon_social}` : ''}
+            </div>
+          </div>
+          <div><Badge texto={p.estado} mapa={ESTADO_MAPA}/></div>
+          {!isMobile && <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:COLORS.ink, textAlign:'right' }}>{fmtMoney(p.monto_contrato, true)}</div>}
+          {!isMobile && <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{p.cierre || '—'}</div>}
+          {!isMobile && <div style={{ color:COLORS.slate400, display:'flex', justifyContent:'flex-end' }}>{Icon('Back')}</div>}
+        </div>
+      ))}
     </div>
   )
 }

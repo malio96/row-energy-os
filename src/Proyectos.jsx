@@ -1005,8 +1005,9 @@ function PanelProyecto({ proyecto, clientes, usuarios, usuarioActual, onClose, o
 }
 
 function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onRecargar, onDesglosar, onAbrirInfo, onInlineUpdate, onNuevaActividad, onMenuContextual, onQuitarDep, onUndoPush }) {
-  // equipo_proyectos solo puede editar sus propias actividades
-  const puedeEditarAct = (act) => !usuario || usuario.rol !== 'equipo_proyectos' || act.responsable_id === usuario.id
+  // v18.4.0: cualquiera del área de proyectos mueve todas las actividades
+  // (antes equipo_proyectos solo las propias — causaba fricción; RLS alineado en BD)
+  const puedeEditarAct = () => true
   const [zoom, setZoom] = useState('dia')
   const DAY_WIDTH = zoom === 'dia' ? 32 : (zoom === 'semana' ? 18 : 6)
   const ROW_HEIGHT = 42

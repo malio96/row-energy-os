@@ -292,68 +292,85 @@ function VistaHitos({ enriquecidos, filtro, setFiltro, busqueda, setBusqueda, ca
       {/* Lista de hitos */}
       {itemsOrdenados.length === 0 && <EmptyState titulo="Sin hitos" descripcion="No hay hitos con esos filtros."/>}
       {itemsOrdenados.length > 0 && (
-        <div style={{ display:'grid', gap:8 }}>
-          {itemsOrdenados.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile} puedeEditar={puedeEditar}/>)}
-        </div>
+        <TablaHitos hitos={itemsOrdenados} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile} puedeEditar={puedeEditar}/>
       )}
     </>
   )
 }
 
-function HitoRow({ hito, onCambiar, onClick, isMobile, puedeEditar = true }) {
+function TablaHitos({ hitos, onCambiar, onClick, isMobile, puedeEditar = true }) {
+  const cols = isMobile ? 'minmax(0,1fr) 110px' : 'minmax(0,1fr) 110px 110px 100px 130px'
+  return (
+    <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+      <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+        <span>Hito</span>
+        {!isMobile && <span style={{ textAlign:'right' }}>Vencimiento</span>}
+        <span style={{ textAlign:'right' }}>Monto</span>
+        {!isMobile && <span>Estado</span>}
+        {!isMobile && <span/>}
+      </div>
+      {hitos.map(h => <HitoRow key={h.id} hito={h} cols={cols} onCambiar={onCambiar} onClick={onClick} isMobile={isMobile} puedeEditar={puedeEditar}/>)}
+    </div>
+  )
+}
+
+function HitoRow({ hito, cols, onCambiar, onClick, isMobile, puedeEditar = true }) {
   const proyNombre = hito.proyecto?.nombre || 'Sin proyecto'
   const clienteNombre = hito.proyecto?.cliente?.razon_social || ''
-  const color = hito.esVencido ? COLORS.red : (ESTADOS_HITO[hito.estado]?.color || COLORS.slate500)
+  const sub = [hito.proyecto?.codigo, clienteNombre, proyNombre].filter(Boolean).join(' · ')
+
+  const fechaCell = (
+    <>
+      <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>
+        {hito.fecha_esperada ? fmtDate(hito.fecha_esperada) : '—'}
+      </div>
+      {hito.esVencido && <div style={{ fontSize:10, color:COLORS.red, fontWeight:700, marginTop:2 }}>{hito.diasVencido}d vencido</div>}
+      {!hito.esVencido && hito.diasVence !== null && hito.diasVence >= 0 && hito.estado !== 'Cobrado' && (
+        <div style={{ fontSize:10, color: hito.diasVence <= 7 ? COLORS.amber : COLORS.slate500, fontWeight:600, marginTop:2 }}>
+          {hito.diasVence === 0 ? 'hoy' : `en ${hito.diasVence}d`}
+        </div>
+      )}
+    </>
+  )
+
+  const selectEstado = (hito.estado !== 'Cobrado' && hito.estado !== 'Cancelado') ? (
+    <select
+      value={hito.estado}
+      onChange={e => onCambiar(hito.id, e.target.value)}
+      onClick={e => e.stopPropagation()}
+      disabled={!puedeEditar}
+      style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor: puedeEditar ? 'pointer' : 'not-allowed', fontFamily:'inherit', opacity: puedeEditar ? 1 : 0.55, maxWidth:'100%' }}
+    >
+      {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
+    </select>
+  ) : null
 
   return (
     <div
       onClick={onClick ? () => onClick(hito) : undefined}
       title={onClick ? 'Click para ver detalle' : ''}
-      style={{
-        background:'white', border:`1px solid ${COLORS.slate100}`,
-        borderLeft:`3px solid ${color}`, borderRadius:10, padding:14,
-        display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
-        cursor: onClick ? 'pointer' : 'default',
-        transition:'background 0.12s',
-      }}
       onMouseEnter={e => { if (onClick) e.currentTarget.style.background = COLORS.slate50 }}
       onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+      style={{
+        display:'grid', gridTemplateColumns:cols, padding:'12px 16px',
+        borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13,
+        cursor: onClick ? 'pointer' : 'default', gap:8, background:'white', transition:'background 0.12s'
+      }}
     >
-      <div style={{ flex:1, minWidth:200 }}>
-        <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:2 }}>
-          {hito.proyecto?.codigo || ''} · {clienteNombre}
+      <div style={{ minWidth:0 }}>
+        <div style={{ fontSize:13, color:COLORS.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{hito.nombre}</div>
+        <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
+        {isMobile && <div style={{ marginTop:4 }}>{fechaCell}</div>}
+      </div>
+      {!isMobile && <div style={{ textAlign:'right' }}>{fechaCell}</div>}
+      <div style={{ textAlign:'right' }}>
+        <div style={{ fontSize:13, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:700 }}>
+          {fmtMoney(Number(hito.monto || 0), true)}
         </div>
-        <div style={{ fontSize:13, color:COLORS.ink, fontWeight:500 }}>{hito.nombre}</div>
-        <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2 }}>{proyNombre}</div>
+        {isMobile && selectEstado && <div style={{ marginTop:6 }}>{selectEstado}</div>}
       </div>
-      <div style={{ minWidth:100, textAlign:'right' }}>
-        <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>
-          {hito.fecha_esperada ? fmtDate(hito.fecha_esperada) : '—'}
-        </div>
-        {hito.esVencido && <div style={{ fontSize:10, color:COLORS.red, fontWeight:700, marginTop:2 }}>{hito.diasVencido}d vencido</div>}
-        {!hito.esVencido && hito.diasVence !== null && hito.diasVence >= 0 && hito.estado !== 'Cobrado' && (
-          <div style={{ fontSize:10, color: hito.diasVence <= 7 ? COLORS.amber : COLORS.slate500, fontWeight:600, marginTop:2 }}>
-            {hito.diasVence === 0 ? 'hoy' : `en ${hito.diasVence}d`}
-          </div>
-        )}
-      </div>
-      <div style={{ fontSize:14, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:700, minWidth:100, textAlign:'right' }}>
-        {fmtMoney(Number(hito.monto || 0), true)}
-      </div>
-      {!isMobile ? (
-        <Badge texto={hito.estado} mapa={ESTADOS_HITO}/>
-      ) : null}
-      {hito.estado !== 'Cobrado' && hito.estado !== 'Cancelado' && (
-        <select
-          value={hito.estado}
-          onChange={e => onCambiar(hito.id, e.target.value)}
-          onClick={e => e.stopPropagation()}
-          disabled={!puedeEditar}
-          style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, background:'white', cursor: puedeEditar ? 'pointer' : 'not-allowed', fontFamily:'inherit', opacity: puedeEditar ? 1 : 0.55 }}
-        >
-          {Object.keys(ESTADOS_HITO).map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
-      )}
+      {!isMobile && <div><Badge texto={hito.estado} mapa={ESTADOS_HITO}/></div>}
+      {!isMobile && <div style={{ textAlign:'right' }}>{selectEstado || <span style={{ fontSize:11, color:COLORS.slate400 }}>—</span>}</div>}
     </div>
   )
 }
@@ -404,18 +421,14 @@ function VistaPorCliente({ enriquecidos, onSelectCliente, isMobile }) {
             <span style={{ fontSize:12, fontWeight:700, color:COLORS.navy, textTransform:'uppercase', letterSpacing:'0.06em' }}>Cuentas con seguimiento</span>
             <span style={{ fontSize:10, padding:'2px 8px', background:COLORS.navy, color:'white', borderRadius:10, fontWeight:600 }}>{watchlist.length}</span>
           </div>
-          <div style={{ display:'grid', gap:8 }}>
-            {watchlist.map(c => <ClienteRow key={c.id} cliente={c} onClick={() => onSelectCliente(c)} isMobile={isMobile} destacado/>)}
-          </div>
+          <TablaClientes clientes={watchlist} onSelectCliente={onSelectCliente} isMobile={isMobile} destacado/>
         </div>
       )}
 
       {resto.length > 0 && (
         <div>
           <div style={{ fontSize:12, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Otros clientes ({resto.length})</div>
-          <div style={{ display:'grid', gap:8 }}>
-            {resto.map(c => <ClienteRow key={c.id} cliente={c} onClick={() => onSelectCliente(c)} isMobile={isMobile}/>)}
-          </div>
+          <TablaClientes clientes={resto} onSelectCliente={onSelectCliente} isMobile={isMobile}/>
         </div>
       )}
 
@@ -424,27 +437,42 @@ function VistaPorCliente({ enriquecidos, onSelectCliente, isMobile }) {
   )
 }
 
-function ClienteRow({ cliente, onClick, isMobile, destacado }) {
+function TablaClientes({ clientes, onSelectCliente, isMobile, destacado }) {
+  const cols = isMobile ? 'minmax(0,1fr) 90px 16px' : 'minmax(0,1fr) 110px 110px 110px 16px'
+  return (
+    <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+      <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+        <span>Cliente</span>
+        {!isMobile && <span style={{ textAlign:'right' }}>Por cobrar</span>}
+        {!isMobile && <span style={{ textAlign:'right' }}>Vencido</span>}
+        {!isMobile && <span style={{ textAlign:'right' }}>Cobrado</span>}
+        {isMobile && <span style={{ textAlign:'right' }}>Total</span>}
+        <span/>
+      </div>
+      {clientes.map(c => <ClienteRow key={c.id} cliente={c} cols={cols} onClick={() => onSelectCliente(c)} isMobile={isMobile} destacado={destacado}/>)}
+    </div>
+  )
+}
+
+function ClienteRow({ cliente, cols, onClick, isMobile, destacado }) {
   const tieneProblema = cliente.vencido > 0
   return (
-    <div onClick={onClick} style={{
-      background:'white',
-      border:`1px solid ${tieneProblema ? COLORS.red : COLORS.slate100}`,
-      borderLeft:`3px solid ${tieneProblema ? COLORS.red : destacado ? COLORS.navy : COLORS.slate300 || COLORS.slate400}`,
-      borderRadius:10, padding:14,
-      display:'flex', alignItems:'center', gap:12, cursor:'pointer',
-      transition:'all 0.15s', flexWrap:'wrap'
-    }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 3px 12px rgba(10,37,64,0.06)' }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
+    <div onClick={onClick}
+      onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate50 }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+      style={{
+        display:'grid', gridTemplateColumns:cols, padding:'12px 16px',
+        borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13,
+        cursor:'pointer', gap:8, background:'white', transition:'background 0.12s'
+      }}
     >
-      <div style={{ flex:1, minWidth:200 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
-          <span style={{ fontSize:14, color:COLORS.ink, fontWeight:600 }}>{cliente.nombre}</span>
-          {destacado && <span style={{ fontSize:9, padding:'2px 6px', background:COLORS.navy, color:'white', borderRadius:4, fontWeight:700 }}>WATCH</span>}
-          {tieneProblema && <span style={{ fontSize:9, padding:'2px 6px', background:COLORS.redLight, color:COLORS.red, borderRadius:4, fontWeight:700 }}>VENCIDO</span>}
+      <div style={{ minWidth:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+          <span style={{ fontSize:13, color:COLORS.ink, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cliente.nombre}</span>
+          {destacado && <span style={{ fontSize:9, padding:'2px 6px', background:COLORS.navy, color:'white', borderRadius:4, fontWeight:700, flexShrink:0 }}>WATCH</span>}
+          {tieneProblema && <span style={{ fontSize:9, padding:'2px 6px', background:COLORS.redLight, color:COLORS.red, borderRadius:4, fontWeight:700, flexShrink:0 }}>VENCIDO</span>}
         </div>
-        <div style={{ fontSize:11, color:COLORS.slate500 }}>
+        <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
           {cliente.hitos.length} hito(s)
           {cliente.proxVence !== null && (
             <> · próximo vence en <strong style={{ color: cliente.proxVence <= 7 ? COLORS.amber : COLORS.slate600 }}>{cliente.proxVence === 0 ? 'hoy' : `${cliente.proxVence}d`}</strong></>
@@ -453,30 +481,17 @@ function ClienteRow({ cliente, onClick, isMobile, destacado }) {
       </div>
       {!isMobile && (
         <>
-          <div style={{ textAlign:'right', minWidth:90 }}>
-            <div style={{ fontSize:10, color:COLORS.slate400, fontWeight:600, textTransform:'uppercase' }}>Por cobrar</div>
-            <div style={{ fontSize:13, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:700 }}>{fmtMoney(cliente.porCobrar, true)}</div>
-          </div>
-          {cliente.vencido > 0 && (
-            <div style={{ textAlign:'right', minWidth:90 }}>
-              <div style={{ fontSize:10, color:COLORS.red, fontWeight:600, textTransform:'uppercase' }}>Vencido</div>
-              <div style={{ fontSize:13, fontFamily:'var(--font-mono)', color:COLORS.red, fontWeight:700 }}>{fmtMoney(cliente.vencido, true)}</div>
-            </div>
-          )}
-          <div style={{ textAlign:'right', minWidth:90 }}>
-            <div style={{ fontSize:10, color:COLORS.teal, fontWeight:600, textTransform:'uppercase' }}>Cobrado</div>
-            <div style={{ fontSize:13, fontFamily:'var(--font-mono)', color:COLORS.teal, fontWeight:700 }}>{fmtMoney(cliente.cobrado, true)}</div>
-          </div>
+          <div style={{ textAlign:'right', fontSize:13, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:700 }}>{fmtMoney(cliente.porCobrar, true)}</div>
+          <div style={{ textAlign:'right', fontSize:13, fontFamily:'var(--font-mono)', color: tieneProblema ? COLORS.red : COLORS.slate400, fontWeight:700 }}>{tieneProblema ? fmtMoney(cliente.vencido, true) : '—'}</div>
+          <div style={{ textAlign:'right', fontSize:13, fontFamily:'var(--font-mono)', color:COLORS.teal, fontWeight:700 }}>{fmtMoney(cliente.cobrado, true)}</div>
         </>
       )}
       {isMobile && (
-        <div style={{ textAlign:'right', minWidth:80 }}>
-          <div style={{ fontSize:13, fontFamily:'var(--font-mono)', color:tieneProblema ? COLORS.red : COLORS.navy, fontWeight:700 }}>
-            {fmtMoney(cliente.porCobrar + cliente.vencido, true)}
-          </div>
+        <div style={{ textAlign:'right', fontSize:13, fontFamily:'var(--font-mono)', color: tieneProblema ? COLORS.red : COLORS.navy, fontWeight:700 }}>
+          {fmtMoney(cliente.porCobrar + cliente.vencido, true)}
         </div>
       )}
-      <span style={{ color:COLORS.slate400, fontSize:18 }}>›</span>
+      <span style={{ color:COLORS.slate400, fontSize:16, textAlign:'right' }}>›</span>
     </div>
   )
 }
@@ -511,9 +526,9 @@ function DetalleCliente({ cliente, enriquecidos, onVolver, cambiarEstado, onSele
       </div>
 
       {hitosCli.length === 0 && <EmptyState titulo="Sin hitos" descripcion="Este cliente no tiene hitos registrados."/>}
-      <div style={{ display:'grid', gap:8 }}>
-        {hitosCli.map(h => <HitoRow key={h.id} hito={h} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile} puedeEditar={puedeEditar}/>)}
-      </div>
+      {hitosCli.length > 0 && (
+        <TablaHitos hitos={hitosCli} onCambiar={cambiarEstado} onClick={onSelectHito} isMobile={isMobile} puedeEditar={puedeEditar}/>
+      )}
     </>
   )
 }

@@ -128,8 +128,8 @@ export default function Facturacion({ usuario }) {
 
       {!loading && facturas.length > 0 && (
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
-            <div>Folio</div><div>Proyecto</div><div>Cliente</div><div>Total</div><div>Emisión</div><div>Estado</div>
+          <div style={{ display:'grid', gridTemplateColumns:'90px minmax(0,1fr) 180px 120px 100px 150px', padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+            <span>Folio</span><span>Proyecto</span><span>Cliente</span><span>Total</span><span>Emisión</span><span>Estado</span>
           </div>
           {itemsOrdenados.map(f => (
             <div
@@ -138,21 +138,21 @@ export default function Facturacion({ usuario }) {
               onClick={() => setFacturaSel(f)}
               title="Click para ver detalle"
               style={{
-                display:'grid', gridTemplateColumns:'90px 1fr 220px 130px 120px 140px',
-                padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`,
-                alignItems:'center', fontSize:12,
-                background: highlightId === f.id ? COLORS.amberLight : 'transparent',
+                display:'grid', gridTemplateColumns:'90px minmax(0,1fr) 180px 120px 100px 150px',
+                padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`,
+                alignItems:'center', fontSize:13, gap:8,
+                background: highlightId === f.id ? COLORS.amberLight : 'white',
                 transition:'background 0.3s', cursor:'pointer',
               }}
               onMouseEnter={e => { if (highlightId !== f.id) e.currentTarget.style.background = COLORS.slate50 }}
-              onMouseLeave={e => { if (highlightId !== f.id) e.currentTarget.style.background = 'transparent' }}
+              onMouseLeave={e => { if (highlightId !== f.id) e.currentTarget.style.background = 'white' }}
             >
               <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{f.folio}</span>
-              <div>
-                <div style={{ fontWeight:500, color:COLORS.ink }}>{f.proyecto?.nombre || '—'}</div>
-                {f.uuid_sat && <div style={{ fontSize:10, color:COLORS.slate400, fontFamily:'var(--font-mono)' }}>UUID: {f.uuid_sat}</div>}
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.proyecto?.nombre || '—'}</div>
+                {f.uuid_sat && <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>UUID: {f.uuid_sat}</div>}
               </div>
-              <div style={{ color:COLORS.slate600 }}>{f.cliente?.razon_social || '—'}</div>
+              <div style={{ color:COLORS.slate600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.cliente?.razon_social || '—'}</div>
               <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(f.total)}</div>
               <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500 }}>{f.fecha_emision}</div>
               <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>

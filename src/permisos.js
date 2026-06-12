@@ -184,6 +184,8 @@ export function puedeEditarFinanciero(usuario) {
 }
 
 // ¿Puede gestionar operaciones de proyecto (estado, plantilla, fechas)?
+// v18.4.0: incluye equipo_proyectos — cualquiera del área de proyectos edita
+// proyectos y mueve actividades (decisión de dirección; RLS alineado en BD).
 export function puedeGestionarProyecto(usuario) {
-  return esRolEn(usuario, ['direccion', 'admin', 'director_proyectos'])
+  return esRolEn(usuario, ['direccion', 'admin', 'director_proyectos', 'equipo_proyectos'])
 }

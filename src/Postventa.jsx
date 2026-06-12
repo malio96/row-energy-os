@@ -98,32 +98,48 @@ export default function Postventa({ usuario }) {
       {loading && <LoadingState/>}
       {!loading && filtrados.length === 0 && <EmptyState titulo="Sin tickets"/>}
 
-      {!loading && filtrados.length > 0 && (
-        <div style={{ display:'grid', gap:8 }}>
-          {itemsOrdenados.map(t => (
-            <div key={t.id} style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${PRIORIDAD_COLOR[t.prioridad]?.color || COLORS.slate400}`, borderRadius:10, padding:14 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
-                <div style={{ flex:1, minWidth:200 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4, flexWrap:'wrap' }}>
-                    <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{t.codigo}</span>
-                    <Badge texto={t.prioridad} mapa={PRIORIDAD_COLOR} size={10}/>
-                    <Badge texto={t.estado} mapa={ESTADOS_TICKET} size={10}/>
-                    {t.tipo && <span style={{ fontSize:10, color:COLORS.slate500, textTransform:'capitalize' }}>· {t.tipo}</span>}
+      {!loading && filtrados.length > 0 && (() => {
+        const cols = isMobile ? 'minmax(0,1fr) 130px' : 'minmax(0,1fr) 110px 130px 90px 140px 90px'
+        return (
+          <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+            <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+              <span>Ticket</span>
+              {!isMobile && <span>Proyecto</span>}
+              {!isMobile && <span>Responsable</span>}
+              {!isMobile && <span>Prioridad</span>}
+              <span>Estado</span>
+              {!isMobile && <span>Creado</span>}
+            </div>
+            {itemsOrdenados.map(t => (
+              <div key={t.id}
+                onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50}
+                onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                style={{ display:'grid', gridTemplateColumns:cols, padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`, borderLeft:`3px solid ${PRIORIDAD_COLOR[t.prioridad]?.color || COLORS.slate400}`, alignItems:'center', fontSize:13, gap:8 }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                    <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600, flexShrink:0 }}>{t.codigo}</span>
+                    <span style={{ fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.titulo}</span>
+                    {isMobile && <Badge texto={t.prioridad} mapa={PRIORIDAD_COLOR} size={10}/>}
                   </div>
-                  <div style={{ fontSize:14, fontWeight:500, color:COLORS.ink, marginBottom:3 }}>{t.titulo}</div>
-                  {t.descripcion && <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6, lineHeight:1.4 }}>{t.descripcion}</div>}
-                  <div style={{ fontSize:10, color:COLORS.slate400 }}>
-                    {t.proyecto?.codigo || '—'} · {t.responsable?.nombre || 'Sin asignar'} · {relativeTime(t.created_at)}
+                  <div style={{ fontSize:11, color:COLORS.slate500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginTop:2 }}>
+                    {t.tipo && <span style={{ textTransform:'capitalize' }}>{t.tipo}</span>}
+                    {t.tipo && t.descripcion && ' · '}
+                    {t.descripcion}
+                    {isMobile && <>{(t.tipo || t.descripcion) && ' · '}{t.proyecto?.codigo || '—'} · {relativeTime(t.created_at)}</>}
                   </div>
                 </div>
-                <select value={t.estado} onChange={e => cambiarEstado(t.id, e.target.value)} style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, cursor:'pointer', background:'white', fontFamily:'inherit' }}>
+                {!isMobile && <span style={{ fontSize:12, fontFamily:'var(--font-mono)', color:COLORS.slate600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.proyecto?.codigo || '—'}</span>}
+                {!isMobile && <span style={{ fontSize:12, color:COLORS.slate600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.responsable?.nombre || 'Sin asignar'}</span>}
+                {!isMobile && <span><Badge texto={t.prioridad} mapa={PRIORIDAD_COLOR} size={10}/></span>}
+                <select value={t.estado} onChange={e => cambiarEstado(t.id, e.target.value)} style={{ padding:'6px 10px', border:`1px solid ${COLORS.slate200}`, borderRadius:6, fontSize:11, cursor:'pointer', background:'white', fontFamily:'inherit', minWidth:0 }}>
                   {Object.keys(ESTADOS_TICKET).map(e => <option key={e}>{e}</option>)}
                 </select>
+                {!isMobile && <span style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)', whiteSpace:'nowrap' }}>{relativeTime(t.created_at)}</span>}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      })()}
     </div>
   )
 }

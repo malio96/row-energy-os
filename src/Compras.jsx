@@ -119,8 +119,8 @@ export default function Compras({ usuario }) {
             ]}/>
           </div>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'100px 180px 1fr 140px 120px 130px 140px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
-            <div>Código</div><div>Proveedor</div><div>Descripción</div><div>Monto</div><div>Proyecto</div><div>Solicitud</div><div>Estado</div>
+          <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 120px 100px 110px 150px', padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+            <span>Proveedor</span><span>Monto</span><span>Proyecto</span><span>Solicitud</span><span>Estado</span>
           </div>
           {comprasOrdenadas.map(c => {
             // v15.8.4: dirección siempre puede modificar el estado; admin solo si Solicitada y <50k
@@ -136,20 +136,23 @@ export default function Compras({ usuario }) {
                 onClick={() => setCompraSel(c)}
                 title="Click para ver detalle"
                 style={{
-                  display:'grid', gridTemplateColumns:'100px 180px 1fr 140px 120px 130px 140px',
-                  padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`,
-                  alignItems:'center', fontSize:12,
-                  background: highlightId === c.id ? COLORS.amberLight : 'transparent',
+                  display:'grid', gridTemplateColumns:'minmax(0,1fr) 120px 100px 110px 150px',
+                  padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`,
+                  alignItems:'center', fontSize:13, gap:8,
+                  background: highlightId === c.id ? COLORS.amberLight : 'white',
                   transition:'background 0.3s', cursor:'pointer',
                 }}
                 onMouseEnter={e => { if (highlightId !== c.id) e.currentTarget.style.background = COLORS.slate50 }}
-                onMouseLeave={e => { if (highlightId !== c.id) e.currentTarget.style.background = 'transparent' }}
+                onMouseLeave={e => { if (highlightId !== c.id) e.currentTarget.style.background = 'white' }}
               >
-                <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
-                <div style={{ fontWeight:500, color:COLORS.ink }}>{c.proveedor}</div>
-                <div style={{ color:COLORS.slate600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.descripcion || '—'}</div>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.proveedor}</div>
+                  <div style={{ fontSize:11, color:COLORS.slate500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    <span style={{ fontFamily:'var(--font-mono)', fontWeight:600 }}>{c.codigo}</span>{c.descripcion ? ` · ${c.descripcion}` : ''}
+                  </div>
+                </div>
                 <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(c.monto)}</div>
-                <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.proyecto?.codigo || '—'}</div>
+                <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.proyecto?.codigo || '—'}</div>
                 <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_solicitud}</div>
                 <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>
                   {puedeAprobar ? (

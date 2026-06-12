@@ -101,46 +101,47 @@ export default function Contratos({ usuario }) {
       {loading && <LoadingState/>}
       {!loading && filtrados.length === 0 && <EmptyState titulo="Sin contratos" descripcion="Los contratos se crean cuando se firma un proyecto"/>}
 
-      {!loading && filtrados.length > 0 && (
+      {!loading && filtrados.length > 0 && (() => {
+        const cols = isMobile ? 'minmax(0,1fr) 110px' : 'minmax(0,1fr) 120px 100px 100px 110px'
+        return (
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
-          {!isMobile && (
-            <div style={{ display:'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 120px 110px', padding:'12px 20px', background:COLORS.slate50, borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:600, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.07em' }}>
-              <div>Código</div><div>Proyecto</div><div>Cliente</div><div>Monto</div><div>Firma</div><div>Vence</div><div>Estado</div>
-            </div>
-          )}
+          <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+            {isMobile
+              ? <><span>Contrato</span><span>Estado</span></>
+              : <><span>Contrato</span><span>Monto</span><span>Firma</span><span>Vence</span><span>Estado</span></>}
+          </div>
           {itemsOrdenados.map(c => (
-            <div key={c.id} style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns:'100px 1fr 200px 140px 120px 120px 110px', padding:'12px 20px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:12 }}>
-              {isMobile ? (
-                <>
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                    <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
-                    <Badge texto={c.estado} mapa={ESTADOS_CONTRATO} size={10}/>
-                  </div>
-                  <div style={{ fontSize:13, fontWeight:500, color:COLORS.ink }}>{c.proyecto?.nombre}</div>
-                  <div style={{ fontSize:11, color:COLORS.slate500, marginBottom:6 }}>{c.cliente?.razon_social}</div>
-                  <div style={{ display:'flex', justifyContent:'space-between' }}>
-                    <span style={{ fontSize:14, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)' }}>{fmtMoney(c.monto_total)}</span>
-                    {c.porVencer && <span style={{ fontSize:10, color:COLORS.amber, fontWeight:700 }}>Vence en {c.diasParaVencer}d</span>}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate500, fontWeight:600 }}>{c.codigo}</span>
-                  <div style={{ fontWeight:500, color:COLORS.ink }}>{c.proyecto?.nombre || '—'}</div>
-                  <div style={{ color:COLORS.slate600 }}>{c.cliente?.razon_social || '—'}</div>
-                  <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy }}>{fmtMoney(c.monto_total)}</div>
-                  <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_firma || '—'}</div>
-                  <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color: c.porVencer ? COLORS.amber : COLORS.slate500 }}>
-                    {c.fecha_fin || '—'}
-                    {c.porVencer && <div style={{ fontSize:9, fontWeight:700 }}>{c.diasParaVencer}d</div>}
-                  </div>
-                  <div><Badge texto={c.estado} mapa={ESTADOS_CONTRATO}/></div>
-                </>
-              )}
+            <div key={c.id}
+              onMouseEnter={e => e.currentTarget.style.background = COLORS.slate50}
+              onMouseLeave={e => e.currentTarget.style.background = 'white'}
+              style={{ display:'grid', gridTemplateColumns:cols, padding:'12px 16px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13, gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontWeight:500, color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.proyecto?.nombre || '—'}</div>
+                <div style={{ fontSize:11, color:COLORS.slate500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  <span style={{ fontFamily:'var(--font-mono)', fontWeight:600 }}>{c.codigo}</span>
+                  {(c.cliente?.razon_social) ? ` · ${c.cliente.razon_social}` : ''}
+                </div>
+                {isMobile && (
+                  <div style={{ fontSize:12, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-mono)', marginTop:2 }}>{fmtMoney(c.monto_total)}</div>
+                )}
+              </div>
+              {!isMobile && <>
+                <div style={{ fontFamily:'var(--font-mono)', fontWeight:600, color:COLORS.navy, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fmtMoney(c.monto_total)}</div>
+                <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{c.fecha_firma || '—'}</div>
+                <div style={{ fontSize:11, fontFamily:'var(--font-mono)', color: c.porVencer ? COLORS.amber : COLORS.slate500 }}>
+                  {c.fecha_fin || '—'}
+                  {c.porVencer && <div style={{ fontSize:9, fontWeight:700 }}>{c.diasParaVencer}d</div>}
+                </div>
+              </>}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', gap:2 }}>
+                <Badge texto={c.estado} mapa={ESTADOS_CONTRATO} size={isMobile ? 10 : undefined}/>
+                {isMobile && c.porVencer && <span style={{ fontSize:10, color:COLORS.amber, fontWeight:700 }}>Vence en {c.diasParaVencer}d</span>}
+              </div>
             </div>
           ))}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
