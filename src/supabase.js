@@ -911,11 +911,11 @@ export function validarSumaPesos(actividades, parentId = null) {
 }
 
 // ----- v12: MARCAR ACTIVIDAD COMO COBRABLE -----
-export async function marcarCobrable(actividadId, esCobrable, estadoCobro = null, monto = null) {
+// v18.7.0: sin monto — el dinero de cobro vive SOLO en hitos_cobranza (blindada).
+export async function marcarCobrable(actividadId, esCobrable, estadoCobro = null) {
   const cambios = { es_cobrable: esCobrable }
   if (esCobrable) {
     cambios.estado_cobro = estadoCobro || 'Pendiente'
-    if (monto !== null) cambios.monto_cobrable = monto
   } else {
     cambios.estado_cobro = 'NA'
   }

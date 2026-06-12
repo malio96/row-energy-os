@@ -24,9 +24,18 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
 
 ---
 
+## 🚫 REGLA DE SEGURIDAD INNEGOCIABLE — separación dinero / proyectos
+
+**`director_proyectos` y `equipo_proyectos` JAMÁS deben ver NADA de dinero.** Administración y Proyectos están totalmente separados por decisión de dirección. Esto ya se violó una vez (v18.0.0 le dio el módulo `ventas` a director_proyectos — revertido en v18.5.0) y NO debe repetirse.
+
+- **Prohibido** darles módulos: `ventas`, `cotizaciones`, `leads`, `contratos`, `cobranza`, `facturacion`, `compras`.
+- **Prohibido** incluirlos en políticas RLS de: cotizaciones, cotizacion_items, leads, hitos_cobranza, facturas, contratos, compras, cuentas_por_pagar, gastos_variables, proyectos_montos, precios_servicios.
+- **Prohibido** agregar columnas de montos a tablas que estos roles leen (proyectos, actividades, plantas...). Los montos viven en tablas blindadas: `proyectos_montos`, `hitos_cobranza`. (`proyectos.monto_contrato` y `actividades.monto_cobrable` se ELIMINARON en v18.6/18.7 — no recrearlas.)
+- **Tras CUALQUIER cambio de permisos/RLS/módulos**: correr `scripts/auditoria_lockdown_dinero.sql` — toda superficie debe dar 0 para ambos roles.
+
 ## 🎯 Versión actual en producción
 
-**v17.1.1** — render error states + sidebar active state respeta query string (último commit).
+**v18.x** — rediseño "mejor CRM + proyectos, simple": módulo **Ventas** unificado (leads+cotizaciones, pipeline 5 fases), formato tabla estándar en toda la app, edición plena de proyectos para equipo_proyectos, lockdown total de dinero (ver regla arriba), realtime en Ventas. Ver `CHANGELOG.md` para el detalle por versión.
 
 ### Estado actual BD (snapshot 17 may 2026, post-v16.9.0)
 
@@ -54,6 +63,8 @@ La versión visible está en `package.json` y se renderiza en el Sidebar como "O
 ---
 
 ## 🔐 Pendientes manuales de Malio
+
+**Limpieza de archivos basura** — ✅ RESUELTO (v17.9.0): `.gitignore` los ignora; quedan en disco por si se quieren borrar a mano.
 
 **Cloudflare Turnstile** (captcha login — en modo dormido, activar cuando se decida):
 1. Cloudflare → Turnstile → Add site `app.row.energy` → copiar Site Key + Secret Key

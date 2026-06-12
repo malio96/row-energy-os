@@ -767,28 +767,17 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
               </label>
             </div>
             {loc.es_cobrable && (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                <div>
-                  <label style={miniLabel}>Estado</label>
-                  <select
-                    value={loc.estado_cobro || 'Pendiente'}
-                    onChange={e => guardar({ estado_cobro: e.target.value })}
-                    style={selectStyle}
-                  >
-                    {Object.keys(ESTADOS_COBRO).filter(k => k !== 'NA').map(k => <option key={k} value={k}>{ESTADOS_COBRO[k].label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={miniLabel}>Monto</label>
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={loc.monto_cobrable || ''}
-                    onChange={e => setLoc(prev => ({ ...prev, monto_cobrable: e.target.value }))}
-                    onBlur={e => guardar({ monto_cobrable: e.target.value ? parseFloat(e.target.value) : null })}
-                    placeholder="0.00"
-                    style={inputStyle}
-                  />
-                </div>
+              <div>
+                {/* v18.7.0: el monto de cobro vive SOLO en hitos_cobranza (blindada).
+                    La columna actividades.monto_cobrable se eliminó (lockdown dinero). */}
+                <label style={miniLabel}>Estado</label>
+                <select
+                  value={loc.estado_cobro || 'Pendiente'}
+                  onChange={e => guardar({ estado_cobro: e.target.value })}
+                  style={selectStyle}
+                >
+                  {Object.keys(ESTADOS_COBRO).filter(k => k !== 'NA').map(k => <option key={k} value={k}>{ESTADOS_COBRO[k].label}</option>)}
+                </select>
               </div>
             )}
           </div>
