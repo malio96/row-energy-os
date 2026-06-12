@@ -77,7 +77,8 @@ export default function Dashboard({ usuario, onNavigate }) {
       // Skip fetches financieros/comerciales (cotizaciones, leads, hitos, facturas, compras,
       // tickets, clientes, gastos, cxp) — son irrelevantes para su vista y podrían leakear
       // datos que su rol no debería ver.
-      const skipFinanciero = usuario?.rol === 'equipo_proyectos'
+      // v18.5.0: director_proyectos tampoco ve dinero (decisión de dirección)
+      const skipFinanciero = ['equipo_proyectos', 'director_proyectos'].includes(usuario?.rol)
       const [proyectos, cotizaciones, leads, hitos, facturas, compras, tickets, clientes, usuarios, gastos, cxp] = await Promise.all([
         getProyectos(),
         skipFinanciero ? Promise.resolve([]) : getCotizaciones(),
@@ -460,6 +461,8 @@ function BannerAlertas({ alertas, onNavigate, onAlertaClick, navigate, isMobile 
 function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, cargaColaboradores, setVista, setColaboradorInicialId }) {
   const { proyectos, cotizaciones, leads, hitos, facturas, tickets, actividades, cxp } = data
   const routerNavigate = useNavigate()  // v16.9.4: para drill-down de alertas a /actividades?filtro=X
+  // v18.5.0: roles de proyectos NO ven nada de dinero (KPIs, pipeline, cobranza, cotizaciones)
+  const verDinero = !['director_proyectos', 'equipo_proyectos'].includes(usuario?.rol)
 
   // v16.9.3: usa helper centralizado para no divergir del filtro de /proyectos
   const proyectosActivos = proyectos.filter(p => esProyectoActivo(p.estado))
@@ -555,11 +558,12 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
   return (
     <>
       {/* v16.9.4 (rev): KPIs primero (pedido de Malio: proyectos activos arriba) */}
-      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:12, marginBottom:16 }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : `repeat(${verDinero ? 4 : 2}, 1fr)`, gap:12, marginBottom:16 }}>
         <KpiHero label="Proyectos activos" valor={proyectosActivos.length} sub={`de ${proyectos.length} totales`} color={COLORS.navy} onClick={() => onNavigate?.('proyectos')}/>
-        <KpiHero label="Pipeline ponderado" valor={fmtMoney(ponderado, true)} sub={`${leadsActivos.length} leads activos`} color={COLORS.teal} onClick={() => onNavigate?.('leads')}/>
-        <KpiHero label="Por cobrar" valor={fmtMoney(porCobrar, true)} sub={vencido > 0 ? `${fmtMoney(vencido, true)} vencido` : 'Al día'} color={vencido > 0 ? COLORS.red : COLORS.navy} onClick={() => routerNavigate(vencido > 0 ? '/cobranza?filtro=vencidos' : '/cobranza?filtro=por_cobrar')}/>
-        <KpiHero label="Cobrado este mes" valor={fmtMoney(cobradoMes, true)} sub="MXN" color={COLORS.gold || COLORS.teal} onClick={() => routerNavigate('/facturacion?filtro=cobradas_mes')}/>
+        {!verDinero && <KpiHero label="Cierres próximos (30d)" valor={proximosCierre.length} sub="proyectos" color={COLORS.amber} onClick={() => routerNavigate('/proyectos?filtro=cierre_proximo')}/>}
+        {verDinero && <KpiHero label="Pipeline ponderado" valor={fmtMoney(ponderado, true)} sub={`${leadsActivos.length} leads activos`} color={COLORS.teal} onClick={() => onNavigate?.('leads')}/>}
+        {verDinero && <KpiHero label="Por cobrar" valor={fmtMoney(porCobrar, true)} sub={vencido > 0 ? `${fmtMoney(vencido, true)} vencido` : 'Al día'} color={vencido > 0 ? COLORS.red : COLORS.navy} onClick={() => routerNavigate(vencido > 0 ? '/cobranza?filtro=vencidos' : '/cobranza?filtro=por_cobrar')}/>}
+        {verDinero && <KpiHero label="Cobrado este mes" valor={fmtMoney(cobradoMes, true)} sub="MXN" color={COLORS.gold || COLORS.teal} onClick={() => routerNavigate('/facturacion?filtro=cobradas_mes')}/>}
       </div>
 
       {/* v16.9.4: Alertas (incluyendo cuellos_botella) — todas como KPI cards uniformes.
@@ -576,7 +580,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
       {/* v16.1: Bandeja Post-Cierre — tareas pendientes del usuario */}
       <BandejaPostCierre usuario={usuario} onNavigate={onNavigate}/>
 
-      <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr', gap:16, marginBottom:20 }}>
+      {verDinero && <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
             <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.ink, margin:0 }}>Pipeline comercial</h3>
@@ -616,9 +620,9 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
             )
           })}
         </div>
-      </div>
+      </div>}
 
-      <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile || !verDinero ? '1fr' : '1fr 1fr', gap:16, marginBottom:20 }}>
         <Tarjeta titulo={`Proyectos con cierre próximo (${proximosCierre.length})`} onVerTodo={() => routerNavigate('/proyectos?filtro=cierre_proximo')}>
           {proximosCierre.length === 0 && <EmptyMini texto="Ningún proyecto cerca de cierre"/>}
           {proximosCierre.slice(0, 5).map(p => {
@@ -637,7 +641,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
           })}
         </Tarjeta>
 
-        <Tarjeta titulo={`Cotizaciones pendientes (${cotizacionesPipeline.length})`} onVerTodo={() => routerNavigate('/cotizaciones?filtro=pendientes')}>
+        {verDinero && <Tarjeta titulo={`Cotizaciones pendientes (${cotizacionesPipeline.length})`} onVerTodo={() => routerNavigate('/cotizaciones?filtro=pendientes')}>
           {cotizacionesPipeline.length === 0 && <EmptyMini texto="No hay cotizaciones pendientes"/>}
           {cotizacionesPipeline.slice(0, 5).map(c => (
             <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${COLORS.slate100}` }}>
@@ -648,14 +652,15 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
               <div style={{ fontSize:12, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:600 }}>{fmtMoney(c.monto_total || 0, true)}</div>
             </div>
           ))}
-        </Tarjeta>
+        </Tarjeta>}
       </div>
 
       <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:18 }}>
         <h3 style={{ fontSize:13, fontWeight:600, color:COLORS.ink, margin:0, marginBottom:14 }}>Acciones rápidas</h3>
         <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap:10 }}>
-          <QuickAction icon="Plus" label="Nueva oportunidad" onClick={() => onNavigate?.('ventas')}/>
-          <QuickAction icon="Dollar" label="Ver cobranza" onClick={() => onNavigate?.('cobranza')}/>
+          {verDinero && <QuickAction icon="Plus" label="Nueva oportunidad" onClick={() => routerNavigate('/ventas?nuevo=1')}/>}
+          {verDinero && <QuickAction icon="Dollar" label="Ver cobranza" onClick={() => onNavigate?.('cobranza')}/>}
+          {!verDinero && <QuickAction icon="Plus" label="Ver proyectos" onClick={() => onNavigate?.('proyectos')}/>}
           <QuickAction icon="Search" label="Buscar (⌘K)" onClick={() => document.dispatchEvent(new CustomEvent('open-command-palette'))}/>
         </div>
       </div>

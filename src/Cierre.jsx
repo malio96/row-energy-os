@@ -60,7 +60,7 @@ export default function Cierre({ usuario }) {
               { key:'estado', label:'Estado' },
             ]}/>
           </div>
-          <TablaCierre items={itemsOrdenados} onSelect={setSelId} isMobile={isMobile}/>
+          <TablaCierre items={itemsOrdenados} onSelect={setSelId} isMobile={isMobile} usuario={usuario}/>
         </>
       )}
     </div>
@@ -69,14 +69,16 @@ export default function Cierre({ usuario }) {
 
 const ESTADO_MAPA = { 'Terminado':{bg:'#E1F5EE', color:'#0F6E56'}, 'En cierre':{bg:'#FEF3C7', color:'#D97706'} }
 
-function TablaCierre({ items, onSelect, isMobile }) {
-  const cols = isMobile ? 'minmax(0,1fr) 90px' : 'minmax(0,1fr) 100px 120px 100px 24px'
+function TablaCierre({ items, onSelect, isMobile, usuario }) {
+  // v18.5.0: roles de proyectos no ven montos (decisión de dirección)
+  const verDinero = !['director_proyectos', 'equipo_proyectos'].includes(usuario?.rol)
+  const cols = isMobile ? 'minmax(0,1fr) 90px' : (verDinero ? 'minmax(0,1fr) 100px 120px 100px 24px' : 'minmax(0,1fr) 100px 100px 24px')
   return (
     <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
       <div style={{ display:'grid', gridTemplateColumns:cols, padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
         <span>Proyecto</span>
         <span>Estado</span>
-        {!isMobile && <span style={{ textAlign:'right' }}>Monto</span>}
+        {!isMobile && verDinero && <span style={{ textAlign:'right' }}>Monto</span>}
         {!isMobile && <span>Cierre</span>}
         {!isMobile && <span/>}
       </div>
@@ -93,7 +95,7 @@ function TablaCierre({ items, onSelect, isMobile }) {
             </div>
           </div>
           <div><Badge texto={p.estado} mapa={ESTADO_MAPA}/></div>
-          {!isMobile && <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:COLORS.ink, textAlign:'right' }}>{fmtMoney(p.monto_contrato, true)}</div>}
+          {!isMobile && verDinero && <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:COLORS.ink, textAlign:'right' }}>{fmtMoney(p.monto_contrato, true)}</div>}
           {!isMobile && <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{p.cierre || '—'}</div>}
           {!isMobile && <div style={{ color:COLORS.slate400, display:'flex', justifyContent:'flex-end' }}>{Icon('Back')}</div>}
         </div>

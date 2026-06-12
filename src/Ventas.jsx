@@ -63,6 +63,14 @@ export default function Ventas({ usuario }) {
     if (leadId || cotId) setSearchParams({}, { replace: true })
   }, [opps, searchParams, setSearchParams])
 
+  // v18.5.0: captura rápida — /ventas?nuevo=1 abre el alta directo (quick-add desde Dashboard)
+  useEffect(() => {
+    if (searchParams.get('nuevo')) {
+      setModalNuevo(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
   const owners = useMemo(() => {
     const m = new Map()
     for (const o of opps) if (o.owner) m.set(o.owner.id, o.owner.nombre)

@@ -142,11 +142,15 @@ export function generarAlertas({ usuario, config, facturas = [], actividades = [
     }
   }
 
-  // ---------- Leads sin actividad reciente (>7 días) ----------
+  // ---------- Leads sin actividad reciente (>7 días) o próxima acción vencida ----------
+  // v18.5.0: incluye oportunidades cuya proxima_accion_fecha ya pasó (accountability
+  // de follow-up — complementa el chip rojo del pipeline de Ventas).
   if (config.leads_sin_actividad) {
     const hace7dias = new Date(hoy); hace7dias.setDate(hoy.getDate() - 7)
+    const hoyStr = hoy.toISOString().slice(0, 10)
     let inactivos = leads.filter(l => {
       if (['Ganado', 'Perdido'].includes(l.etapa)) return false
+      if (l.proxima_accion_fecha && l.proxima_accion_fecha < hoyStr) return true
       const ultima = l.updated_at || l.created_at
       if (!ultima) return false
       return new Date(ultima) < hace7dias
@@ -155,13 +159,16 @@ export function generarAlertas({ usuario, config, facturas = [], actividades = [
       inactivos = inactivos.filter(l => l.owner_id === usuario.id)
     }
     if (inactivos.length > 0) {
+      const accionVencida = inactivos.filter(l => l.proxima_accion_fecha && l.proxima_accion_fecha < hoyStr).length
       alertas.push({
         id: 'leads_sin_actividad',
         tipo: 'leads_sin_actividad',
-        severidad: 'info',
-        mensaje: filtrar
-          ? `${inactivos.length} de tus leads sin actividad en 7+ días`
-          : `${inactivos.length} lead(s) sin actividad en 7+ días`,
+        severidad: accionVencida > 0 ? 'importante' : 'info',
+        mensaje: accionVencida > 0
+          ? `${accionVencida} oportunidad(es) con próxima acción vencida${inactivos.length > accionVencida ? ` · ${inactivos.length - accionVencida} sin actividad 7+ días` : ''}`
+          : (filtrar
+            ? `${inactivos.length} de tus leads sin actividad en 7+ días`
+            : `${inactivos.length} lead(s) sin actividad en 7+ días`),
         modulo: 'leads',
         modulo_ruta: '/leads',
         fecha: hoy.toISOString(),
@@ -346,19 +353,23 @@ export function generarAlertasDetalladas(params) {
         })
       })
     } else if (grupo.tipo === 'leads_sin_actividad') {
+      const hoyStr = new Date().toISOString().slice(0, 10)
       data.forEach(l => {
         const dias = diasDesde(l.updated_at || l.created_at)
+        const accionVencida = l.proxima_accion_fecha && l.proxima_accion_fecha < hoyStr
         items.push({
           id: `lead-${l.id}`,
           categoria: 'leads_sin_actividad',
-          severidad: 'info',
-          titulo: l.nombre || l.empresa || 'Lead',
-          detalle: `${dias} día(s) sin actividad`,
+          severidad: accionVencida ? 'importante' : 'info',
+          titulo: l.razon_social || l.nombre || l.empresa || 'Oportunidad',
+          detalle: accionVencida
+            ? `Próxima acción vencida (${l.proxima_accion_fecha})${l.proxima_accion ? `: ${l.proxima_accion}` : ''}`
+            : `${dias} día(s) sin actividad`,
           contexto: l.etapa || '',
           modulo: 'leads',
           modulo_ruta: `/leads?lead=${l.id}`,
           entidad_id: l.id,
-          fecha_relevante: l.updated_at || l.created_at,
+          fecha_relevante: l.proxima_accion_fecha || l.updated_at || l.created_at,
         })
       })
     } else if (grupo.tipo === 'cotizaciones_sin_respuesta') {

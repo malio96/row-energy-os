@@ -43,9 +43,11 @@ export const PERMISOS_POR_ROL = {
   },
   director_proyectos: {
     label: 'Director de Proyectos',
-    descripcion: 'Operaciones: proyectos, cierre, postventa, plantas',
+    descripcion: 'Operaciones: proyectos, cierre, postventa, plantas. Sin acceso a dinero.',
     modulos: [
-      'dashboard', 'proyectos', 'ventas', 'cierre', 'postventa',
+      // v18.5.0: SIN módulos de dinero (ventas/contratos/cobranza/facturacion/compras)
+      // por decisión de dirección. RLS alineado en BD.
+      'dashboard', 'proyectos', 'cierre', 'postventa',
       'plantas',
       'actividades',  // v16.9.x
       'config',  // v17.5.0: acceso a Configuración para dar de alta equipo
