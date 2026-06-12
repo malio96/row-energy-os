@@ -905,6 +905,52 @@ export function validarSumaPesos(actividades, parentId = null) {
   return { ok: false, suma, mensaje: `La suma es ${suma}%, debe ser 100%` }
 }
 
+// ----- v18.8.0: HORAS ESTIMADAS EN MASA -----
+// Las actividades vienen de plantillas → el mismo nombre se repite en muchos
+// proyectos. Permite asignar horas a todas las actividades con ese nombre.
+export async function aplicarHorasPorNombre(nombre, horas) {
+  const { data, error } = await supabase
+    .from('actividades')
+    .update({ horas_estimadas: horas })
+    .eq('nombre', nombre)
+    .select('id')
+  if (error) throw error
+  return (data || []).length
+}
+
+// Resumen para el administrador de horas (Configuración → Horas):
+// agrupa actividades por nombre con conteo y horas actuales.
+export async function getResumenHorasActividades() {
+  const { data, error } = await supabase
+    .from('actividades')
+    .select('nombre, horas_estimadas')
+  if (error) { console.error('getResumenHoras:', error); return [] }
+  const map = new Map()
+  for (const a of (data || [])) {
+    const k = a.nombre || '(sin nombre)'
+    if (!map.has(k)) map.set(k, { nombre: k, total: 0, horasSet: new Set() })
+    const g = map.get(k)
+    g.total++
+    g.horasSet.add(a.horas_estimadas ?? null)
+  }
+  return [...map.values()].map(g => ({
+    nombre: g.nombre,
+    total: g.total,
+    horas: g.horasSet.size === 1 ? [...g.horasSet][0] : 'varias',
+  })).sort((a, b) => b.total - a.total)
+}
+
+// Asigna horas default a TODAS las actividades que aún no tienen (global).
+export async function asignarHorasFaltantes(horas) {
+  const { data, error } = await supabase
+    .from('actividades')
+    .update({ horas_estimadas: horas })
+    .is('horas_estimadas', null)
+    .select('id')
+  if (error) throw error
+  return (data || []).length
+}
+
 // ----- v12: MARCAR ACTIVIDAD COMO COBRABLE -----
 // v18.7.0: sin monto — el dinero de cobro vive SOLO en hitos_cobranza (blindada).
 export async function marcarCobrable(actividadId, esCobrable, estadoCobro = null) {

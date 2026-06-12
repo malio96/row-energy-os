@@ -6,12 +6,14 @@ import {
   desactivarUsuario, activarUsuario, cambiarRolUsuario,
   invitarUsuarioViaEdge, reinvitarUsuario,  // v12.5.8, v16.1.4
   getAlertasConfig, actualizarAlertasConfig, resetearAlertasConfig,  // v12.5.9e
+  getResumenHorasActividades, aplicarHorasPorNombre, asignarHorasFaltantes,  // v18.8.0
 } from './supabase'
+import { toast } from './Dialogs'  // v18.8.0
 import { COLORS, Avatar, Icon, SortControl, aplicarSort, loadPref, savePref } from './helpers'
 import { useModal } from './Modal'
 import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
-  puedeGestionarUsuarios, puedeCrearUsuarios, labelRol, descripcionRol,
+  puedeGestionarUsuarios, puedeCrearUsuarios, puedeGestionarProyecto, labelRol, descripcionRol,
 } from './permisos'
 import { ETIQUETAS_ALERTAS } from './alertas'
 import { FormClienteInline } from './Proyectos'  // v16.1.1: reuso para crear/editar cliente
@@ -47,6 +49,7 @@ export default function Configuracion({ usuario }) {
   const tabs = [
     ...(puedeCrear ? [{ k:'usuarios', l:'Usuarios' }] : []),
     ...(puedeGestionar ? [{ k:'clientes', l:'Clientes' }] : []),  // v17.5.0: clientes sigue solo dirección
+    ...(puedeGestionarProyecto(usuario) ? [{ k:'horas', l:'Horas' }] : []),  // v18.8.0: horas en masa
     { k:'alertas', l:'Mis alertas' },
     { k:'cuenta', l:'Mi cuenta' },  // v16.7.0: cambio de contraseña
     { k:'sistema', l:'Sistema' },
@@ -78,6 +81,7 @@ export default function Configuracion({ usuario }) {
       )}
 
       {tab === 'clientes' && puedeGestionar && <TabClientes clientes={clientes}/>}
+      {tab === 'horas' && puedeGestionarProyecto(usuario) && <TabHoras/>}
       {tab === 'alertas' && <TabMisAlertas usuario={usuario} modal={modal}/>}
       {tab === 'cuenta' && <TabMiCuenta usuario={usuario} modal={modal}/>}
       {tab === 'sistema' && <TabSistema usuario={usuario}/>}
@@ -939,5 +943,115 @@ function ToggleSwitch({ checked, onChange, disabled, color }) {
         transition:'left 0.18s',
       }}/>
     </button>
+  )
+}
+// ============================================================
+// v18.8.0 — TAB HORAS: asignación masiva de horas estimadas
+// Las actividades vienen de plantillas → el mismo nombre se repite en muchos
+// proyectos. Acá se asignan horas por nombre (aplica a todas) o un default
+// global a las que no tienen. Las horas alimentan la carga en Dashboard→Personas.
+// ============================================================
+function TabHoras() {
+  const [resumen, setResumen] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [busqueda, setBusqueda] = useState('')
+  const [edits, setEdits] = useState({})        // nombre -> valor del input
+  const [defaultGlobal, setDefaultGlobal] = useState('')
+  const [aplicando, setAplicando] = useState(null)
+
+  const cargar = async () => {
+    setCargando(true)
+    setResumen(await getResumenHorasActividades())
+    setCargando(false)
+  }
+  useEffect(() => { cargar() }, [])
+
+  const filtradas = useMemo(() => {
+    if (!busqueda.trim()) return resumen
+    const q = busqueda.toLowerCase()
+    return resumen.filter(r => r.nombre.toLowerCase().includes(q))
+  }, [resumen, busqueda])
+
+  const sinHoras = resumen.filter(r => r.horas === null || r.horas === 'varias').reduce((s, r) => s + r.total, 0)
+
+  const aplicar = async (nombre) => {
+    const v = parseInt(edits[nombre])
+    if (isNaN(v) || v < 0) { toast('Pon un número de horas válido', 'error'); return }
+    setAplicando(nombre)
+    try {
+      const n = await aplicarHorasPorNombre(nombre, v)
+      toast(`✓ ${v}h aplicadas a ${n} actividad(es)`, 'success')
+      setEdits(prev => ({ ...prev, [nombre]: '' }))
+      cargar()
+    } catch (e) { toast('Error: ' + e.message, 'error') }
+    setAplicando(null)
+  }
+
+  const aplicarDefault = async () => {
+    const v = parseInt(defaultGlobal)
+    if (isNaN(v) || v < 0) { toast('Pon un número de horas válido', 'error'); return }
+    setAplicando('__global__')
+    try {
+      const n = await asignarHorasFaltantes(v)
+      toast(`✓ ${v}h asignadas a ${n} actividad(es) que no tenían horas`, 'success')
+      setDefaultGlobal('')
+      cargar()
+    } catch (e) { toast('Error: ' + e.message, 'error') }
+    setAplicando(null)
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom:16 }}>
+        <h3 style={{ fontSize:14, fontWeight:600, color:COLORS.ink, margin:0 }}>Horas estimadas por actividad</h3>
+        <p style={{ fontSize:12, color:COLORS.slate500, marginTop:4 }}>
+          Define cuántas horas de esfuerzo real toma cada tipo de actividad. Se aplica a <strong>todas las actividades con ese nombre en todos los proyectos</strong> y alimenta la carga de trabajo en Dashboard → Personas (sin horas, el cálculo asume 8h/día y dispara sobrecargas).
+        </p>
+      </div>
+
+      {/* Default global para las que no tienen horas */}
+      <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, padding:16, marginBottom:16, display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+        <div style={{ flex:1, minWidth:220 }}>
+          <div style={{ fontSize:13, fontWeight:600, color:COLORS.ink }}>Asignar default a las que no tienen horas</div>
+          <div style={{ fontSize:11, color:COLORS.slate500, marginTop:2 }}>Aplica solo a actividades sin horas definidas (no pisa las ya configuradas).</div>
+        </div>
+        <input type="number" min="0" step="1" value={defaultGlobal} onChange={e => setDefaultGlobal(e.target.value)} placeholder="horas" style={{ ...inputStyle, width:90, margin:0 }}/>
+        <button onClick={aplicarDefault} disabled={aplicando === '__global__'} style={{ padding:'10px 18px', background:COLORS.navy, color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer' }}>
+          {aplicando === '__global__' ? 'Aplicando...' : 'Asignar'}
+        </button>
+      </div>
+
+      <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:12 }}>
+        <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar actividad..." style={{ ...inputStyle, width:280, margin:0, padding:'8px 12px' }}/>
+        <span style={{ fontSize:11, color:COLORS.slate500 }}>{filtradas.length} tipo(s) de actividad · {sinHoras > 0 ? `${sinHoras} actividades en grupos sin horas uniformes` : 'todas con horas'}</span>
+      </div>
+
+      {cargando && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando...</div>}
+
+      {!cargando && (
+        <div style={{ background:'white', border:`1px solid ${COLORS.slate100}`, borderRadius:12, overflow:'hidden' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 90px 90px 170px', padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, fontSize:10, fontWeight:700, color:COLORS.slate500, textTransform:'uppercase', letterSpacing:'0.04em', gap:8 }}>
+            <span>Actividad</span><span>Repeticiones</span><span>Horas hoy</span><span>Asignar horas</span>
+          </div>
+          {filtradas.slice(0, 200).map(r => (
+            <div key={r.nombre} style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 90px 90px 170px', padding:'10px 16px', borderBottom:`1px solid ${COLORS.slate100}`, alignItems:'center', fontSize:13, gap:8 }}>
+              <div style={{ color:COLORS.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={r.nombre}>{r.nombre}</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:COLORS.slate500 }}>{r.total}</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:12, fontWeight:600, color: r.horas === null ? COLORS.slate400 : r.horas === 'varias' ? COLORS.amber : COLORS.teal }}>
+                {r.horas === null ? '—' : r.horas === 'varias' ? 'varias' : `${r.horas}h`}
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                <input type="number" min="0" step="1" value={edits[r.nombre] ?? ''} onChange={e => setEdits(prev => ({ ...prev, [r.nombre]: e.target.value }))} placeholder="h" style={{ ...inputStyle, width:64, margin:0, padding:'6px 8px', minHeight:32, fontSize:12 }}/>
+                <button onClick={() => aplicar(r.nombre)} disabled={aplicando === r.nombre || (edits[r.nombre] ?? '') === ''} style={{ padding:'6px 12px', background: (edits[r.nombre] ?? '') === '' ? COLORS.slate200 : COLORS.teal, color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                  {aplicando === r.nombre ? '...' : 'Aplicar'}
+                </button>
+              </div>
+            </div>
+          ))}
+          {filtradas.length > 200 && <div style={{ padding:'10px 16px', fontSize:11, color:COLORS.slate500, fontStyle:'italic' }}>Mostrando 200 de {filtradas.length} — usa la búsqueda para encontrar el resto.</div>}
+          {filtradas.length === 0 && <div style={{ padding:40, textAlign:'center', color:COLORS.slate400, fontSize:13 }}>Sin resultados</div>}
+        </div>
+      )}
+    </div>
   )
 }

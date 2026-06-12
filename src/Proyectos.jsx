@@ -14,6 +14,8 @@ import {
   duplicarActividad, eliminarActividad, cambiarImportancia,
   // v12: helpers nuevos
   duplicarProyecto, calcularAvancePonderado, validarSumaPesos, marcarCobrable,
+  // v18.8.0: horas en masa
+  aplicarHorasPorNombre,
   // v15.7: workflow SIM
   ETAPAS_SIM, ESTADOS_SIM, getProyectoSimEtapas, upsertEtapaSim,
   // v15.8: plantas eléctricas
@@ -685,11 +687,32 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
               <input type="number" min="0" step="1"
                 value={loc.horas_estimadas ?? ''}
                 onChange={e => setLoc(prev => ({ ...prev, horas_estimadas: e.target.value }))}
-                onBlur={e => guardar({ horas_estimadas: e.target.value === '' ? null : Math.max(0, parseInt(e.target.value) || 0) })}
+                onBlur={async e => {
+                  const v = e.target.value === '' ? null : Math.max(0, parseInt(e.target.value) || 0)
+                  if (v === (actividad.horas_estimadas ?? null)) return
+                  await guardar({ horas_estimadas: v })
+                  toast(v === null ? 'Horas borradas' : `✓ ${v}h guardadas`, 'success')
+                }}
                 placeholder="ej: 4"
                 style={inputStyle}/>
             </div>
           </div>
+          {/* v18.8.0: las actividades vienen de plantillas → mismo nombre en muchos
+              proyectos. Un clic aplica estas horas a todas las homónimas. */}
+          {(loc.horas_estimadas ?? '') !== '' && Number(loc.horas_estimadas) >= 0 && (
+            <button
+              onClick={async () => {
+                const h = Math.max(0, parseInt(loc.horas_estimadas) || 0)
+                try {
+                  const n = await aplicarHorasPorNombre(actividad.nombre, h)
+                  toast(`✓ ${h}h aplicadas a ${n} actividad(es) "${actividad.nombre}" en todos los proyectos`, 'success')
+                  onCambio()
+                } catch (err) { toast('Error: ' + err.message, 'error') }
+              }}
+              style={{ width:'100%', marginTop:-8, marginBottom:16, padding:'8px', background:'white', color:COLORS.teal, border:`1px dashed ${COLORS.teal}`, borderRadius:8, fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              Aplicar {loc.horas_estimadas}h a todas las "{(actividad.nombre || '').slice(0, 40)}{(actividad.nombre || '').length > 40 ? '…' : ''}" (todos los proyectos)
+            </button>
+          )}
           <div style={{ marginBottom:16 }}>
             <label style={miniLabel}>Progreso: {loc.avance || 0}%</label>
             <input type="range" min="0" max="100" step="5" value={loc.avance || 0}
