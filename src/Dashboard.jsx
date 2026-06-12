@@ -649,7 +649,7 @@ function VistaEjecutivo({ data, onNavigate, isMobile, usuario, alertasConfig, ca
                 <div style={{ fontSize:12, fontFamily:'var(--font-mono)', color:COLORS.slate400, fontWeight:700, marginBottom:2 }}>{c.codigo}</div>
                 <div style={{ fontSize:13, color:COLORS.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.cliente?.razon_social || 'Sin cliente'}</div>
               </div>
-              <div style={{ fontSize:12, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:600 }}>{fmtMoney(c.monto_total || 0, true)}</div>
+              <div style={{ fontSize:12, fontFamily:'var(--font-mono)', color:COLORS.navy, fontWeight:600 }}>{fmtMoney(c.total || 0, true)}</div>
             </div>
           ))}
         </Tarjeta>}
@@ -910,7 +910,7 @@ function VistaAdministracion({ data, onNavigate, isMobile, recargar }) {
     if (!fecha) return
     const d = new Date(fecha)
     if (d.getFullYear() !== anio) return
-    cotizadoCalc[d.getMonth()] += Number(c.monto_total || 0)
+    cotizadoCalc[d.getMonth()] += Number(c.total || 0)
     if (c.estado === 'Aprobada') aceptadoCalc[d.getMonth()] += 1
   })
   const [cotizadoOverride, setCotizadoOverride] = useState(loadPref('admin_cotizado_override', null))

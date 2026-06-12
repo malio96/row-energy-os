@@ -31,7 +31,6 @@ const ESTADO_COT_BADGE = {
 
 export default function Ventas({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const deepLinkRef = useRef({ leadId: searchParams.get('lead'), cotId: searchParams.get('cotizacion'), aplicado: false })
 
   // v18.2.0: drill-downs del Dashboard (?filtro=pendientes|sin_respuesta)
   const filtroEspecial = searchParams.get('filtro')
@@ -67,16 +66,18 @@ export default function Ventas({ usuario }) {
     return () => { clearTimeout(t); supabase.removeChannel(ch) }
   }, [])
 
-  // Deep-link desde alertas (?lead= / ?cotizacion=) → abrir la oportunidad
+  // Deep-link desde alertas (?lead= / ?cotizacion=) → abrir la oportunidad.
+  // v18.7.1: lee searchParams en vivo (antes era one-shot al montar y no se
+  // re-aplicaba si ya estabas en /ventas).
   useEffect(() => {
-    if (deepLinkRef.current.aplicado || opps.length === 0) return
-    const { leadId, cotId } = deepLinkRef.current
-    let o = null
-    if (leadId) o = opps.find(x => x.id === leadId)
+    if (opps.length === 0) return
+    const leadId = searchParams.get('lead')
+    const cotId = searchParams.get('cotizacion')
+    if (!leadId && !cotId) return
+    let o = leadId ? opps.find(x => x.id === leadId) : null
     if (!o && cotId) o = opps.find(x => x.cotizacion?.id === cotId)
     if (o) setSel(o)
-    deepLinkRef.current.aplicado = true
-    if (leadId || cotId) setSearchParams({}, { replace: true })
+    setSearchParams({}, { replace: true })
   }, [opps, searchParams, setSearchParams])
 
   // v18.5.0: captura rápida — /ventas?nuevo=1 abre el alta directo (quick-add desde Dashboard)
@@ -290,6 +291,20 @@ export default function Ventas({ usuario }) {
 // ============================================================
 // Panel de detalle de oportunidad (progressive disclosure)
 // ============================================================
+// v18.7.1: Seccion vive a nivel de módulo — definirla DENTRO del panel hacía
+// que React la remontara en cada render (el textarea de notas perdía el foco
+// en cada tecla, acordeones parpadeaban).
+function Seccion({ titulo, open, setOpen, children, extra }) {
+  return (
+    <div style={{ border:`1px solid ${COLORS.slate100}`, borderRadius:10, marginBottom:10, overflow:'hidden' }}>
+      <button onClick={() => setOpen(!open)} style={{ width:'100%', padding:'12px 14px', border:'none', background:open?COLORS.slate50:'white', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:13, fontWeight:600, color:COLORS.ink }}>
+        <span>{titulo}{extra}</span><span style={{ color:COLORS.slate400, fontSize:11 }}>{open ? '▼' : '▶'}</span>
+      </button>
+      {open && <div style={{ padding:14, borderTop:`1px solid ${COLORS.slate100}` }}>{children}</div>}
+    </div>
+  )
+}
+
 function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }) {
   const [etapa, setEtapa] = useState(opp.etapa)
   const [notas, setNotas] = useState(opp.notas || '')
@@ -348,15 +363,6 @@ function PanelOportunidad({ opp, usuario, onClose, onCambio, onAbrirCotizacion }
       setGuardando(false)
     }
   }
-
-  const Seccion = ({ titulo, open, setOpen, children, extra }) => (
-    <div style={{ border:`1px solid ${COLORS.slate100}`, borderRadius:10, marginBottom:10, overflow:'hidden' }}>
-      <button onClick={() => setOpen(!open)} style={{ width:'100%', padding:'12px 14px', border:'none', background:open?COLORS.slate50:'white', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:13, fontWeight:600, color:COLORS.ink }}>
-        <span>{titulo}{extra}</span><span style={{ color:COLORS.slate400, fontSize:11 }}>{open ? '▼' : '▶'}</span>
-      </button>
-      {open && <div style={{ padding:14, borderTop:`1px solid ${COLORS.slate100}` }}>{children}</div>}
-    </div>
-  )
 
   return (
     <>

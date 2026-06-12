@@ -447,9 +447,9 @@ export async function getCotizacion(id) {
 }
 
 export async function crearCotizacion(data) {
-  const { count } = await supabase.from('cotizaciones').select('*', { count: 'exact', head: true })
-  const codigo = `COT-${String((count || 0) + 1).padStart(3, '0')}`
-  const { data: cot, error } = await supabase.from('cotizaciones').insert({ ...data, codigo }).select().single()
+  // v18.7.1: el código lo asigna la BD (trigger + secuencia) — inmune a RLS y
+  // a dos usuarios creando a la vez (antes: count() del cliente → colisiones).
+  const { data: cot, error } = await supabase.from('cotizaciones').insert({ ...data }).select().single()
   if (error) throw error
   return cot
 }
@@ -496,9 +496,9 @@ export async function getLeads() {
 }
 
 export async function crearLead(data) {
-  const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true })
-  const codigo = `LEAD-${String((count || 0) + 1).padStart(3, '0')}`
-  const { data: lead, error } = await supabase.from('leads').insert({ ...data, codigo }).select().single()
+  // v18.7.1: el código lo asigna la BD (trigger + secuencia). El count() del
+  // cliente estaba filtrado por RLS → códigos duplicados → "no me deja crear".
+  const { data: lead, error } = await supabase.from('leads').insert({ ...data }).select().single()
   if (error) throw error
   return lead
 }
@@ -520,15 +520,10 @@ export async function getOportunidades() {
 
 // Mueve la fase de la oportunidad (5 fases) -> etapa canónica de lead.
 // El trigger sync (v17.6.0) refleja el estado de la cotización automáticamente.
+// v18.7.1: usa el helper (antes duplicaba el mapa — riesgo de divergencia).
 export async function cambiarFaseOportunidad(leadId, fase) {
-  const mapa = {
-    'Cotización enviada': 'Propuesta enviada',
-    'Negociación': 'Negociación',
-    'Ganado': 'Ganado',
-    'Perdido': 'Perdido',
-  }
-  const etapa = mapa[fase] || 'Nuevo'
-  return actualizarLead(leadId, { etapa, ultima_actividad: new Date().toISOString() })
+  const { etapaCanonicaDeFase } = await import('./helpers')
+  return actualizarLead(leadId, { etapa: etapaCanonicaDeFase(fase), ultima_actividad: new Date().toISOString() })
 }
 
 export async function eliminarLead(id) {
