@@ -110,9 +110,11 @@ export async function getPlantillaActividades(plantillaId) {
 // PROYECTOS
 // ============================================================
 export async function getProyectos() {
+  // v18.6.0: monto_contrato vive en proyectos_montos (RLS solo roles de dinero;
+  // para roles de proyectos el embed llega null — by design)
   const { data, error } = await supabase
     .from('proyectos')
-    .select(`*, cliente:clientes(id, razon_social, codigo), director:usuarios!director_id(id, nombre), actividades(*)`)
+    .select(`*, cliente:clientes(id, razon_social, codigo), director:usuarios!director_id(id, nombre), actividades(*), montos:proyectos_montos(monto_contrato)`)
     .order('created_at', { ascending: false })
   if (error) { console.error('getProyectos:', error); return [] }
   return data || []

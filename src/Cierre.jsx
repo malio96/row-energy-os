@@ -95,7 +95,7 @@ function TablaCierre({ items, onSelect, isMobile, usuario }) {
             </div>
           </div>
           <div><Badge texto={p.estado} mapa={ESTADO_MAPA}/></div>
-          {!isMobile && verDinero && <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:COLORS.ink, textAlign:'right' }}>{fmtMoney(p.monto_contrato, true)}</div>}
+          {!isMobile && verDinero && <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:COLORS.ink, textAlign:'right' }}>{fmtMoney(p.montos?.monto_contrato, true)}</div>}
           {!isMobile && <div style={{ fontSize:11, color:COLORS.slate500, fontFamily:'var(--font-mono)' }}>{p.cierre || '—'}</div>}
           {!isMobile && <div style={{ color:COLORS.slate400, display:'flex', justifyContent:'flex-end' }}>{Icon('Back')}</div>}
         </div>

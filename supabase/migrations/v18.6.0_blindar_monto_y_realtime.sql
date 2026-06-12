@@ -1,0 +1,15 @@
+-- v18.6.0 — (1) Blindaje a nivel BD de monto_contrato + (2) realtime Ventas
+-- ============================================================
+-- (1) RLS filtra filas, no columnas → el monto se movió a `proyectos_montos`
+-- con RLS exclusiva de roles de dinero (read: direccion/admin/ventas/cobranza;
+-- write: direccion/admin). director_proyectos/equipo_proyectos no lo leen ni por API.
+-- La columna proyectos.monto_contrato se BORRÓ. El trigger del workflow
+-- (crear_proyecto_desde_cotizacion) ahora escribe el monto en la tabla nueva.
+-- Nota: al migrar, los 198 proyectos tenían monto_contrato NULL (histórico de
+-- Monday sin montos) → 0 filas copiadas, sin pérdida de datos.
+-- (2) ALTER PUBLICATION supabase_realtime ADD TABLE leads, cotizaciones —
+-- el módulo Ventas se suscribe a postgres_changes (respeta RLS por cliente).
+--
+-- SQL completo aplicado vía MCP (migraciones v18_6_0_blindar_monto_contrato y
+-- v18_6_0_realtime_ventas en el historial de Supabase). Este archivo documenta
+-- el cambio; el cuerpo del trigger actualizado vive en la BD.

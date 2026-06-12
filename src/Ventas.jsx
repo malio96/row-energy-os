@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  supabase,
   getOportunidades, cambiarFaseOportunidad, crearLead, actualizarLead, eliminarLead,
   getUsuarios, crearCotizacion, actualizarCotizacion, getCotizacion,
 } from './supabase'
@@ -50,6 +51,21 @@ export default function Ventas({ usuario }) {
 
   const cargar = async () => { setLoading(true); setOpps(await getOportunidades()); setLoading(false) }
   useEffect(() => { cargar() }, [])
+
+  // v18.6.0: realtime — cambios de leads/cotizaciones de otros usuarios se reflejan
+  // en vivo (recarga silenciosa con debounce; respeta RLS por cliente).
+  useEffect(() => {
+    let t = null
+    const recargaSilenciosa = () => {
+      clearTimeout(t)
+      t = setTimeout(async () => setOpps(await getOportunidades()), 800)
+    }
+    const ch = supabase.channel('ventas-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, recargaSilenciosa)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cotizaciones' }, recargaSilenciosa)
+      .subscribe()
+    return () => { clearTimeout(t); supabase.removeChannel(ch) }
+  }, [])
 
   // Deep-link desde alertas (?lead= / ?cotizacion=) → abrir la oportunidad
   useEffect(() => {
