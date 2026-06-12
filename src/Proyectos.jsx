@@ -673,8 +673,22 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
               <input type="date" value={loc.fin} onChange={e => guardar({ fin: e.target.value })} style={inputStyle}/>
             </div>
           </div>
-          <div style={{ marginBottom:16, padding:10, background:COLORS.slate50, borderRadius:8, fontSize:11, color:COLORS.slate600, fontFamily:'var(--font-mono)', textAlign:'center' }}>
-            Duración: <strong style={{ color:COLORS.navy }}>{diffDays(loc.inicio, loc.fin) + 1} días</strong>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:16 }}>
+            <div style={{ padding:10, background:COLORS.slate50, borderRadius:8, fontSize:11, color:COLORS.slate600, fontFamily:'var(--font-mono)', textAlign:'center' }}>
+              Duración: <strong style={{ color:COLORS.navy }}>{diffDays(loc.inicio, loc.fin) + 1} días</strong>
+            </div>
+            {/* v18.7.2: horas estimadas editables desde el panel (feedback Mayra —
+                el esfuerzo real define la carga en Personas; sin esto el cálculo
+                asume 8h/día y dispara la sobrecarga). */}
+            <div>
+              <label style={miniLabel}>Horas estimadas (esfuerzo)</label>
+              <input type="number" min="0" step="1"
+                value={loc.horas_estimadas ?? ''}
+                onChange={e => setLoc(prev => ({ ...prev, horas_estimadas: e.target.value }))}
+                onBlur={e => guardar({ horas_estimadas: e.target.value === '' ? null : Math.max(0, parseInt(e.target.value) || 0) })}
+                placeholder="ej: 4"
+                style={inputStyle}/>
+            </div>
           </div>
           <div style={{ marginBottom:16 }}>
             <label style={miniLabel}>Progreso: {loc.avance || 0}%</label>
@@ -3828,11 +3842,13 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
 
   // Deep-link desde Centro de Alertas: abrir panel de actividad cuando proyecto cargue
   useEffect(() => {
-    if (deepLinkActRef.current) return
     if (!proyecto || !actividadInicialId) return
+    // v18.7.2: trackea el ID aplicado (antes boolean one-shot — un segundo
+    // deep-link a otra actividad del mismo proyecto no abría el panel)
+    if (deepLinkActRef.current === actividadInicialId) return
     const act = (proyecto.actividades || []).find(a => a.id === actividadInicialId)
     if (act) setPanelAct(act)
-    deepLinkActRef.current = true
+    deepLinkActRef.current = actividadInicialId
   }, [proyecto, actividadInicialId])
 
   // Audit: track cuando se abre el tab financiero
@@ -4357,13 +4373,7 @@ function FormEditarEtapaSim({ etapa, usuarios, guardando, onCancelar, onGuardar 
 
 export default function Proyectos({ usuario }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  // Deep-link desde Centro de Alertas: capturar params en el primer render para que sobrevivan al cleanup de URL
   const location = useLocation()
-  const deepLinkRef = useRef({
-    proyectoId: searchParams.get('proyecto') || location.state?.proyectoId || null,
-    actividadId: searchParams.get('actividad') || null,
-    aplicado: false,
-  })
   const [proyectos, setProyectos] = useState([])
   const [loading, setLoading] = useState(true)
   const [proyectoSel, setProyectoSel] = useState(null)
@@ -4394,20 +4404,27 @@ export default function Proyectos({ usuario }) {
   const cargar = async () => { setLoading(true); setProyectos(await getProyectosLite()); setLoading(false) }
   useEffect(() => { cargar() }, [])
 
-  // Deep-link: aplicar ?proyecto=X cuando los proyectos terminen de cargar; limpiar URL después
+  // Deep-link: aplicar ?proyecto=X (y ?actividad=Y) cuando los proyectos carguen.
+  // v18.7.2: lee searchParams en vivo (antes era one-shot al montar — el segundo
+  // "Abrir →" desde Dashboard/Personas no llegaba a la actividad; feedback Mayra).
   useEffect(() => {
-    if (deepLinkRef.current.aplicado) return
     if (proyectos.length === 0) return
-    const { proyectoId, actividadId } = deepLinkRef.current
+    const proyectoId = searchParams.get('proyecto')
+    const actividadId = searchParams.get('actividad')
+    if (!proyectoId && !actividadId) return
     if (proyectoId && proyectos.some(p => p.id === proyectoId)) {
       setProyectoSel(proyectoId)
       setDeepLinkActividadId(actividadId)
     }
-    deepLinkRef.current.aplicado = true
-    if (searchParams.get('proyecto') || searchParams.get('actividad')) {
-      setSearchParams({}, { replace: true })
-    }
+    setSearchParams({}, { replace: true })
   }, [proyectos, searchParams, setSearchParams])
+
+  // Navegación desde Plantas: viene con location.state.proyectoId (invisible en URL)
+  useEffect(() => {
+    const pid = location.state?.proyectoId
+    if (!pid || proyectos.length === 0) return
+    if (proyectos.some(p => p.id === pid)) setProyectoSel(pid)
+  }, [proyectos, location.state])
 
   // v12: Duplicar proyecto completo
   const handleDuplicarProyecto = async (proyecto, e) => {
