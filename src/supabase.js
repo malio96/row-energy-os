@@ -235,6 +235,21 @@ export async function actualizarActividad(id, cambios) {
   return data
 }
 
+// v18.9.0: reordenar actividades hermanas (drag & drop en la tabla).
+// `numero` es UNIQUE por proyecto (constraint actividades_proyecto_id_numero_key),
+// así que NO se puede renumerar 1..N por grupo (colisionaría con otros grupos).
+// El caller asigna un bloque de `numero` por encima del máximo global del proyecto,
+// garantizando unicidad incluso ejecutando los updates en paralelo.
+export async function reordenarActividades(updates) {
+  // updates: [{ id, numero }]
+  if (!updates?.length) return
+  const results = await Promise.all(updates.map(u =>
+    supabase.from('actividades').update({ numero: u.numero, updated_at: new Date().toISOString() }).eq('id', u.id).select('id')
+  ))
+  const fallo = results.find(r => r.error)
+  if (fallo?.error) throw mapearErrorActividad(fallo.error)
+}
+
 export async function eliminarActividad(id) {
   // v17.3.2: bajo RLS, un DELETE que no matchea filas devuelve éxito con 0 filas
   // borradas y sin error. Usamos .select() para detectar ese bloqueo silencioso

@@ -4,7 +4,7 @@ import { useSearchParams, useLocation } from 'react-router-dom'
 import {
   supabase, getProyectos, getProyectosLite, getProyectoConActividades, getUsuarios, getClientes,
   getPlantillas, getPlantillaActividades, crearProyectoDesdePlantilla,
-  actualizarActividad, crearActividad, desglosarActividadConPlantilla,
+  actualizarActividad, crearActividad, desglosarActividadConPlantilla, reordenarActividades,
   agregarDependencia, quitarDependencia, recalcularFechasDesde,
   // v13.3: recalcular padre cuando se mueve un hijo
   recalcularPadre,
@@ -2242,7 +2242,18 @@ function TabResumen({ proyecto, actividades, hitos, usuarios, puedeVerFinanciero
 // collapse/expand, header sticky e indent en celda Nombre. Antes la lista
 // crecía vertical sin estructura; con 7,252 actividades post-migración
 // Monday era inmanejable.
-function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onInlineFechas, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, puedeEditarPeso }) {
+// v18.9.0: handle de arrastre (6 puntos) para reordenar actividades en la tabla.
+function GripDots() {
+  return (
+    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+      <circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/>
+      <circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/>
+      <circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/>
+    </svg>
+  )
+}
+
+function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onInlineFechas, onAbrirInfo, onDesglosar, onNuevaActividad, onMenuContextual, onEliminar, onReordenar, puedeEditarPeso }) {
   const [nombreNueva, setNombreNueva] = useState('')
   const [creandoBajo, setCreandoBajo] = useState(null)
   const [creando, setCreando] = useState(false)
@@ -2250,9 +2261,34 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
   // v16.9.4: responsive — field users del equipo de proyectos reportan desde celular
   const isMobile = useIsMobile()
 
+  // v18.9.0: drag & drop para reordenar actividades hermanas (solo desktop).
+  const [dragId, setDragId] = useState(null)
+  const [dropTarget, setDropTarget] = useState(null)  // { rowId, position: 'before'|'after' }
+  const puedeReordenar = !isMobile && !!onReordenar
+  const byId = useMemo(() => new Map(actividades.map(a => [a.id, a])), [actividades])
+
+  const handleDragOverFila = (e, act) => {
+    if (!dragId || dragId === act.id) return
+    const arrastrada = byId.get(dragId)
+    // Solo se permite soltar entre hermanos del mismo nivel (mismo parent_id)
+    if (!arrastrada || (arrastrada.parent_id || null) !== (act.parent_id || null)) { if (dropTarget) setDropTarget(null); return }
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const r = e.currentTarget.getBoundingClientRect()
+    const position = (e.clientY - r.top) < r.height / 2 ? 'before' : 'after'
+    if (dropTarget?.rowId !== act.id || dropTarget?.position !== position) setDropTarget({ rowId: act.id, position })
+  }
+  const handleDropFila = (e, act) => {
+    e.preventDefault()
+    if (dragId && dropTarget?.rowId === act.id) onReordenar(dragId, act.id, dropTarget.position)
+    setDragId(null); setDropTarget(null)
+  }
+  // Props de drop que se esparcen en cada celda de la fila (desktop)
+  const dropProps = (act) => puedeReordenar ? { onDragOver: (e) => handleDragOverFila(e, act), onDrop: (e) => handleDropFila(e, act) } : null
+
   const GRID_COLS = isMobile
     ? '24px 1fr auto'
-    : '32px 28px 1fr 90px 90px 60px 140px 120px auto'
+    : '44px 28px 1fr 90px 90px 60px 140px 120px auto'
 
   // v17.3.1: input de fecha compacto para edición inline en la tabla
   const fechaInputStyle = { width:'100%', minWidth:0, boxSizing:'border-box', padding:'3px 4px', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:11, fontFamily:'var(--font-mono)', color:COLORS.slate600, background:'white', cursor:'pointer' }
@@ -2441,18 +2477,33 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
               )
             }
 
+            const esDropAntes = dropTarget?.rowId === act.id && dropTarget?.position === 'before'
+            const esDropDespues = dropTarget?.rowId === act.id && dropTarget?.position === 'after'
             return (
               <Fragment key={act.id}>
-                {/* Chevron */}
-                <div onContextMenu={onCtx} onClick={() => tieneHijos && toggleCollapse(act.id)} style={{ ...cellBase, justifyContent:'center', cursor: tieneHijos ? 'pointer' : 'default', color: COLORS.slate500 }}>
-                  {tieneHijos ? (collapsed.has(act.id) ? <Icon.ChevronRight/> : <Icon.ChevronDown/>) : null}
+                {esDropAntes && <div style={{ gridColumn:'1 / -1', height:0, borderTop:`2px solid ${COLORS.teal}`, margin:'-1px 0' }}/>}
+                {/* Grip (reordenar) + Chevron */}
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, justifyContent:'flex-start', gap:1, paddingLeft:4, paddingRight:0, color: COLORS.slate500, opacity: dragId === act.id ? 0.4 : 1 }}>
+                  {puedeReordenar && (
+                    <span draggable
+                      onDragStart={e => { setDragId(act.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', act.id) } catch { /* noop */ } }}
+                      onDragEnd={() => { setDragId(null); setDropTarget(null) }}
+                      onClick={e => e.stopPropagation()}
+                      title="Arrastrar para reordenar"
+                      style={{ cursor:'grab', color: dragId === act.id ? COLORS.teal : COLORS.slate300, display:'flex', alignItems:'center', flexShrink:0, lineHeight:0 }}>
+                      <GripDots/>
+                    </span>
+                  )}
+                  <span onClick={() => tieneHijos && toggleCollapse(act.id)} style={{ cursor: tieneHijos ? 'pointer' : 'default', display:'flex', alignItems:'center', flexShrink:0 }}>
+                    {tieneHijos ? (collapsed.has(act.id) ? <Icon.ChevronRight/> : <Icon.ChevronDown/>) : null}
+                  </span>
                 </div>
                 {/* # */}
-                <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'flex-end', paddingRight:6, fontFamily:'var(--font-mono)', fontSize: esRoot?11:10, color: esRoot?COLORS.navy:COLORS.slate400, fontWeight: esRoot?700:500 }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, justifyContent:'flex-end', paddingRight:6, fontFamily:'var(--font-mono)', fontSize: esRoot?11:10, color: esRoot?COLORS.navy:COLORS.slate400, fontWeight: esRoot?700:500 }}>
                   {numeracion[act.id]}
                 </div>
                 {/* Nombre */}
-                <div onContextMenu={onCtx} style={{ ...cellBase, paddingLeft: 8 + nivel * 20, gap: 6, minWidth: 0 }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, paddingLeft: 8 + nivel * 20, gap: 6, minWidth: 0 }}>
                   {!esRoot && (
                     <div onClick={(e) => { e.stopPropagation(); onToggle(act) }} style={{ width:16, height:16, borderRadius:4, border:`1.5px solid ${act.completada?COLORS.teal:'#CBD5E1'}`, background:act.completada?COLORS.teal:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'white', flexShrink:0 }}>
                       {act.completada && <Icon.Check/>}
@@ -2477,23 +2528,23 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
                   {esRoot && <BadgeImportancia importancia={act.importancia} tamano="normal"/>}
                 </div>
                 {/* Inicio — v17.3.1: editable inline (salvo padres con hijos: fechas derivadas). */}
-                <div onContextMenu={onCtx} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
                   {tieneHijos
                     ? (act.inicio ? fmtDate(act.inicio) : '—')
                     : <input type="date" value={act.inicio || ''} onClick={e => e.stopPropagation()} onChange={e => onInlineFechas(act.id, { inicio: e.target.value })} style={fechaInputStyle}/>}
                 </div>
                 {/* Fin */}
-                <div onContextMenu={onCtx} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
                   {tieneHijos
                     ? (act.fin ? fmtDate(act.fin) : '—')
                     : <input type="date" value={act.fin || ''} onClick={e => e.stopPropagation()} onChange={e => onInlineFechas(act.id, { fin: e.target.value })} style={fechaInputStyle}/>}
                 </div>
                 {/* Duración */}
-                <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'center', fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, justifyContent:'center', fontFamily:'var(--font-mono)', fontSize:11, color:COLORS.slate500 }}>
                   {dur}
                 </div>
                 {/* Avance */}
-                <div onContextMenu={onCtx} title={esRoot && tieneHijos ? `Pesos: ${sumaPesos}%${!sumaOk ? ' ⚠ deberían sumar 100%' : ' ✓'}` : `${avanceMap.get(act.id) || 0}%`} style={{ ...cellBase, justifyContent:'center', flexDirection:'column', gap:2, alignItems:'stretch' }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} title={esRoot && tieneHijos ? `Pesos: ${sumaPesos}%${!sumaOk ? ' ⚠ deberían sumar 100%' : ' ✓'}` : `${avanceMap.get(act.id) || 0}%`} style={{ ...cellBase, justifyContent:'center', flexDirection:'column', gap:2, alignItems:'stretch' }}>
                   <BarraAvance avance={avanceMap.get(act.id) || 0}/>
                   {esRoot && tieneHijos && sumaPesos > 0 && !sumaOk && (
                     <span style={{ fontSize:9, color:'#DC2626', fontWeight:700, textAlign:'center' }}>pesos {sumaPesos}% ⚠</span>
@@ -2501,7 +2552,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
                 </div>
                 {/* Estado — v16.9.2: badge usa estadoEfectivo (deriva 'Retrasada' por fecha vencida).
                     El select sigue mostrando el estado en BD (editable), pero con colores del derivado. */}
-                <div onContextMenu={onCtx} style={{ ...cellBase }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase }}>
                   {(() => {
                     // v17.3.1: estado editable inline también para actividades principales (antes era Badge de solo lectura).
                     const eff = estadoEfectivo(act)
@@ -2513,7 +2564,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
                   })()}
                 </div>
                 {/* Acciones */}
-                <div onContextMenu={onCtx} style={{ ...cellBase, justifyContent:'flex-end', gap:4, paddingRight:12 }}>
+                <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, justifyContent:'flex-end', gap:4, paddingRight:12 }}>
                   {puedeEditarPeso && !esRoot && (
                     <>
                       <input type="number" min="0" max="100" step="1" value={act.peso || 0}
@@ -2541,6 +2592,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
                     <button onClick={() => { setCreandoBajo(null); setNombreNueva('') }} style={{...btnSecondary, padding:'7px 14px'}}>Cancelar</button>
                   </div>
                 )}
+                {esDropDespues && <div style={{ gridColumn:'1 / -1', height:0, borderTop:`2px solid ${COLORS.teal}`, margin:'-1px 0' }}/>}
               </Fragment>
             )
           })}
@@ -3965,6 +4017,38 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     catch (e) { alertaActividad(e); cargar() }
   }, [cargar])
 
+  // v18.9.0: reordenar actividad hermana vía drag & drop en la tabla.
+  // Mueve `draggedId` antes/después de `targetId` dentro del MISMO grupo de hermanos
+  // (mismo parent_id); su subárbol viaja con ella porque los hijos siguen colgando de
+  // su parent_id. Renumera el grupo completo a un bloque por encima del máximo global
+  // (numero es UNIQUE por proyecto). La numeración visible (1, 1.1, 2…) es posicional,
+  // así que se recalcula sola tras recargar.
+  const reordenarActividad = useCallback(async (draggedId, targetId, position) => {
+    if (!draggedId || !targetId || draggedId === targetId) return
+    const acts = proyecto?.actividades || []
+    const dragged = acts.find(a => a.id === draggedId)
+    const target = acts.find(a => a.id === targetId)
+    if (!dragged || !target) return
+    const parentKey = dragged.parent_id || null
+    if ((target.parent_id || null) !== parentKey) return  // solo entre hermanos
+    const siblings = acts.filter(a => (a.parent_id || null) === parentKey).sort((a, b) => (a.numero || 0) - (b.numero || 0))
+    const sinDragged = siblings.filter(a => a.id !== draggedId)
+    const targetIdx = sinDragged.findIndex(a => a.id === targetId)
+    if (targetIdx === -1) return
+    const insertIdx = position === 'before' ? targetIdx : targetIdx + 1
+    const nuevoOrden = [...sinDragged.slice(0, insertIdx), dragged, ...sinDragged.slice(insertIdx)]
+    // No-op si el orden no cambió
+    if (nuevoOrden.every((a, i) => a.id === siblings[i].id)) return
+    const maxGlobal = acts.reduce((m, a) => Math.max(m, a.numero || 0), 0)
+    const updates = nuevoOrden.map((a, i) => ({ id: a.id, numero: maxGlobal + 1 + i }))
+    setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => {
+      const u = updates.find(x => x.id === a.id)
+      return u ? { ...a, numero: u.numero } : a
+    }) }))
+    try { await reordenarActividades(updates); await cargar() }
+    catch (e) { alertaActividad(e); cargar() }
+  }, [proyecto, cargar])
+
   // v17.3.1: edición inline de fechas (inicio/fin) desde la tabla. A diferencia de
   // actualizarInline, recalcula dependencias y fechas del padre (igual que el drag del Gantt).
   const actualizarFechasInline = useCallback(async (actId, cambios) => {
@@ -4174,7 +4258,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
       </div>
 
       {tab === 'resumen' && <TabResumen proyecto={proyecto} actividades={actividades} hitos={hitos} usuarios={usuarios} puedeVerFinanciero={puedeVerFinanciero}/>}
-      {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onInlineFechas={actualizarFechasInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} puedeEditarPeso={esDirOAdmin}/>}
+      {tab === 'actividades' && <TabActividades actividades={actividades} numeracion={numeracion} onToggle={toggleActividad} onInlineUpdate={actualizarInline} onInlineFechas={actualizarFechasInline} onAbrirInfo={setPanelAct} onDesglosar={setDesglosarAct} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onEliminar={handleEliminar} onReordenar={reordenarActividad} puedeEditarPeso={esDirOAdmin}/>}
       {tab === 'gantt' && <GanttInteractivo actividadesProp={actividades} proyecto={proyecto} usuarios={usuarios} usuario={usuarioActual} onRecargar={cargar} onDesglosar={setDesglosarAct} onAbrirInfo={setPanelAct} onInlineUpdate={actualizarInline} onNuevaActividad={crearNuevaActividad} onMenuContextual={abrirMenuCtx} onQuitarDep={handleQuitarDepGantt} onUndoPush={pushUndo}/>}
 
       {/* v17.4.0: toast global movido a <DialogHost/> en App.jsx */}
