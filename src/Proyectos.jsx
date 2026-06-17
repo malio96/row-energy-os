@@ -449,7 +449,7 @@ function BadgeChip({ texto, mapa, label, tamano='normal' }) {
 // ============================================================
 // v8: MenuContextual - menú al click derecho sobre actividad
 // ============================================================
-function MenuContextual({ x, y, actividad, onClose, onAbrirInfo, onDuplicar, onEliminar, onToggleMilestone, onCambiarImportancia, onAgregarHijo, proyectoId }) {
+function MenuContextual({ x, y, actividad, onClose, onAbrirInfo, onDuplicar, onEliminar, onToggleMilestone, onCambiarImportancia, onAgregarHijo, onCrearAbajo, proyectoId }) {
   const menuRef = useRef(null)
   const [submenuImp, setSubmenuImp] = useState(false)
 
@@ -477,11 +477,9 @@ function MenuContextual({ x, y, actividad, onClose, onAbrirInfo, onDuplicar, onE
   const adjX = Math.min(x, window.innerWidth - MENU_WIDTH - 10)
   const adjY = Math.min(y, window.innerHeight - MENU_HEIGHT - 10)
 
-  const copiarEnlace = () => {
-    const url = `${window.location.origin}/proyectos/${proyectoId}?actividad=${actividad.id}`
-    navigator.clipboard.writeText(url)
-      .then(() => toast('Enlace copiado al portapapeles', 'success'))
-      .catch(() => toast('No se pudo copiar el enlace', 'error'))
+  const abrirEnNuevaPestana = () => {
+    const url = `${window.location.origin}/proyectos?proyecto=${proyectoId}&actividad=${actividad.id}`
+    window.open(url, '_blank', 'noopener')
     onClose()
   }
 
@@ -543,10 +541,11 @@ function MenuContextual({ x, y, actividad, onClose, onAbrirInfo, onDuplicar, onE
         {actividad.nombre.length > 24 ? actividad.nombre.substring(0, 24) + '...' : actividad.nombre}
       </div>
 
-      <MenuItem icon={<Icon.Eye/>} label="Ver detalles" onClick={() => onAbrirInfo(actividad)}/>
-      <MenuItem icon={<Icon.Copy/>} label="Copiar enlace" onClick={copiarEnlace}/>
+      <MenuItem icon={<Icon.Eye/>} label="Abrir actividad" onClick={() => onAbrirInfo(actividad)}/>
+      <MenuItem icon={<Icon.Link/>} label="Abrir en una pestaña nueva" onClick={abrirEnNuevaPestana}/>
       <Separator/>
-      <MenuItem icon={<Icon.Plus/>} label="Agregar sub-actividad" onClick={() => onAgregarHijo(actividad)}/>
+      <MenuItem icon={<Icon.Plus/>} label="Crear actividad nueva abajo" onClick={() => onCrearAbajo(actividad)}/>
+      <MenuItem icon={<Icon.Folder/>} label="Agregar sub-actividad" onClick={() => onAgregarHijo(actividad)}/>
       <MenuItem icon={<Icon.Duplicate/>} label="Duplicar" onClick={() => onDuplicar(actividad)}/>
       <Separator/>
       <MenuItem icon={<Icon.Flag/>} label="Importancia" submenu/>
@@ -2264,6 +2263,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
   // v18.9.0: drag & drop para reordenar actividades hermanas (solo desktop).
   const [dragId, setDragId] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)  // { rowId, position: 'before'|'after' }
+  const [hoverRowId, setHoverRowId] = useState(null)  // v18.9.1: grip visible solo en hover
   const puedeReordenar = !isMobile && !!onReordenar
   const byId = useMemo(() => new Map(actividades.map(a => [a.id, a])), [actividades])
 
@@ -2283,8 +2283,9 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
     if (dragId && dropTarget?.rowId === act.id) onReordenar(dragId, act.id, dropTarget.position)
     setDragId(null); setDropTarget(null)
   }
-  // Props de drop que se esparcen en cada celda de la fila (desktop)
-  const dropProps = (act) => puedeReordenar ? { onDragOver: (e) => handleDragOverFila(e, act), onDrop: (e) => handleDropFila(e, act) } : null
+  // Props de drop + hover que se esparcen en cada celda de la fila (desktop).
+  // onMouseEnter marca la fila activa para revelar el grip solo al pasar el cursor.
+  const dropProps = (act) => puedeReordenar ? { onDragOver: (e) => handleDragOverFila(e, act), onDrop: (e) => handleDropFila(e, act), onMouseEnter: () => setHoverRowId(act.id) } : null
 
   const GRID_COLS = isMobile
     ? '24px 1fr auto'
@@ -2382,7 +2383,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
           Sin actividades aún. Usa el Gantt para agregar la primera.
         </div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns: GRID_COLS, border:`1px solid ${COLORS.slate100}`, borderRadius:10, overflow:'hidden', background:'white' }}>
+        <div onMouseLeave={() => setHoverRowId(null)} style={{ display:'grid', gridTemplateColumns: GRID_COLS, border:`1px solid ${COLORS.slate100}`, borderRadius:10, overflow:'hidden', background:'white' }}>
           {/* Header sticky — solo desktop; mobile lleva la info dentro de las cards */}
           {!isMobile && (
             <>
@@ -2490,7 +2491,7 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
                       onDragEnd={() => { setDragId(null); setDropTarget(null) }}
                       onClick={e => e.stopPropagation()}
                       title="Arrastrar para reordenar"
-                      style={{ cursor:'grab', color: dragId === act.id ? COLORS.teal : COLORS.slate300, display:'flex', alignItems:'center', flexShrink:0, lineHeight:0 }}>
+                      style={{ cursor:'grab', color: dragId === act.id ? COLORS.teal : COLORS.slate400, display:'flex', alignItems:'center', flexShrink:0, lineHeight:0, opacity: (hoverRowId === act.id || dragId === act.id) ? 1 : 0, transition:'opacity .12s' }}>
                       <GripDots/>
                     </span>
                   )}
@@ -2565,24 +2566,13 @@ function TabActividades({ actividades, numeracion, onToggle, onInlineUpdate, onI
                 </div>
                 {/* Acciones */}
                 <div onContextMenu={onCtx} {...dropProps(act)} style={{ ...cellBase, justifyContent:'flex-end', gap:4, paddingRight:12 }}>
-                  {puedeEditarPeso && !esRoot && (
-                    <>
-                      <input type="number" min="0" max="100" step="1" value={act.peso || 0}
-                        onChange={e => { const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); onInlineUpdate(act.id, { peso: v }) }}
-                        onClick={e => e.stopPropagation()}
-                        title="Peso ponderado (% del avance del padre)"
-                        style={{ width:38, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:10, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.peso || 0) > 0 ? COLORS.navy : COLORS.slate400 }}/>
-                      <input type="number" min="0" step="1" value={act.horas_estimadas || 0}
-                        onChange={e => { const v = Math.max(0, parseInt(e.target.value) || 0); onInlineUpdate(act.id, { horas_estimadas: v }) }}
-                        onClick={e => e.stopPropagation()}
-                        title="Horas estimadas (carga del responsable)"
-                        style={{ width:38, padding:'3px 4px', textAlign:'right', border:`1px solid ${COLORS.slate200}`, borderRadius:5, fontSize:10, fontFamily:'var(--font-mono)', fontWeight:700, color: (act.horas_estimadas || 0) > 0 ? COLORS.teal : COLORS.slate400 }}/>
-                    </>
-                  )}
-                  <button onClick={() => setCreandoBajo(act.id)} title="Agregar sub-actividad" style={{ padding:'5px 7px', background:'transparent', color:COLORS.teal, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Plus/></button>
-                  <button onClick={() => onAbrirInfo(act)} title="Información" style={{ padding:'5px 7px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Info/></button>
+                  {/* v18.9.1: peso/horas removidos de la tabla (nadie los usa). +sub/Eliminar viven en el menú de click derecho.
+                      Desglosar (servicio padre) se queda; la "i" de Info aparece solo al pasar el cursor. */}
                   {esRoot && act.es_servicio_padre && <button onClick={() => onDesglosar(act)} title="Desglosar con plantilla" style={{ padding:'5px 8px', background:COLORS.tealLight, color:COLORS.teal, border:'none', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer' }}>⚖</button>}
-                  <button onClick={() => onEliminar?.(act)} title="Eliminar actividad" style={{ padding:'5px 7px', background:'transparent', color:COLORS.red, border:`1px solid #FECACA`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon.Trash/></button>
+                  <button onClick={() => onAbrirInfo(act)} title="Información"
+                    style={{ padding:'5px 7px', background:'transparent', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', opacity: hoverRowId === act.id ? 1 : 0, pointerEvents: hoverRowId === act.id ? 'auto' : 'none', transition:'opacity .12s' }}>
+                    <Icon.Info/>
+                  </button>
                 </div>
                 {/* Input inline para sub-actividad — fila completa */}
                 {creandoBajo === act.id && (
@@ -4164,6 +4154,34 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     catch (e) { toast('Error: ' + e.message, 'error') }
   }, [crearNuevaActividad])
 
+  // v18.9.1: crear una actividad hermana justo DEBAJO de la actual (menú contextual).
+  // Crea el hermano y reusa la lógica de reorden (bloque sobre el máximo global) para
+  // colocarlo exactamente después, sin chocar con el constraint UNIQUE de numero.
+  const handleCrearAbajo = useCallback(async (hermano) => {
+    const nombre = await promptDialog({ title: 'Nueva actividad', message: `Crear actividad debajo de "${hermano.nombre}":`, placeholder: 'Nombre de la actividad', confirmLabel: 'Crear' })
+    if (!nombre?.trim()) return
+    const acts = proyecto?.actividades || []
+    const parentKey = hermano.parent_id || null
+    const siblings = acts.filter(a => (a.parent_id || null) === parentKey).sort((a, b) => (a.numero || 0) - (b.numero || 0))
+    const maxGlobal = acts.reduce((m, a) => Math.max(m, a.numero || 0), 0)
+    const inicio = hermano.fin ? addDays(hermano.fin, 1) : (proyecto.inicio || new Date().toISOString().split('T')[0])
+    const fin = addDays(inicio, 4)
+    try {
+      const nueva = await crearActividad({
+        proyecto_id: proyectoId, parent_id: parentKey, nombre: nombre.trim(),
+        numero: maxGlobal + 1, inicio, fin, avance: 0,
+        estado: 'Sin iniciar', es_milestone: false, es_servicio_padre: false,
+      })
+      const idx = siblings.findIndex(a => a.id === hermano.id)
+      const nuevoOrden = [...siblings.slice(0, idx + 1), nueva, ...siblings.slice(idx + 1)]
+      const base = maxGlobal + 1  // numero que ya ocupa 'nueva'; el bloque arranca por encima
+      const updates = nuevoOrden.map((a, i) => ({ id: a.id, numero: base + 1 + i }))
+      await reordenarActividades(updates)
+      if (nueva?.id) pushUndo({ type: 'create', actId: nueva.id })
+      await cargar()
+    } catch (e) { alertaActividad(e); cargar() }
+  }, [proyecto, proyectoId, cargar, pushUndo])
+
   if (loading) return <div style={{ padding:40, textAlign:'center', color:COLORS.slate400 }}>Cargando proyecto...</div>
   if (!proyecto) return <div style={{ padding:40, textAlign:'center', color:COLORS.red }}>Proyecto no encontrado</div>
 
@@ -4201,6 +4219,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
           onToggleMilestone={handleToggleMilestone}
           onCambiarImportancia={(imp) => handleCambiarImportancia(menuCtx.actividad, imp)}
           onAgregarHijo={handleAgregarHijo}
+          onCrearAbajo={handleCrearAbajo}
         />
       )}
 
