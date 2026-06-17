@@ -931,21 +931,27 @@ export async function getResumenHorasActividades() {
     if (!map.has(k)) map.set(k, { nombre: k, total: 0, horasSet: new Set() })
     const g = map.get(k)
     g.total++
-    g.horasSet.add(a.horas_estimadas ?? null)
+    // 0 y null = "sin definir" (el default de la columna es 0)
+    g.horasSet.add((a.horas_estimadas ?? 0) || 0)
   }
-  return [...map.values()].map(g => ({
-    nombre: g.nombre,
-    total: g.total,
-    horas: g.horasSet.size === 1 ? [...g.horasSet][0] : 'varias',
-  })).sort((a, b) => b.total - a.total)
+  return [...map.values()].map(g => {
+    const unico = g.horasSet.size === 1 ? [...g.horasSet][0] : 'varias'
+    return {
+      nombre: g.nombre,
+      total: g.total,
+      // mostrar 0 como null (—) para que se vea "sin horas"
+      horas: unico === 0 ? null : unico,
+    }
+  }).sort((a, b) => b.total - a.total)
 }
 
-// Asigna horas default a TODAS las actividades que aún no tienen (global).
+// Asigna horas default a TODAS las actividades que aún no tienen horas (global).
+// "Sin horas" = NULL o 0 (el default de la columna es 0, no NULL).
 export async function asignarHorasFaltantes(horas) {
   const { data, error } = await supabase
     .from('actividades')
     .update({ horas_estimadas: horas })
-    .is('horas_estimadas', null)
+    .or('horas_estimadas.is.null,horas_estimadas.eq.0')
     .select('id')
   if (error) throw error
   return (data || []).length
