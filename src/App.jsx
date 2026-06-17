@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Component } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import { supabase } from './supabase'
 import { COLORS, useIsMobile, hydratePrefsFromBD, setSyncPrefHandler, clearLocalPrefs, setTrackHandler, trackEvent } from './helpers'
@@ -333,12 +333,43 @@ function Layout({ usuario, onLogout, children }) {
           padding: isMobile ? '20px 16px' : '24px 28px',
           minHeight: isMobile ? 'auto' : 'calc(100vh - 24px)',
         }}>
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
         </div>
       </main>
       <CommandPaletteWrapper open={cmdOpen} onClose={() => setCmdOpen(false)}/>
     </div>
   )
+}
+
+// ============================================================
+// v18.8.1 — ErrorBoundary global: un error de runtime en un módulo ya no deja
+// la app en pantalla blanca; muestra el error y un botón de recarga.
+// ============================================================
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch(error, info) { console.error('ErrorBoundary atrapó:', error, info?.componentStack) }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding:'60px 24px', textAlign:'center', maxWidth:520, margin:'0 auto' }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>⚠️</div>
+          <h2 style={{ fontSize:20, fontWeight:600, color:'#0A2540', margin:'0 0 8px' }}>Algo salió mal en esta pantalla</h2>
+          <p style={{ fontSize:13, color:'#64748B', marginBottom:6 }}>El resto de la app sigue funcionando. Recarga para continuar.</p>
+          <p style={{ fontSize:11, color:'#94A3B8', fontFamily:'monospace', background:'#F8FAFC', borderRadius:8, padding:'8px 12px', marginBottom:20, wordBreak:'break-word' }}>
+            {String(this.state.error?.message || this.state.error)}
+          </p>
+          <button onClick={() => { this.setState({ error: null }); window.location.href = '/' }} style={{ padding:'10px 22px', background:'#0A2540', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', marginRight:8 }}>
+            Ir al Dashboard
+          </button>
+          <button onClick={() => window.location.reload()} style={{ padding:'10px 22px', background:'white', color:'#0A2540', border:'1px solid #CBD5E1', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            Recargar
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 export default function App() {

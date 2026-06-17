@@ -9,7 +9,7 @@ import {
   getResumenHorasActividades, aplicarHorasPorNombre, asignarHorasFaltantes,  // v18.8.0
 } from './supabase'
 import { toast } from './Dialogs'  // v18.8.0
-import { COLORS, Avatar, Icon, SortControl, aplicarSort, loadPref, savePref } from './helpers'
+import { COLORS, Avatar, Icon, SortControl, aplicarSort, loadPref, savePref, inputStyle } from './helpers'
 import { useModal } from './Modal'
 import {
   PERMISOS_POR_ROL, ROLES_DISPONIBLES,
