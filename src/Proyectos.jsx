@@ -66,7 +66,9 @@ const ESTADOS = {
   'En progreso': { bg:'#E0EDFF', color:'#1B3A6B', bar:'#3B82F6', gradient:'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)' },
   'Sin iniciar': { bg:'#F1F5F9', color:'#64748B', bar:'#94A3B8', gradient:'linear-gradient(135deg, #CBD5E1 0%, #94A3B8 100%)' },
   'Retrasada': { bg:'#FEF2F2', color:'#DC2626', bar:'#EF4444', gradient:'linear-gradient(135deg, #F87171 0%, #DC2626 100%)' },
-  'Bloqueada': { bg:'#FEF3C7', color:'#D97706', bar:'#F59E0B', gradient:'linear-gradient(135deg, #FBBF24 0%, #D97706 100%)' }
+  'Bloqueada': { bg:'#FEF3C7', color:'#D97706', bar:'#F59E0B', gradient:'linear-gradient(135deg, #FBBF24 0%, #D97706 100%)' },
+  // v18.9.2: estado Cancelada — gris apagado (inactivo); estadoEfectivo ya lo preserva (no deriva a Retrasada)
+  'Cancelada': { bg:'#F1F5F9', color:'#94A3B8', bar:'#CBD5E1', gradient:'linear-gradient(135deg, #E2E8F0 0%, #CBD5E1 100%)' }
 }
 
 const ESTADOS_PROY = {
