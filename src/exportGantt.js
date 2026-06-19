@@ -270,13 +270,28 @@ export function exportarGanttPDF(proyecto, actividades, usuarios) {
         doc.setFillColor(Math.max(0,r-40), Math.max(0,g-40), Math.max(0,b-40))
         doc.roundedRect(x1, barY, advW, barH, 2, 2, 'F')
       }
-      // Etiqueta a la derecha
+      // Etiqueta junto a la barra — v18.9.4: mostrar SIEMPRE el nombre (antes se
+      // omitía si tenía >30 chars o no cabía a la derecha → unas salían y otras no,
+      // feedback del equipo). Ahora cae a la derecha si hay espacio; si no, a la
+      // izquierda de la barra; se trunca al lado con más espacio.
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(7)
       doc.setTextColor(...TEXT_INK)
-      const lbl = txt.length > 30 ? '' : txt
-      if (lbl && x2 + 4 + doc.getTextWidth(lbl) < PW - MARGIN) {
-        doc.text(lbl, x2 + 4, y + ROW_H/2 + 2.5)
+      const txtY = y + ROW_H/2 + 2.5
+      const espacioDer = (PW - MARGIN) - (x2 + 4)
+      const espacioIzq = (x1 - 4) - MARGIN
+      let lbl = nombre
+      const maxLblW = Math.max(espacioDer, espacioIzq)
+      while (lbl.length > 4 && doc.getTextWidth(lbl) > maxLblW) lbl = lbl.slice(0, -2)
+      if (lbl !== nombre && lbl.length > 1) lbl = lbl.slice(0, -1) + '…'
+      if (lbl) {
+        if (doc.getTextWidth(lbl) <= espacioDer) {
+          doc.text(lbl, x2 + 4, txtY)                          // a la derecha
+        } else if (doc.getTextWidth(lbl) <= espacioIzq) {
+          doc.text(lbl, x1 - 4, txtY, { align: 'right' })      // a la izquierda
+        }
+        // si no cabe en ningún lado (barra casi del ancho de página) se omite:
+        // el nombre ya aparece en la columna izquierda.
       }
     }
   }

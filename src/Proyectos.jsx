@@ -1063,6 +1063,9 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
   const [dragTick, setDragTick] = useState(0)  // v13.2: fuerza re-render del rubber-band
   // v14.1: toggle para mostrar/ocultar ruta crítica
   const [mostrarRutaCritica, setMostrarRutaCritica] = useState(() => loadPref('gantt.critical', false))
+  // v18.9.4: opción para mostrar fechas inicio→fin junto al nombre en el panel del Gantt (feedback equipo)
+  const [mostrarFechas, setMostrarFechas] = useState(() => loadPref('gantt.fechas', false))
+  const toggleFechas = () => setMostrarFechas(v => { const nv = !v; savePref('gantt.fechas', nv); return nv })
   useEffect(() => { savePref('gantt.critical', mostrarRutaCritica) }, [mostrarRutaCritica])
   const [msgNoPuede, setMsgNoPuede] = useState(null)
 
@@ -1447,6 +1450,14 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
         }} style={{ padding:'6px 10px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}>
           <Icon.Calendar/> Ir a hoy
         </button>
+        {/* v18.9.4: toggle fechas junto al nombre (feedback equipo) */}
+        <button
+          onClick={toggleFechas}
+          title={mostrarFechas ? 'Ocultar fechas junto a la actividad' : 'Mostrar fecha de inicio y fin junto a cada actividad'}
+          style={{ padding:'6px 10px', background: mostrarFechas ? COLORS.navy : 'white', border:`1px solid ${mostrarFechas ? COLORS.navy : COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color: mostrarFechas ? 'white' : COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}
+        >
+          <Icon.Calendar/> Fechas
+        </button>
         {/* v15.2: Export PDF / Excel — lazy-loaded para no inflar el bundle */}
         <button
           onClick={async () => {
@@ -1565,6 +1576,11 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
                 <div style={{ fontSize:12, color:COLORS.ink, fontWeight: esPadre ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                   <EditableText value={act.nombre} onSave={v => onInlineUpdate(act.id, { nombre: v })} style={{ fontSize:12, color:COLORS.ink, fontWeight: esPadre ? 600 : 400 }}/>
                 </div>
+                {mostrarFechas && (act.inicio || act.fin) && (
+                  <span title="Inicio → Fin" style={{ flexShrink:0, fontSize:10, fontFamily:'var(--font-mono)', color:COLORS.slate500, whiteSpace:'nowrap' }}>
+                    {act.inicio ? fmtDate(act.inicio) : '—'} → {act.fin ? fmtDate(act.fin) : '—'}
+                  </span>
+                )}
                 {depsCount > 0 && <span title={`${depsCount} dependencia(s)`} style={{ display:'inline-flex', alignItems:'center', gap:2, fontSize:9, color:COLORS.teal, background:COLORS.tealLight, padding:'2px 5px', borderRadius:10, fontWeight:700 }}><Icon.Link/>{depsCount}</span>}
                 {hoveredId === act.id && (
                   <>
