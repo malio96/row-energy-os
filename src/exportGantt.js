@@ -69,7 +69,10 @@ function fmtCompact(d) {
   return `${dt.getUTCDate()} ${meses[dt.getUTCMonth()]} ${String(dt.getUTCFullYear()).slice(2)}`
 }
 
-export function exportarGanttPDF(proyecto, actividades, usuarios) {
+export function exportarGanttPDF(proyecto, actividades, usuarios, opts = {}) {
+  // v18.10.0: cuando el toggle "fechas junto a la actividad" del Gantt está activo,
+  // el PDF también muestra inicio→fin en la columna izquierda (mismo criterio que pantalla).
+  const mostrarFechas = !!opts.mostrarFechas
   // Filtrar y ordenar actividades — incluye TODAS (root + sub) en orden de numero
   const actsOrdenadas = (actividades || [])
     .filter(a => a.inicio || a.fin)  // necesitan al menos una fecha para mostrarse en el gantt
@@ -103,7 +106,9 @@ export function exportarGanttPDF(proyecto, actividades, usuarios) {
   const PW = doc.internal.pageSize.getWidth()
   const PH = doc.internal.pageSize.getHeight()
   const MARGIN = 30
-  const LEFT_COL_W = 240           // ancho columna izquierda (solo actividad — fechas removidas en v16.9.1)
+  // v18.10.0: columna izquierda más ancha cuando se muestran fechas (reserva DATE_COL_W para inicio→fin)
+  const DATE_COL_W = mostrarFechas ? 104 : 0
+  const LEFT_COL_W = 240 + DATE_COL_W   // ancho columna izquierda (240 base; fechas removidas del base en v16.9.1)
   const ROW_H = 18                 // alto de cada fila
   const HEADER_TOP = 70            // y donde arranca el header del gantt
   const HEADER_H = 36              // alto del header de fechas
@@ -158,6 +163,12 @@ export function exportarGanttPDF(proyecto, actividades, usuarios) {
     doc.setFontSize(9)
     doc.setTextColor(...TEXT_INK)
     doc.text('Actividad', MARGIN + 8, HEADER_TOP + HEADER_H/2 + 3)
+    if (mostrarFechas) {
+      doc.setFontSize(8)
+      // jsPDF (fuentes core WinAnsi) no soporta la flecha → (sale como basura);
+      // se usa guion largo "–" (sí está en WinAnsi) para el rango inicio–fin.
+      doc.text('Inicio – Fin', MARGIN + LEFT_COL_W - 4, HEADER_TOP + HEADER_H/2 + 3, { align: 'right' })
+    }
 
     // Escala de tiempo: años + quarters
     const yearTop = HEADER_TOP + 4
@@ -247,13 +258,23 @@ export function exportarGanttPDF(proyecto, actividades, usuarios) {
     const isSub = !!act.parent_id
     const indent = isSub ? 16 : 4
     const nombre = `${act.numero ? act.numero + '. ' : ''}${act.nombre || ''}`
-    const maxNombreW = LEFT_COL_W - indent - 8
+    const maxNombreW = LEFT_COL_W - indent - 8 - DATE_COL_W
     let txt = nombre
     while (doc.getTextWidth(txt) > maxNombreW && txt.length > 4) {
       txt = txt.slice(0, -2)
     }
     if (txt !== nombre) txt = txt.slice(0, -1) + '…'
     doc.text(txt, MARGIN + indent, y + ROW_H/2 + 3)
+
+    // v18.10.0: fechas inicio→fin alineadas a la derecha de la columna izquierda
+    if (mostrarFechas && (act.inicio || act.fin)) {
+      const rango = `${act.inicio ? fmtCompact(act.inicio) : '—'} – ${act.fin ? fmtCompact(act.fin) : '—'}`
+      doc.setFontSize(7)
+      doc.setTextColor(...TEXT_MUTED)
+      doc.text(rango, MARGIN + LEFT_COL_W - 4, y + ROW_H/2 + 3, { align: 'right' })
+      doc.setFontSize(8.5)
+      doc.setTextColor(...TEXT_INK)
+    }
 
     // Barra del gantt
     if (act.inicio && act.fin) {

@@ -132,6 +132,19 @@ const fmtDate = s => {
   const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
   return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`
 }
+
+// v18.10.0: todos los descendientes (recursivo) de una actividad.
+function descendientesDe(acts, rootId) {
+  const out = []
+  const hijos = acts.filter(a => (a.parent_id || null) === rootId)
+  for (const h of hijos) { out.push(h); out.push(...descendientesDe(acts, h.id)) }
+  return out
+}
+// Descendientes que SÍ se cancelan en cascada: ni Completadas ni ya Canceladas.
+function descendientesCancelables(acts, rootId) {
+  return descendientesDe(acts, rootId)
+    .filter(a => a.estado !== 'Completada' && a.estado !== 'Cancelada' && !a.completada)
+}
 const fmtMoney = n => n == null ? '—' : n.toLocaleString('es-MX', { style:'currency', currency:'MXN', minimumFractionDigits:0 })
 
 function generarNumeracion(actividades) {
@@ -562,7 +575,7 @@ function MenuContextual({ x, y, actividad, onClose, onAbrirInfo, onDuplicar, onE
   )
 }
 
-function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose, onCambio, onEliminar }) {
+function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose, onCambio, onEliminar, onCambiarEstado }) {
   const [loc, setLoc] = useState(actividad)
   const [guardando, setGuardando] = useState(false)
   const [predSel, setPredSel] = useState('')
@@ -636,7 +649,10 @@ function PanelActividad({ actividad, actividades, numeracion, usuarios, onClose,
         <div style={{ flex:1, overflow:'auto', padding:20 }}>
           <div style={{ marginBottom:16 }}>
             <label style={miniLabel}>Estado</label>
-            <select value={loc.estado} onChange={e => guardar({ estado: e.target.value })} style={selectStyle}>
+            {/* v18.10.0: estado pasa por la lógica de cascada/reversión del padre
+                (cancelar sub-actividades, restaurar al des-cancelar). El select se
+                resincroniza vía la prop `actividad` cuando el padre recarga. */}
+            <select value={loc.estado} onChange={e => onCambiarEstado(e.target.value)} style={selectStyle}>
               {Object.keys(ESTADOS).map(k => <option key={k} value={k}>{k}</option>)}
             </select>
           </div>
@@ -1473,7 +1489,7 @@ function GanttInteractivo({ actividadesProp, proyecto, usuarios, usuario, onReca
         <button
           onClick={async () => {
             const m = await import('./exportGantt')
-            m.exportarGanttPDF(proyecto, actividades, usuarios)
+            m.exportarGanttPDF(proyecto, actividades, usuarios, { mostrarFechas })
           }}
           title="Descargar cronograma como PDF"
           style={{ padding:'6px 10px', background:'white', border:`1px solid ${COLORS.slate200}`, borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer', color:COLORS.slate600, display:'flex', alignItems:'center', gap:5 }}
@@ -3527,6 +3543,76 @@ function ConfirmDepDeleteModal({ data, onCancel, onConfirm }) {
   )
 }
 
+// v18.10.0: Modal para confirmar la cancelación en cascada de sub-actividades.
+// Tres salidas: cancelar todas las pendientes, solo esta, o abortar (Escape/click fuera).
+function ConfirmCancelCascadeModal({ data, onAbort, onSoloEsta, onCascada }) {
+  const { nombre, descendientes } = data
+  const n = descendientes.length
+  const isMobile = useIsMobile()
+
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onAbort() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onAbort])
+
+  return (
+    <>
+      <div onClick={onAbort} style={{
+        position:'fixed', inset:0, background:'rgba(10, 37, 64, 0.35)', backdropFilter:'blur(2px)',
+        zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center',
+      }}>
+        <div onClick={(e) => e.stopPropagation()} style={{
+          width: isMobile ? 'calc(100% - 32px)' : 480, background:'white', borderRadius:14,
+          boxShadow:'0 20px 60px rgba(10, 37, 64, 0.25)', overflow:'hidden',
+        }}>
+          <div style={{ padding:'22px 24px 14px', display:'flex', alignItems:'flex-start', gap:14 }}>
+            <div style={{ width:40, height:40, borderRadius:'50%', background:'#FEF2F2',
+              display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, color:COLORS.red }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <h3 style={{ margin:0, fontSize:16, fontWeight:600, color:COLORS.navy, fontFamily:'var(--font-sans)', letterSpacing:'-0.01em' }}>
+                Cancelar actividad
+              </h3>
+              <p style={{ margin:'6px 0 0', fontSize:13, color:COLORS.slate500, lineHeight:1.5 }}>
+                <strong style={{ color:COLORS.ink }}>{nombre}</strong> tiene <strong style={{ color:COLORS.ink }}>{n}</strong> sub-actividad{n === 1 ? '' : 'es'} pendiente{n === 1 ? '' : 's'}. ¿Cancelar{n === 1 ? 'la' : 'las'} también? Las que ya están completadas se conservan, y podrás revertir todo con Ctrl+Z o regresando la actividad a otro estado.
+              </p>
+            </div>
+          </div>
+          <div style={{ padding:'14px 24px 18px', display:'flex', justifyContent:'flex-end', gap:10,
+            background:COLORS.slate50, borderTop:`1px solid ${COLORS.slate100}`, flexWrap:'wrap' }}>
+            <button onClick={onAbort} style={{
+              padding:'9px 18px', background:'white', color:COLORS.slate600, border:`1px solid ${COLORS.slate200}`,
+              borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.12s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate100 }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white' }}>
+              No cancelar
+            </button>
+            <button onClick={onSoloEsta} style={{
+              padding:'9px 18px', background:'white', color:COLORS.navy, border:`1px solid ${COLORS.slate300 || COLORS.slate200}`,
+              borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.12s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = COLORS.slate100 }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white' }}>
+              Solo esta
+            </button>
+            <button onClick={onCascada} autoFocus style={{
+              padding:'9px 18px', background:COLORS.red, color:'white', border:'none', borderRadius:8,
+              fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+              boxShadow:'0 2px 6px rgba(220,38,38,0.35)', transition:'all 0.12s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#B91C1C' }}
+              onMouseLeave={e => { e.currentTarget.style.background = COLORS.red }}>
+              Cancelar {n} pendiente{n === 1 ? '' : 's'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // v13: Formulario inline para crear cliente rápido desde el modal de nuevo proyecto
 // v16.1.1: refactor — soporta crear (cliente=null) o editar (cliente=obj).
 // Ahora incluye Dirección fiscal e Industria (faltantes en v16.1.0 que bloqueaban
@@ -3895,6 +3981,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   const [usuarios, setUsuarios] = useState([])
   const [menuCtx, setMenuCtx] = useState(null)  // v8: {actividad, x, y}
   const [confirmDepDelete, setConfirmDepDelete] = useState(null)  // v13.2: {predId, actId, predNombre, actNombre}
+  const [confirmCancel, setConfirmCancel] = useState(null)        // v18.10.0: {actId, nombre, descendientes:[...]}
   const deepLinkActRef = useRef(false)
   const isMobile = useIsMobile()
   // v15.10.3: undo stack — máx 30 acciones, sesión local
@@ -3933,6 +4020,14 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
     if (act) setPanelAct(act)
     deepLinkActRef.current = actividadInicialId
   }, [proyecto, actividadInicialId])
+
+  // v18.10.0: resincroniza el panel lateral cuando el estado de su actividad cambia
+  // por la cascada de cancelación/reversión (que recarga `proyecto` con filas nuevas).
+  useEffect(() => {
+    if (!panelAct || !proyecto?.actividades) return
+    const fresh = proyecto.actividades.find(a => a.id === panelAct.id)
+    if (fresh && fresh.estado !== panelAct.estado) setPanelAct(fresh)
+  }, [proyecto, panelAct])
 
   // Audit: track cuando se abre el tab financiero
   useEffect(() => {
@@ -3987,6 +4082,17 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
         case 'removeDep':
           await agregarDependencia(action.sucId, action.predId, action.tipo || 'FS')
           break
+        case 'cancel-cascade':
+          // v18.10.0: restaura estado + marcadores de todas las filas afectadas
+          // (padre + hijas) tal como estaban antes de cancelar/des-cancelar.
+          await Promise.all((action.snapshots || []).map(s =>
+            actualizarActividad(s.id, {
+              estado: s.estado,
+              cancel_origen_id: s.cancel_origen_id,
+              cancel_estado_previo: s.cancel_estado_previo,
+            })
+          ))
+          break
         case 'create':
           await eliminarActividad(action.actId)
           break
@@ -4019,11 +4125,92 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
 
   const numeracion = useMemo(() => generarNumeracion(proyecto?.actividades || []), [proyecto])
 
+  // v18.10.0 — Cancelar sub-actividades en cascada (reversible) ──────────────
+  // Aplica updates [{id, cambios}] de forma optimista y los persiste, recargando al final.
+  const aplicarUpdates = useCallback(async (updates) => {
+    if (!updates.length) return
+    setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => {
+      const u = updates.find(x => x.id === a.id)
+      return u ? { ...a, ...u.cambios } : a
+    }) }))
+    // Optimista en éxito (igual que actualizarInline); recarga solo si falla, para revertir.
+    try { await Promise.all(updates.map(u => actualizarActividad(u.id, u.cambios))) }
+    catch (e) { alertaActividad(e); cargar() }
+  }, [cargar])
+
+  // Cancela `actId` (origen, sin marcador) + las `descendientes` indicadas, marcando
+  // en cada hija el origen y su estado previo para poder restaurarla luego.
+  const aplicarCancelacion = useCallback(async (actId, descendientes) => {
+    const acts = proyecto?.actividades || []
+    const padre = acts.find(a => a.id === actId)
+    if (!padre) return
+    const snapshots = [padre, ...descendientes].map(a => ({
+      id: a.id, estado: a.estado,
+      cancel_origen_id: a.cancel_origen_id || null,
+      cancel_estado_previo: a.cancel_estado_previo || null,
+    }))
+    const updates = [
+      { id: actId, cambios: { estado: 'Cancelada', cancel_origen_id: null, cancel_estado_previo: null } },
+      ...descendientes.map(d => ({ id: d.id, cambios: {
+        estado: 'Cancelada', cancel_origen_id: actId, cancel_estado_previo: d.estado,
+      } })),
+    ]
+    pushUndo({ type: 'cancel-cascade', snapshots })
+    await aplicarUpdates(updates)
+  }, [proyecto, pushUndo, aplicarUpdates])
+
+  // Des-cancela `actId` (a `nuevoEstado`) y restaura las hijas que él auto-canceló
+  // a su estado previo, limpiando los marcadores.
+  const aplicarDescancelacion = useCallback(async (actId, nuevoEstado) => {
+    const acts = proyecto?.actividades || []
+    const hijasAuto = acts.filter(a => a.cancel_origen_id === actId && a.estado === 'Cancelada')
+    const afectadas = [acts.find(a => a.id === actId), ...hijasAuto].filter(Boolean)
+    const snapshots = afectadas.map(a => ({
+      id: a.id, estado: a.estado,
+      cancel_origen_id: a.cancel_origen_id || null,
+      cancel_estado_previo: a.cancel_estado_previo || null,
+    }))
+    const updates = [
+      { id: actId, cambios: { estado: nuevoEstado, cancel_origen_id: null, cancel_estado_previo: null } },
+      ...hijasAuto.map(h => ({ id: h.id, cambios: {
+        estado: h.cancel_estado_previo || 'Sin iniciar', cancel_origen_id: null, cancel_estado_previo: null,
+      } })),
+    ]
+    pushUndo({ type: 'cancel-cascade', snapshots })
+    await aplicarUpdates(updates)
+  }, [proyecto, pushUndo, aplicarUpdates])
+
+  // Punto único para cambios de estado de actividad (tabla, Gantt y panel lateral).
+  const cambiarEstadoActividad = useCallback(async (actId, nuevoEstado) => {
+    const acts = proyecto?.actividades || []
+    const act = acts.find(a => a.id === actId)
+    if (!act || act.estado === nuevoEstado) return
+    if (nuevoEstado === 'Cancelada') {
+      const pendientes = descendientesCancelables(acts, actId)
+      if (pendientes.length === 0) await aplicarCancelacion(actId, [])
+      else setConfirmCancel({ actId, nombre: act.nombre, descendientes: pendientes })
+      return
+    }
+    if (act.estado === 'Cancelada') { await aplicarDescancelacion(actId, nuevoEstado); return }
+    // Cambio normal: limpia el marcador propio si era una hija auto-cancelada editada a mano.
+    const limpiar = act.cancel_origen_id ? { cancel_origen_id: null, cancel_estado_previo: null } : {}
+    await aplicarUpdates([{ id: actId, cambios: { estado: nuevoEstado, ...limpiar } }])
+  }, [proyecto, aplicarCancelacion, aplicarDescancelacion, aplicarUpdates])
+
   const actualizarInline = useCallback(async (actId, cambios) => {
+    // v18.10.0: los cambios de estado pasan por la lógica de cascada/reversión.
+    if ('estado' in cambios) {
+      const { estado, ...resto } = cambios
+      if (Object.keys(resto).length) {
+        setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => a.id === actId ? { ...a, ...resto } : a) }))
+        try { await actualizarActividad(actId, resto) } catch (e) { alertaActividad(e); cargar() }
+      }
+      return cambiarEstadoActividad(actId, estado)
+    }
     setProyecto(prev => ({ ...prev, actividades: prev.actividades.map(a => a.id === actId ? { ...a, ...cambios } : a) }))
     try { await actualizarActividad(actId, cambios) }
     catch (e) { alertaActividad(e); cargar() }
-  }, [cargar])
+  }, [cargar, cambiarEstadoActividad])
 
   // v18.9.0: reordenar actividad hermana vía drag & drop en la tabla.
   // Mueve `draggedId` antes/después de `targetId` dentro del MISMO grupo de hermanos
@@ -4222,7 +4409,7 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
   return (
     <div>
       {desglosarAct && <ModalDesglose actividad={desglosarAct} onClose={() => setDesglosarAct(null)} onDesglosado={() => { setDesglosarAct(null); cargar() }}/>}
-      {panelAct && <PanelActividad actividad={panelAct} actividades={actividades} numeracion={numeracion} usuarios={usuarios} onClose={() => setPanelAct(null)} onCambio={cargar} onEliminar={handleEliminar}/>}
+      {panelAct && <PanelActividad actividad={panelAct} actividades={actividades} numeracion={numeracion} usuarios={usuarios} onClose={() => setPanelAct(null)} onCambio={cargar} onEliminar={handleEliminar} onCambiarEstado={(nuevo) => cambiarEstadoActividad(panelAct.id, nuevo)}/>}
       {panelProy && <PanelProyecto proyecto={proyecto} clientes={clientes} usuarios={usuarios} usuarioActual={usuarioActual} onClose={() => setPanelProy(false)} onCambio={cargar} onEliminado={() => { setPanelProy(false); onVolver() }}/>}
       {menuCtx && (
         <MenuContextual
@@ -4247,6 +4434,15 @@ function DetalleProyecto({ proyectoId, onVolver, usuarioActual, actividadInicial
           data={confirmDepDelete}
           onCancel={() => setConfirmDepDelete(null)}
           onConfirm={confirmarBorrarDep}
+        />
+      )}
+
+      {confirmCancel && (
+        <ConfirmCancelCascadeModal
+          data={confirmCancel}
+          onAbort={() => setConfirmCancel(null)}
+          onSoloEsta={() => { const c = confirmCancel; setConfirmCancel(null); aplicarCancelacion(c.actId, []) }}
+          onCascada={() => { const c = confirmCancel; setConfirmCancel(null); aplicarCancelacion(c.actId, c.descendientes) }}
         />
       )}
 
